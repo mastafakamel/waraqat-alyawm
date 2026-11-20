@@ -23,6 +23,8 @@ import { moneyShell, updateMoney } from './views/money.js';
 import {
   SUGGEST, metricSheet, metricForm, updateMetricForm, settingsSheet, updateSettings,
 } from './views/metrics.js';
+import { requestReport, aiError, AI_FIELD } from './ai.js';
+import { aiSheet, updateAiSheet } from './views/ai.js';
 
 // حالة الواجهة بس (مش بتتحفظ). drafts = اللي اتكتب في خانات الإضافة ولسه ماتحفظش، عشان مايضيعش لو غيّرت التبويبة.
 const ui = {
@@ -85,6 +87,7 @@ function render() {
     updateOutputs(sh, state);
     updateSettings(sh, state, ui, sx());
     if (ui.mf) updateMetricForm(sh, ui.mf, state);
+    updateAiSheet(sh, state);
   }
 }
 subscribe(render);
@@ -407,6 +410,34 @@ async function login(form, isNew) {
   }
 }
 
+// ---------- تقرير الذكاء الاصطناعي ----------
+/** لو التقرير موجود بيفتحه، ولو لأ بيعمله. */
+function openAi(kind) {
+  if (state.day[AI_FIELD[kind]]?.t) return openSheet(aiSheet(kind, state));
+  return makeReport(kind);
+}
+async function makeReport(kind) {
+  if (state.aiBusy) return undefined; // تقرير واحد في المرة
+  if (!configured()) return toast(aiError({ code: 'off' }));
+  if (state.sync === 'signedout') return toast(aiError({ signedOut: true }));
+  const key = state.cur;
+  state.aiBusy = kind;
+  render();
+  try {
+    const r = await requestReport(kind);
+    toast(Number.isFinite(r.left) ? `التقرير جاهز، فاضلك ${fmtNum(r.left)} النهارده` : 'التقرير جاهز');
+    // نفتحه بس لو لسه على نفس اليوم، ومفيش شاشة تانية مفتوحة غير شاشة التقرير نفسها
+    const sh = sheetEl();
+    if (state.cur === key && (!sh || sh.querySelector('[data-act="airegen"]'))) openSheet(aiSheet(kind, state));
+  } catch (e) {
+    toast(aiError(e));
+  } finally {
+    state.aiBusy = null;
+    render();
+  }
+  return undefined;
+}
+
 // ---------- التنقل ----------
 async function go(n) {
   await loadDay(addDays(state.cur, n)); // loadDay بيحفظ اللي مستني الأول
@@ -540,6 +571,9 @@ document.addEventListener('click', async (e) => {
     // المزامنة
     case 'ssignup': return login(b.closest('form'), true);
     case 'ssync': return syncNow();
+    // تقرير الذكاء الاصطناعي
+    case 'ai': return openAi(b.dataset.kind);
+    case 'airegen': return makeReport(b.dataset.kind);
     case 'sout':
       await signOut();
       return toast('خرجت. بياناتك لسه على الجهاز ده');

@@ -125,6 +125,15 @@ export async function signOut() {
   set('signedout'); // البيانات اللي على الجهاز بتفضل زي ما هي
 }
 
+/**
+ * يكلّم Edge Function على Supabase (زي report) بجلسة الدخول. الأخطاء بترجع زي api: { status, code }،
+ * و signedOut لو مفيش جلسة. ده طلب زيه زي أي طلب، فبيتحسب من حد اليوم بتاع المزامنة كمان.
+ */
+export async function callFunction(name, body) {
+  if (!configured()) throw err('sync off', { code: 'off' });
+  return api(`/functions/v1/${name}`, { method: 'POST', body });
+}
+
 // ---------- الرفع والسحب ----------
 async function push() {
   const dirty = (await allDocs('')).filter((d) => d.dirty && isData(d.id));

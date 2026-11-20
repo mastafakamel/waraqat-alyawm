@@ -7,7 +7,7 @@ import {
   habitsDone, workTotal, expTotal, expByCat, dayRel, lineTarget, uid,
   groupTasks, isOverdue, sortIdeas, searchIdeas, normAr, shortDate, moneySummary, longDate, periodPhase,
   periodOf, periodDay, newPeriod, periodLabel, summaryStart, metricVisible, groupMetrics, metricDesc, metricValue, metricAreas,
-  mergeDoc, parseBackup, takeRemote, useQuota,
+  mergeDoc, parseBackup, takeRemote, useQuota, dayLine, dayDigest, weekDigest, reportBlocks,
 } from '../js/logic.js';
 
 test('الأرقام العربي والإنجليزي بتتحول قبل الحفظ', () => {
@@ -279,4 +279,73 @@ test('المزامنة: الأحدث يكسب، وحد الاستخدام في �
   q = useQuota(q.meta, '2026-11-20', 2);
   assert.equal(q.ok, false); // وصل للحد
   assert.deepEqual(useQuota(q.meta, '2026-11-21', 2), { ok: true, meta: { day: '2026-11-21', n: 1 } }); // يوم جديد
+});
+
+// ---------- تقرير الذكاء الاصطناعي ----------
+test('ملخص اليوم: اللي اتسجل بس، وبأرقام إنجليزي، والناقص مكتوب', () => {
+  const d = {
+    sleep: '01:10', wake: '08:30', screen: '٥:٣٠', mood: 3, p1e: 4, p1t: 'ذاكرت', p1h: '٢', fajr: 2, wird: 1,
+    salah: 4, w1p: 'الأسواف', w1h: '٣', w1o: 'صفحة الأسعار', exp: [{ a: 75, w: 'غدا', c: 'أكل' }], decs: 'slow', deci: 'part',
+    m: { k1: 3 }, ai: { t: 'تقرير قديم', at: 1 },
+  };
+  const tasks = [
+    { id: 1, t: 'ابعت الفاتورة', done: true, dAt: new Date('2026-11-20T15:00:00').getTime() },
+    { id: 2, t: 'مكالمة', done: false, due: '2026-11-18' },
+  ];
+  const metrics = [{ id: 'k1', n: 'مية', t: 'count', u: 'كوباية', on: true }];
+  const prev = { key: '2026-11-19', data: { mood: 2, top: 'يوم تقيل' } };
+  const t = dayDigest('2026-11-20', d, { prev, tasks, metrics });
+  assert.match(t, /النوم: نام 01:10، صحي 08:30، المدة 7:20/);
+  assert.match(t, /Screen time 5:30/); // الأرقام العربي بقت إنجليزي
+  assert.match(t, /- بعد الفجر: طاقة 4 من 5، 2 ساعة، عمل: ذاكرت/);
+  assert.match(t, /- تم: الفجر/);
+  assert.match(t, /- جزئي: الورد/);
+  assert.match(t, /- الأسواف: 3 ساعة، الناتج: صفحة الأسعار/);
+  assert.match(t, /صرف 75 جنيه \(أكل 75\)/);
+  assert.match(t, /أخد قرار بعد تفكير، بمعلومات ناقصة/);
+  assert.match(t, /مقاييسي: مية: 3 كوباية/);
+  assert.match(t, /المهام: خلّص 1 \(ابعت الفاتورة\)، ولسه مفتوح 1 منهم 1 متأخرة/);
+  assert.match(t, /مش متسجل: قرار وتأجيل، أهم حاجة/);
+  assert.match(t, /امبارح: 2026-11-19 .*مزاج 2\/5/);
+  assert.doesNotMatch(t, /تقرير قديم/); // التقرير القديم مابيتبعتش تاني
+  assert.doesNotMatch(t, /دخل|توتر|رفع طاقته/); // الفاضي مابيتكتبش
+});
+
+test('ملخص اليوم: الكلام الطويل بيتقص', () => {
+  const t = dayDigest('2026-11-20', { top: 'ا'.repeat(1000) });
+  const line = t.split('\n').find((l) => l.startsWith('أهم حاجة'));
+  assert.ok(line.length < 420);
+  assert.ok(line.endsWith('…'));
+});
+
+test('سطر اليوم: مختصر، ولو مفيش حاجة بيقول كده', () => {
+  assert.match(dayLine('2026-11-20', { sleep: '23:00', wake: '07:00', p1e: 4, p2e: 2, w1h: '2.5' }), /نوم 8:00، طاقة 3\/5، شغل 2.5 ساعة/);
+  assert.match(dayLine('2026-11-21', {}), /مفيش تسجيل$/);
+});
+
+test('ملخص الأسبوع: ٧ أيام، ومتوسطات للأيام اللي اتسجلت بس', () => {
+  const days = [
+    { key: '2026-11-14', data: { mood: 5 } }, // برّه الأسبوع
+    { key: '2026-11-15', data: { sleep: '23:00', wake: '07:00', mood: 4, fajr: 2, exp: [{ a: 100, c: 'أكل' }], w1p: 'أ', w1h: '3' } },
+    { key: '2026-11-17', data: { sleep: '00:00', wake: '06:00', mood: 2, fajr: 2, wird: 2, post: 'الجيم', decs: 'fast' } },
+    { key: '2026-11-21', data: { ai: { t: 'x' } } }, // تقرير بس = مش متسجل
+  ];
+  const tasks = [{ id: 1, t: 'x', done: true, dAt: new Date('2026-11-16T10:00:00').getTime() }, { id: 2, t: 'y', done: false, due: '2026-11-10' }];
+  const t = weekDigest('2026-11-21', days, { tasks });
+  assert.match(t, /من 2026-11-15 لـ 2026-11-21، اتسجل فيه 2 من 7 أيام/);
+  assert.equal(t.split('\n').filter((l) => /^- 2026-11-/.test(l)).length, 7);
+  assert.match(t, /نوم 7:00، مزاج 3\/5/);
+  assert.match(t, /العادات \(عدد أيام التمام من 2\): الفجر 2، الورد 1/);
+  assert.match(t, /الشغل: 3 ساعة \(أ 3\)/);
+  assert.match(t, /الفلوس: صرف 100 جنيه \(أكل 100\)/);
+  assert.match(t, /المهام: خلّص 1 في الأسبوع، و1 متأخرة دلوقتي/);
+  assert.match(t, /أجّل خلال الأسبوع: الجيم/);
+  assert.doesNotMatch(t, /مزاج 5/); // اليوم اللي برّه الأسبوع مادخلش
+});
+
+test('نص التقرير بيتقسم لعناوين وبنود وفقرات', () => {
+  const b = reportBlocks('**اليوم في سطرين:**\nيوم كويس.\n\n- نمت بدري\n- خلصت المهام\n## خطوة لبكرة:\nنام قبل ١٢');
+  assert.deepEqual(b, [
+    { h: 'اليوم في سطرين' }, { p: 'يوم كويس.' }, { ul: ['نمت بدري', 'خلصت المهام'] }, { h: 'خطوة لبكرة' }, { p: 'نام قبل ١٢' },
+  ]);
 });

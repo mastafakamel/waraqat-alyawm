@@ -15,6 +15,7 @@ export const state = {
   tab: 'day',
   status: 'loading', // loading | saving | saved | memory
   sync: 'off', // off | signedout | busy | ok | offline | error | capped (sync.js)
+  aiBusy: null, // 'day' أو 'week' وإحنا مستنيين تقرير الذكاء الاصطناعي (مابيتحفظش)
 };
 
 // main.js بيربط هنا: بعد أي حفظ، المزامنة تعرف إن فيه جديد ترفعه

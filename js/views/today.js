@@ -2,7 +2,8 @@
 //
 // ترتيب تبويبة اليوم (التصميم "ج: خط اليوم"):
 //   شريط ٤ أرقام ← المزاج والفترات الأربعة (والفترة اللي إنت فيها بتكتب فيها على طول) ← العادات صف بيتسحب
-//   ← الصلوات ← آخر اليوم (أجّلت إيه وأهم حاجة) ← مهام النهارده ← مقاييسي ← "قيس حاجة جديدة" و"الإعدادات"
+//   ← الصلوات ← آخر اليوم (أجّلت إيه وأهم حاجة) ← تقرير الذكاء الاصطناعي (اليوم والأسبوع)
+//   ← مهام النهارده ← مقاييسي ← "قيس حاجة جديدة" و"الإعدادات"
 
 import {
   HABITS, PERIODS, dateTitle, dayRel, starState, starCount, fmtNum, arDigits, sleepMinutes, fmtHM,
@@ -10,6 +11,7 @@ import {
 } from '../logic.js';
 import { esc, ic, P } from '../ui.js';
 import { metricsSection } from './metrics.js';
+import { aiSection } from './ai.js';
 
 const STATUS = { loading: 'بيحمّل…', saving: 'بيحفظ…', saved: 'محفوظ على الجهاز', memory: 'مش بيتحفظ على الجهاز!' };
 
@@ -176,6 +178,7 @@ export function renderToday(s) {
     ${timeline(s, ok)}
     ${habitPills(s, ok)}
     ${endOfDay(s)}
+    ${aiSection(s)}
     ${tasksToday(s)}
     ${metricsSection(s)}`;
 }

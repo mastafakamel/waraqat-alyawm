@@ -6,7 +6,7 @@
 // (و node --test بيفشل لو نسيت.)
 
 // <stamp>
-const VERSION = '3fb0ea3d4d';
+const VERSION = 'd9e4581d0d';
 const FILES = [
   './',
   'index.html',
@@ -17,6 +17,7 @@ const FILES = [
   'fonts/noto-kufi-arabic-latin.woff2',
   'fonts/rubik-arabic.woff2',
   'fonts/rubik-latin.woff2',
+  'js/ai.js',
   'js/backup.js',
   'js/config.js',
   'js/db.js',
@@ -25,6 +26,7 @@ const FILES = [
   'js/store.js',
   'js/sync.js',
   'js/ui.js',
+  'js/views/ai.js',
   'js/views/dock.js',
   'js/views/ideas.js',
   'js/views/metrics.js',

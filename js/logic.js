@@ -436,3 +436,238 @@ export function lineTarget(hour) {
 export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
+
+// ---------- تقرير الذكاء الاصطناعي: ملخص البيانات ----------
+// الملخص نص عادي بيتبعت للموديل. بأرقام إنجليزي عشان الموديل يقراها صح، ومن غير اسم ولا إيميل.
+// الخانات الفاضية مابتتكتبش، والكلام الطويل بيتقص، عشان الطلب يفضل صغير.
+
+const clip = (s, n = 200) => {
+  const t = String(s ?? '').replace(/\s+/g, ' ').trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+};
+const r1 = (n) => Math.round(n * 10) / 10;
+const hmEn = (m) => `${Math.floor(m / 60)}:${String(Math.round(m % 60)).padStart(2, '0')}`;
+const numOf = (v) => {
+  if (!has(v)) return null;
+  const n = Number(toEn(v));
+  return Number.isFinite(n) ? n : null;
+};
+const weekday = (key) => new Date(`${key}T12:00:00`).toLocaleDateString('ar-EG', { weekday: 'long' });
+/** الخانات اللي التقرير نفسه بيكتبها في اليوم، ومش جزء من اللي إنت سجلته. */
+const AI_KEYS = ['ai', 'aiw'];
+const logged = (d) => Object.keys(d || {}).some((k) => !AI_KEYS.includes(k));
+/** "5:30" أو "5" (ساعات) → دقايق. */
+const screenMin = (v) => mins(v) ?? (numOf(v) != null ? numOf(v) * 60 : null);
+
+const HABIT_NUMS = [
+  ['wirdp', 'الورد', 'صفحة'], ['exm', 'تمرين', 'دقيقة'], ['engm', 'إنجليزي', 'دقيقة'], ['readp', 'قراءة', 'صفحة'],
+  ['techm', 'تعلم تقني', 'دقيقة'], ['caf', 'قهوة/شاي', 'كوباية'], ['relm', 'وقت من غير موبايل', 'دقيقة'],
+];
+
+function metricText(m, v) {
+  if (m.t === 'tri') return ['لسه', 'جزئي', 'تم'][+v || 0];
+  if (m.t === 'count' || m.t === 'num') return `${toEn(v)}${m.u ? ` ${m.u}` : ''}`;
+  return clip(toEn(v), 80);
+}
+
+/** سطر واحد مختصر لليوم: للتقرير الأسبوعي، وللمقارنة بامبارح في التقرير اليومي. */
+export function dayLine(key, d = {}) {
+  const p = [];
+  const sm = sleepMinutes(d.sleep, d.wake);
+  if (sm != null) p.push(`نوم ${hmEn(sm)}`);
+  if (has(d.screen)) p.push(`شاشة ${toEn(d.screen)}`);
+  if (has(d.mood)) p.push(`مزاج ${d.mood}/5`);
+  const es = PERIODS.map(([k]) => +d[`${k}e`] || 0).filter(Boolean);
+  if (es.length) p.push(`طاقة ${r1(es.reduce((a, b) => a + b, 0) / es.length)}/5`);
+  if (HABITS.some(([k]) => has(d[k]))) p.push(`عادات ${habitsDone(d)}/${HABITS.length}`);
+  if (has(d.salah)) p.push(`صلوات ${d.salah}/5`);
+  const w = workTotal(d);
+  if (w) p.push(`شغل ${r1(w)} ساعة`);
+  if (has(d.deep)) p.push(`تركيز عميق ${toEn(d.deep)} ساعة`);
+  const e = expTotal(d);
+  if (e) p.push(`صرف ${r1(e)} ج`);
+  if (has(d.top)) p.push(`أهم حاجة: ${clip(d.top, 120)}`);
+  return `${key} (${weekday(key)}): ${p.length ? p.join('، ') : 'مفيش تسجيل'}`;
+}
+
+/**
+ * ملخص يوم كامل للتقرير اليومي: كل اللي اتسجل، وإيه اللي ناقص، وامبارح للمقارنة.
+ * opts: { prev: { key, data } | null, tasks, metrics }
+ */
+export function dayDigest(key, d = {}, { prev = null, tasks = [], metrics = [] } = {}) {
+  const L = [`اليوم: ${weekday(key)} ${key}`];
+
+  const sleep = [];
+  if (has(d.sleep)) sleep.push(`نام ${toEn(d.sleep)}`);
+  if (has(d.wake)) sleep.push(`صحي ${toEn(d.wake)}`);
+  const sm = sleepMinutes(d.sleep, d.wake);
+  if (sm != null) sleep.push(`المدة ${hmEn(sm)}`);
+  if (sleep.length) L.push(`النوم: ${sleep.join('، ')}`);
+  const phone = [];
+  if (has(d.screen)) phone.push(`Screen time ${toEn(d.screen)}`);
+  if (has(d.lastuse)) phone.push(`آخر استخدام ${toEn(d.lastuse)}`);
+  if (phone.length) L.push(`الموبايل: ${phone.join('، ')}`);
+  if (has(d.mood)) L.push(`المزاج: ${d.mood} من 5`);
+
+  const per = PERIODS.map(([k, l]) => {
+    const p = [];
+    if (has(d[`${k}e`])) p.push(`طاقة ${d[`${k}e`]} من 5`);
+    const h = numOf(d[`${k}h`]);
+    if (h) p.push(`${h} ساعة`);
+    if (has(d[`${k}t`])) p.push(`عمل: ${clip(d[`${k}t`])}`);
+    return p.length ? `- ${l}: ${p.join('، ')}` : '';
+  }).filter(Boolean);
+  if (per.length) L.push('الفترات:', ...per);
+  if (has(d.up)) L.push(`رفع طاقته: ${clip(d.up)}`);
+  if (has(d.down)) L.push(`وطّى طاقته: ${clip(d.down)}`);
+  if (has(d.unpl)) L.push(`مهام طلعت من غير تخطيط: ${toEn(d.unpl)}`);
+
+  if (HABITS.some(([k]) => has(d[k]))) {
+    const pick = (v) => HABITS.filter(([k]) => (+d[k] || 0) === v).map(([, l]) => l);
+    L.push(`العادات: ${habitsDone(d)} من ${HABITS.length} تم`);
+    if (pick(2).length) L.push(`- تم: ${pick(2).join('، ')}`);
+    if (pick(1).length) L.push(`- جزئي: ${pick(1).join('، ')}`);
+    if (pick(0).length) L.push(`- ماتعملتش: ${pick(0).join('، ')}`);
+  }
+  if (has(d.salah)) L.push(`الصلوات في وقتها: ${d.salah} من 5`);
+  const nums = HABIT_NUMS.filter(([k]) => has(d[k])).map(([k, l, u]) => `${l} ${toEn(d[k])} ${u}`);
+  if (has(d.cafl)) nums.push(`آخر كوباية ${toEn(d.cafl)}`);
+  if (nums.length) L.push(`تفاصيل العادات: ${nums.join('، ')}`);
+  if (has(d.relw)) L.push(`الوقت من غير موبايل كان مع: ${clip(d.relw, 80)}`);
+  if (has(d.tens)) L.push(`توتر: ${clip(d.tens)}`);
+  if (has(d.tired)) L.push(`إرهاق غير معتاد: ${['', 'جزئي', 'آه'][+d.tired || 0]}`);
+  if (has(d.learnt)) L.push(`اتعلم: ${clip(d.learnt)}`);
+
+  const work = [1, 2, 3, 4]
+    .map((i) => ({ p: clip(d[`w${i}p`], 80), h: numOf(d[`w${i}h`]) || 0, o: clip(d[`w${i}o`]) }))
+    .filter((w) => w.p || w.h || w.o);
+  if (work.length) {
+    L.push(`الشغل: ${r1(work.reduce((a, w) => a + w.h, 0))} ساعة`);
+    for (const w of work) L.push(`- ${w.p || 'من غير اسم'}: ${w.h} ساعة${w.o ? `، الناتج: ${w.o}` : ''}`);
+  }
+  if (has(d.deep)) L.push(`تركيز عميق متواصل: ${toEn(d.deep)} ساعة`);
+
+  if (has(d.exp)) {
+    L.push(`الفلوس: صرف ${r1(expTotal(d))} جنيه (${expByCat(d).map(([c, v]) => `${c} ${r1(v)}`).join('، ')})`);
+    L.push(`- البنود: ${clip(d.exp.map((e) => `${r1(+e.a || 0)} ${e.w || e.c}`).join('، '), 300)}`);
+  }
+  if (has(d.income)) L.push(`دخل: ${toEn(d.income)} جنيه`);
+
+  const how = [{ fast: 'بسرعة', slow: 'بعد تفكير' }[d.decs], { full: 'بمعلومات كاملة', part: 'بمعلومات ناقصة' }[d.deci]].filter(Boolean);
+  if (has(d.dec)) L.push(`قرار: ${clip(d.dec)}${how.length ? ` (${how.join('، ')})` : ''}`);
+  else if (how.length) L.push(`أخد قرار ${how.join('، ')}`);
+  if (has(d.post)) L.push(`أجّل: ${clip(d.post)}${has(d.postw) ? `، وليه: ${clip(d.postw)}` : ''}`);
+  if (has(d.top)) L.push(`أهم حاجة حصلت: ${clip(d.top, 400)}`);
+
+  const ms = (metrics || []).filter((m) => d.m && has(d.m[m.id])).map((m) => `${m.n}: ${metricText(m, d.m[m.id])}`);
+  if (ms.length) L.push(`مقاييسي: ${ms.join('، ')}`);
+
+  const doneT = (tasks || []).filter((t) => t.done && t.dAt && keyOf(new Date(t.dAt)) === key);
+  const openT = (tasks || []).filter((t) => !t.done && t.due && t.due <= key);
+  const late = openT.filter((t) => t.due < key).length;
+  if (doneT.length || openT.length) {
+    const names = doneT.slice(0, 5).map((t) => clip(t.t, 60)).join('، ');
+    L.push(`المهام: خلّص ${doneT.length}${names ? ` (${names})` : ''}، ولسه مفتوح ${openT.length}${late ? ` منهم ${late} متأخرة` : ''}`);
+  }
+
+  const miss = missingStars(d).map((s) => s.t);
+  if (miss.length) L.push(`مش متسجل: ${miss.join('، ')}`);
+  if (prev && logged(prev.data)) L.push(`للمقارنة، امبارح: ${dayLine(prev.key, prev.data)}`);
+  return L.join('\n');
+}
+
+/**
+ * ملخص آخر ٧ أيام (لحد endKey) للتقرير الأسبوعي: سطر لكل يوم، ومتوسطات، والعادات، والفلوس، والمهام.
+ * days = [{ key, data }]
+ */
+export function weekDigest(endKey, days, { tasks = [], metrics = [] } = {}) {
+  const from = addDays(endKey, -6);
+  const by = new Map((days || []).map((x) => [x.key, x.data || {}]));
+  const week = Array.from({ length: 7 }, (_, i) => addDays(from, i)).map((k) => [k, by.get(k) || {}]);
+  const on = week.filter(([, d]) => logged(d));
+  const avg = (xs) => (xs.length ? r1(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
+  const L = [`الأسبوع: من ${from} لـ ${endKey}، اتسجل فيه ${on.length} من 7 أيام`, 'كل يوم:'];
+  for (const [k, d] of week) L.push(`- ${dayLine(k, d)}`);
+
+  const ds = on.map(([, d]) => d);
+  const pick = (f) => ds.map(f).filter((v) => v != null);
+  const av = [];
+  const sl = avg(pick((d) => sleepMinutes(d.sleep, d.wake)));
+  if (sl != null) av.push(`نوم ${hmEn(sl)}`);
+  const sc = avg(pick((d) => screenMin(d.screen)));
+  if (sc != null) av.push(`شاشة ${hmEn(sc)}`);
+  const mo = avg(pick((d) => (has(d.mood) ? +d.mood : null)));
+  if (mo != null) av.push(`مزاج ${mo}/5`);
+  const sa = avg(pick((d) => (has(d.salah) ? +d.salah : null)));
+  if (sa != null) av.push(`صلوات في وقتها ${sa}/5`);
+  if (av.length) L.push(`المتوسطات (للأيام اللي اتسجلت): ${av.join('، ')}`);
+
+  const pe = PERIODS.map(([k, l]) => [l, avg(pick((d) => (has(d[`${k}e`]) ? +d[`${k}e`] : null)))]).filter(([, v]) => v != null);
+  if (pe.length) L.push(`متوسط الطاقة في كل فترة: ${pe.map(([l, v]) => `${l} ${v}/5`).join('، ')}`);
+
+  const habitDays = ds.filter((d) => HABITS.some(([k]) => has(d[k])));
+  if (habitDays.length) {
+    const cnt = HABITS.map(([k, l]) => [l, habitDays.filter((d) => d[k] === 2).length]).sort((a, b) => b[1] - a[1]);
+    L.push(`العادات (عدد أيام التمام من ${habitDays.length}): ${cnt.map(([l, n]) => `${l} ${n}`).join('، ')}`);
+  }
+
+  const wk = ds.reduce((a, d) => a + workTotal(d), 0);
+  const deep = ds.reduce((a, d) => a + (numOf(d.deep) || 0), 0);
+  if (wk || deep) {
+    const proj = {};
+    for (const d of ds) for (const r of workRows(d)) if (r.p) proj[r.p] = (proj[r.p] || 0) + r.h;
+    const top = Object.entries(proj).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    L.push(`الشغل: ${r1(wk)} ساعة${deep ? `، منهم تركيز عميق ${r1(deep)}` : ''}${top.length ? ` (${top.map(([p, h]) => `${clip(p, 40)} ${r1(h)}`).join('، ')})` : ''}`);
+  }
+
+  const money = moneySummary(on.map(([key, data]) => ({ key, data })), from, endKey);
+  if (money.spent || money.income) {
+    L.push(`الفلوس: صرف ${r1(money.spent)} جنيه${money.cats.length ? ` (${money.cats.map(([c, v]) => `${c} ${r1(v)}`).join('، ')})` : ''}، ودخل ${r1(money.income)}`);
+  }
+
+  const doneW = (tasks || []).filter((t) => t.done && t.dAt && keyOf(new Date(t.dAt)) >= from && keyOf(new Date(t.dAt)) <= endKey).length;
+  const lateNow = (tasks || []).filter((t) => !t.done && t.due && t.due < endKey).length;
+  const later = (tasks || []).filter((t) => !t.done && !t.due).length;
+  if (doneW || lateNow || later) L.push(`المهام: خلّص ${doneW} في الأسبوع، و${lateNow} متأخرة دلوقتي، و${later} مستنية من غير ميعاد`);
+
+  for (const m of (metrics || []).filter((x) => x.on !== false)) {
+    const vs = ds.map((d) => d.m?.[m.id]).filter(has);
+    if (!vs.length) continue;
+    if (m.t === 'tri') L.push(`مقياس ${m.n}: تم ${vs.filter((v) => +v === 2).length} أيام، وجزئي ${vs.filter((v) => +v === 1).length}`);
+    else if (m.t === 'count' || m.t === 'num') {
+      const ns = vs.map((v) => numOf(v)).filter((v) => v != null);
+      if (ns.length) L.push(`مقياس ${m.n}: المجموع ${r1(ns.reduce((a, b) => a + b, 0))}، والمتوسط ${avg(ns)}${m.u ? ` ${m.u}` : ''}`);
+    } else L.push(`مقياس ${m.n}: ${vs.slice(-3).map((v) => metricText(m, v)).join('، ')}`);
+  }
+
+  const posts = ds.filter((d) => has(d.post)).map((d) => clip(d.post, 80));
+  if (posts.length) L.push(`أجّل خلال الأسبوع: ${posts.join('، ')}`);
+  const decs = ds.filter((d) => d.decs || d.deci);
+  if (decs.length) {
+    const c = (k, v) => decs.filter((d) => d[k] === v).length;
+    L.push(`القرارات: ${c('decs', 'fast')} بسرعة و${c('decs', 'slow')} بعد تفكير، و${c('deci', 'part')} بمعلومات ناقصة`);
+  }
+  const tired = ds.filter((d) => has(d.tired)).length;
+  if (tired) L.push(`أيام فيها إرهاق غير معتاد: ${tired}`);
+  return L.join('\n');
+}
+
+/**
+ * نص التقرير → أجزاء للعرض: { h: عنوان } و { ul: [بنود] } و { p: فقرة }.
+ * العنوان = سطر قصير آخره ":". والبند = سطر أوله "-" أو "•". وأي ** أو # من الموديل بتتشال.
+ */
+export function reportBlocks(text) {
+  const out = [];
+  for (const raw of String(text ?? '').split(/\r?\n/)) {
+    const line = raw.replace(/\*\*/g, '').replace(/^#+\s*/, '').trim();
+    if (!line) continue;
+    const li = /^[-•*]\s+(.*)$/.exec(line);
+    if (li) {
+      const last = out[out.length - 1];
+      if (last?.ul) last.ul.push(li[1]);
+      else out.push({ ul: [li[1]] });
+    } else if (/[:：]$/.test(line) && line.length <= 40) out.push({ h: line.replace(/[:：]$/, '') });
+    else out.push({ p: line });
+  }
+  return out;
+}

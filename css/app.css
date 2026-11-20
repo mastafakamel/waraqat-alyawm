@@ -299,6 +299,13 @@ input[type="time"].fld { direction: ltr; text-align: right; }
 .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .note { margin: -6px 2px 0; font-size: 13px; color: var(--muted); }
 .note b { color: var(--ink); font-family: var(--disp); }
+/* تقرير الذكاء الاصطناعي */
+.airep { display: flex; flex-direction: column; gap: 6px; font-size: 15px; line-height: 1.75; }
+.airep h3 { margin: 8px 0 0; font-size: 13px; font-weight: 700; color: var(--amber); }
+.airep h3:first-child { margin-top: 0; }
+.airep p { margin: 0; }
+.airep ul { margin: 0; padding-inline-start: 20px; display: flex; flex-direction: column; gap: 4px; }
+.lr[aria-busy="true"] { opacity: .7; }
 
 .rate { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .rate button { height: 46px; border-radius: 12px; border: 1px solid var(--line); background: var(--surf); font: 700 16px var(--disp); color: var(--muted); }

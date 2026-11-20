@@ -114,3 +114,71 @@ grant execute on function public.put_docs(jsonb) to authenticated;
 3. **اقفل عمل الحسابات الجديدة** عشان محدش غيرك يقدر يعمل حساب في مشروعك: **Authentication ← Sign In / Providers**، اقفل **Allow new users to sign up**، و**Save**.
 
 لو المشروع ماتستخدمش أسبوع، Supabase بيوقفه. التطبيق بيكمّل شغال على الجهاز ويقول "المزامنة واقفة"، وبترجّعه بزرار **Resume** من الـ dashboard.
+
+## تقرير الذكاء الاصطناعي (Groq)
+
+في تبويبة اليوم، تحت "آخر اليوم": **تقرير اليوم** و**تقرير الأسبوع**. التطبيق بيجهّز ملخص اللي سجلته (من غير اسمك ولا إيميلك)، ودالة صغيرة على Supabase اسمها `report` بتبعته لـ Groq وترجّع التقرير. والتقرير بيتحفظ جوه اليوم، فبيتزامن بين الأجهزة.
+
+ليه Groq: الخطة المجانية بتاعته بتقول إنه مابيدرّبش على بياناتك، وفيها Zero Data Retention. أما Gemini المجاني فشروطه بتقول ماتبعتش بيانات شخصية.
+وليه دالة على السيرفر: مفتاح Groq لو اتحط في كود الموقع، أي حد يفتح الموقع ياخده.
+
+المزامنة لازم تكون شغالة الأول (القسم اللي فوق)، لأن الدالة بتعرفك من جلسة الدخول.
+
+### ١. مفتاح Groq
+1. [console.groq.com](https://console.groq.com) ← **API Keys** ← **Create API Key**. انسخه مرة واحدة واحفظه في password manager.
+   **ماتلزقوش في الشات ولا في أي ملف.** مكانه الوحيد Supabase (الخطوة ٤).
+2. **Settings ← Data Controls**: شغّل **Zero Data Retention**.
+
+### ٢. حد التقارير (SQL Editor ← New query ← الصق ← Run)
+
+```sql
+-- تقرير الذكاء الاصطناعي: عدّاد لكل مستخدم في اليوم (بتوقيت القاهرة)
+create table if not exists public.ai_usage (
+  user_id uuid not null references auth.users on delete cascade,
+  day date not null,
+  n int not null default 0,
+  primary key (user_id, day)
+);
+-- RLS شغال ومفيش ولا policy: محدش يقرا الجدول أو يعدّله مباشرة، الدالة اللي تحت بس
+alter table public.ai_usage enable row level security;
+
+-- بتزوّد العدّاد وترجّع فاضل كام، ولو الحد خلص بترجّع -1. الحد (٦ في اليوم) مكتوب هنا، فمحدش يقدر يغيّره من برّه
+create or replace function public.take_ai_quota()
+returns int language plpgsql security definer set search_path = public as $$
+declare
+  cap constant int := 6;
+  v int;
+begin
+  if auth.uid() is null then raise exception 'not signed in' using errcode = '42501'; end if;
+  insert into public.ai_usage (user_id, day, n)
+  values (auth.uid(), (now() at time zone 'Africa/Cairo')::date, 1)
+  on conflict (user_id, day) do update set n = public.ai_usage.n + 1
+  returning n into v;
+  return case when v > cap then -1 else cap - v end;
+end $$;
+revoke execute on function public.take_ai_quota() from public, anon;
+grant execute on function public.take_ai_quota() to authenticated;
+```
+
+### ٣. الدالة
+1. **Edge Functions ← Deploy a new function ← Via Editor**.
+2. الاسم بالظبط: `report`. امسح الكود اللي فيها، والصق كل اللي في [`supabase/functions/report/index.ts`](supabase/functions/report/index.ts)، ودوس **Deploy**.
+3. من صفحة الدالة: اقفل **Verify JWT** واحفظ. الدالة بتتأكد من الجلسة بنفسها (`take_ai_quota` بترفض أي حد مش داخل)، والتحقق ده لو فضل شغال ممكن يرفض طلبات المتصفح.
+
+محرر الـ dashboard مفيهوش تاريخ نسخ، فالنسخة الأصلية هي اللي في الريبو. ولو الملف اتعدّل، الصقه تاني و**Deploy**.
+
+### ٤. المفتاح في Supabase
+**Edge Functions ← Secrets ← Add new secret**: الاسم `GROQ_API_KEY`، والقيمة مفتاح Groq ← **Save**.
+
+اختياري: `GROQ_MODEL` لو عايز موديل غير `openai/gpt-oss-120b`. Groq بيشيل موديلات من وقت للتاني، ولو ده حصل التطبيق هيقولك "الموديل ده مابقاش موجود"، فتغيّر القيمة دي بس. الموديلات المتاحة في [console.groq.com/docs/models](https://console.groq.com/docs/models).
+
+### ٥. جرّب
+الطلب ده بيسأل الدالة: "هتقبل طلبات من موقعي؟" (preflight):
+
+```powershell
+curl.exe -i -X OPTIONS https://omeswcfoouwyqodjhhrk.supabase.co/functions/v1/report -H "Origin: https://mastafakamel.github.io"
+```
+
+المفروض أول سطر فيه `200`، وتحت `access-control-allow-origin: https://mastafakamel.github.io`. وبعدها من التطبيق: **اليوم ← تقرير اليوم**.
+
+**الحدود:** ٦ تقارير في اليوم من الـ SQL (والتقرير اللي بيفشل من Groq بيتحسب برضه، عشان أي غلطة بتكرر الطلب ماتعدّيش الحد). ولو Groq نفسه وصل حده المجاني، بيرجّع 429 من غير أي فلوس، والتطبيق بيقول "جرّب كمان دقيقة".
