@@ -14,7 +14,11 @@ export const state = {
   periods: [], // الفترات: { id, from, to }
   tab: 'day',
   status: 'loading', // loading | saving | saved | memory
+  sync: 'off', // off | signedout | busy | ok | offline | error | capped (sync.js)
 };
+
+// main.js بيربط هنا: بعد أي حفظ، المزامنة تعرف إن فيه جديد ترفعه
+export const hooks = { saved: null };
 
 const listeners = new Set();
 export function subscribe(fn) {
@@ -56,6 +60,7 @@ export function flush() {
       await putDoc({ id, data: structuredClone(data), updatedAt: Date.now(), dirty: 1 });
     }
     if (!pending.size) setStatus(isMemoryOnly() ? 'memory' : 'saved');
+    hooks.saved?.();
   });
   return flushing;
 }

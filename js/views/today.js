@@ -48,11 +48,17 @@ function dayOfPeriod(s) {
   return d ? `، يوم ${fmtNum(d.n)} من ${fmtNum(d.of)}` : '';
 }
 /** حالة الحفظ بتتغيّر كتير، فبتتكتب كنص من غير ما الهيدر يترسم من جديد. */
+// بعد الحفظ على الجهاز، الكلام بيقول المزامنة وصلت لفين
+const SYNC_TEXT = {
+  ok: 'اتحفظ ✓', busy: 'بيزامن…', offline: 'مستني النت', error: 'المزامنة واقفة', capped: 'المزامنة واقفة',
+};
 export function updateStatus(root, s) {
   const el = root.querySelector('[data-out="saved"]');
   if (!el) return;
-  el.textContent = STATUS[s.status] || '';
-  el.classList.toggle('busy', s.status === 'saving');
+  const local = s.status === 'saving' || s.status === 'loading' || s.status === 'memory';
+  el.textContent = local ? STATUS[s.status] : SYNC_TEXT[s.sync] || STATUS.saved;
+  el.classList.toggle('busy', s.status === 'saving' || (!local && s.sync === 'busy'));
+  el.classList.toggle('warn', !local && (s.sync === 'error' || s.sync === 'capped'));
 }
 
 // ---------- قطع بتتستخدم في الشاشات اللي بتطلع من تحت كمان ----------

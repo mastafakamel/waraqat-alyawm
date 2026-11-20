@@ -2,8 +2,12 @@
 
 import {
   state, subscribe, loadDay, setK, setKOn, flush, loadLists, refreshToday, addIdea, addTask, getDayData,
-  patchItem, removeItem, restoreItem, allDays, setMetric, addItem, saveList,
+  patchItem, removeItem, restoreItem, allDays, setMetric, addItem, saveList, hooks,
 } from './store.js';
+import { exportFile, importFile } from './backup.js';
+import {
+  configured, info as syncInfo, initSync, schedule, syncNow, sendCode, verifyCode, signOut,
+} from './sync.js';
 import { askPersist, getDoc } from './db.js';
 import {
   addDays, cycleTri, rateTap, readNumber, toEn, parseExpense, fmtNum, missingStars, EXP_CATS, lineTarget, mergeLine,
@@ -27,7 +31,9 @@ const ui = {
   mf: null, // فورم المقياس المفتوح: { id?, n, t, u, a, w, newArea }
   mfFrom: null, // 'settings' لو الفورم اتفتح من الإعدادات، عشان نرجعلها بعد الحفظ
   pedit: false, // تعديل تواريخ الفترة مفتوح
+  sf: { step: 'email', email: '' }, // دخول المزامنة: الإيميل وبعدين الكود
 };
+const sx = () => ({ configured: configured(), ...syncInfo }); // حالة المزامنة لكارت الإعدادات
 const DRAFTS = ['taskin', 'ideain', 'iq', 'mamt', 'mdesc', 'linein'];
 
 // ?theme=light أو ?theme=dark للتجربة، وغير كده بيمشي مع إعداد الموبايل
@@ -77,7 +83,7 @@ function render() {
   if (sh) {
     syncFields(sh, state.day);
     updateOutputs(sh, state);
-    updateSettings(sh, state, ui);
+    updateSettings(sh, state, ui, sx());
     if (ui.mf) updateMetricForm(sh, ui.mf, state);
   }
 }
@@ -273,7 +279,7 @@ function openSettings() {
   ui.mfFrom = null;
   ui.pedit = false;
   openSheet(settingsSheet());
-  updateSettings(sheetEl(), state, ui);
+  updateSettings(sheetEl(), state, ui, sx());
 }
 
 /** فورم مقياس: من غير id = جديد، ومع id = تعديل. */
@@ -344,6 +350,62 @@ function editPeriodDate(el) {
     return;
   }
   patchItem('periods', cur.id, next);
+}
+
+// ---------- النسخة الاحتياطية ----------
+async function doExport() {
+  try {
+    const r = await exportFile();
+    if (r.how === 'download') toast(`اتنزّل ملف فيه ${fmtNum(r.count)} مستند`);
+    else if (r.how === 'share') toast('اتعمل الملف');
+  } catch {
+    toast('التصدير ماشتغلش، جرّب تاني');
+  }
+}
+async function doImport(input) {
+  const file = input.files?.[0];
+  input.value = ''; // عشان لو اخترت نفس الملف تاني يشتغل
+  if (!file) return;
+  try {
+    const r = await importFile(file);
+    // العدد بالعربي: يوم واحد، يومين، ٣ أيام، ١١ يوم
+    const count = (n, one, two, few, many) => (n === 1 ? one : n === 2 ? two : `${fmtNum(n)} ${n <= 10 ? few : many}`);
+    const parts = [];
+    if (r.days) parts.push(count(r.days, 'يوم واحد', 'يومين', 'أيام', 'يوم'));
+    if (r.lists) parts.push(count(r.lists, 'قايمة واحدة', 'قايمتين', 'قوايم', 'قايمة'));
+    toast(parts.length ? `اتدمج: ${parts.join(' و')}` : 'مفيش جديد في الملف، كل اللي فيه موجود عندك');
+  } catch (e) {
+    toast(e.message || 'الاستيراد ماشتغلش');
+  }
+}
+
+// ---------- دخول المزامنة ----------
+const SYNC_ERR = (e) => (e.status === 429 ? 'استنى شوية وجرّب تاني (فيه حد لعدد الإيميلات)' : e instanceof TypeError ? 'مفيش نت' : 'حصلت مشكلة، جرّب تاني');
+async function askCode(email) {
+  const v = (email || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return toast('اكتب إيميل صحيح');
+  try {
+    await sendCode(v);
+    ui.sf = { step: 'code', email: v };
+    updateSettings(sheetEl(), state, ui, sx());
+    sheetEl()?.querySelector('[data-role="scode"]')?.focus();
+    return toast('بعتنا الكود على إيميلك');
+  } catch (e) {
+    return toast(SYNC_ERR(e));
+  }
+}
+async function submitCode(form) {
+  const code = toEn(form.querySelector('[data-role="scode"]').value).replace(/\D/g, '');
+  if (code.length !== 6) return toast('الكود ٦ أرقام');
+  try {
+    toast('بيدخل…');
+    await verifyCode(ui.sf.email, code);
+    ui.sf = { step: 'email', email: '' };
+    updateSettings(sheetEl(), state, ui, sx());
+    return toast('دخلت ✓، والمزامنة شغالة');
+  } catch (e) {
+    return toast(e.status === 401 || e.status === 403 || e.status === 400 ? 'الكود غلط أو خلص، اطلب واحد جديد' : SYNC_ERR(e));
+  }
 }
 
 // ---------- التنقل ----------
@@ -472,13 +534,25 @@ document.addEventListener('click', async (e) => {
     case 'mdel': return deleteMetric();
     // الفترة
     case 'pnew': return startPeriod();
-    case 'pedit': ui.pedit = !ui.pedit; return updateSettings(sheetEl(), state, ui);
+    case 'pedit': ui.pedit = !ui.pedit; return updateSettings(sheetEl(), state, ui, sx());
+    // النسخة الاحتياطية
+    case 'export': return doExport();
+    case 'import': return sheetEl()?.querySelector('[data-role="importfile"]').click();
+    // المزامنة
+    case 'sback': ui.sf.step = 'email'; return updateSettings(sheetEl(), state, ui, sx());
+    case 'sresend': return askCode(ui.sf.email);
+    case 'ssync': return syncNow();
+    case 'sout':
+      await signOut();
+      return toast('خرجت. بياناتك لسه على الجهاز ده');
     default: return undefined;
   }
 });
 
 const FORMS = {
   addexp: addExpense, quick: handleQuick, addtask: addTaskFromForm, addidea: addIdeaFromForm, addmoney: addMoney, addline: addLine,
+  semail: (f) => askCode(f.querySelector('[data-role="semail"]').value),
+  scode: submitCode,
 };
 document.addEventListener('submit', (e) => {
   const fn = FORMS[e.target.dataset.act];
@@ -541,6 +615,10 @@ document.addEventListener('input', (e) => {
     ui.mf[{ mname: 'n', munit: 'u', marea: 'a' }[role]] = el.value;
     return updateMetricForm(sheetEl(), ui.mf, state);
   }
+  if (role === 'semail') {
+    ui.sf.email = el.value;
+    return undefined;
+  }
   if (el.dataset.m) { // قيمة مقياس من شاشته
     const v = el.dataset.type === 'num' ? readNumber(el.value) : el.value;
     return setMetric(el.dataset.m, typeof v === 'string' && !v.trim() ? '' : v);
@@ -563,6 +641,7 @@ document.addEventListener('input', (e) => {
 document.addEventListener('change', (e) => {
   const role = e.target.dataset?.role;
   if (role === 'pfrom' || role === 'pto') editPeriodDate(e.target);
+  if (role === 'importfile') doImport(e.target);
 });
 
 document.addEventListener('keydown', (e) => {
@@ -599,4 +678,6 @@ $('#dock').innerHTML = dockHtml();
   await askPersist();
   await loadLists();
   await loadDay(state.today);
+  hooks.saved = () => schedule(); // بعد أي حفظ بـ ٣ ثواني بيرفع الجديد
+  await initSync();
 })();

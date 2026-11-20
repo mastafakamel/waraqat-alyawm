@@ -2,7 +2,7 @@
 
 import {
   METRIC_TYPES, METRIC_WHEN, metricAreas, metricVisible, groupMetrics, metricDesc, metricValue,
-  periodOf, periodDay, periodLabel, fmtNum,
+  periodOf, periodDay, periodLabel, fmtNum, fmt12,
 } from '../logic.js';
 import { esc, ic, P, setHtml } from '../ui.js';
 
@@ -125,14 +125,54 @@ export function settingsSheet() {
         <div class="blk-h"><h3>مقاييسي</h3><button class="addb" type="button" data-act="mform">${ic(P.plus)}مقياس</button></div>
         <p class="hint">الـ ★ أساسي وثابت. الباقي إنت ضايفه: اقفله يختفي من اليوم وأرقامه القديمة تفضل، أو دوس عليه تعدّله.</p>
         <div class="blk" data-out="smetrics"></div>
-      </section>`,
+      </section>
+      <section class="blk" aria-label="نسخة احتياطية"><h3 class="blk-h">نسخة احتياطية</h3>
+        <div class="card"><div class="pad"><span>ملف فيه كل بياناتك. احفظه في Drive أو ابعته لنفسك. والاستيراد بيدمج ومابيمسحش حاجة.</span>
+          <div class="btns"><button type="button" data-act="export">تصدير JSON</button><button type="button" data-act="import">استيراد JSON</button></div>
+          <input type="file" accept="application/json,.json" data-role="importfile" hidden></div></div>
+      </section>
+      <section class="blk" aria-label="المزامنة"><h3 class="blk-h">المزامنة</h3><div class="card" data-out="ssync"></div></section>`,
     foot: '<button class="b-pri" type="button" data-close>تمام</button>',
   };
 }
 
-export function updateSettings(root, s, ui) {
+/** كارت المزامنة. sx = { configured, email, last, error } من sync.js */
+function syncCard(s, ui, sx) {
+  if (!sx.configured) {
+    return `<div class="pad"><b>مش متظبطة لسه</b><span>كل حاجة محفوظة على الجهاز ده بس. المزامنة بين الموبايل واللابتوب محتاجة مشروع Supabase (الخطوات في README).</span></div>`;
+  }
+  if (s.sync === 'signedout' || s.sync === 'off') {
+    if (ui.sf.step === 'code') {
+      return `<div class="pad"><b>اكتب الكود</b><span>بعتنا كود من ٦ أرقام لـ <bdi>${esc(ui.sf.email)}</bdi>. لو مالقيتهوش، بص في الـ Spam.</span>
+        <form class="addrow" data-act="scode" style="margin-top:10px">
+          <input class="fld" data-role="scode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="الكود" aria-label="الكود" dir="ltr">
+          <button class="b-pri sbtn" type="submit">دخول</button></form>
+        <div class="btns"><button type="button" data-act="sback">غيّر الإيميل</button><button type="button" data-act="sresend">ابعت كود تاني</button></div></div>`;
+    }
+    return `<div class="pad"><b>مش مسجّل دخول</b><span>كل حاجة محفوظة على الجهاز ده بس. ادخل بإيميلك على الموبايل واللابتوب، والاتنين هيبقوا نفس البيانات.</span>
+      <form class="addrow" data-act="semail" style="margin-top:10px">
+        <input class="fld" type="email" data-role="semail" inputmode="email" autocomplete="email" placeholder="إيميلك" aria-label="إيميلك" dir="ltr">
+        <button class="b-pri sbtn" type="submit">ابعت الكود</button></form></div>`;
+  }
+  const at = sx.last ? fmt12(new Date(sx.last).toTimeString().slice(0, 5)) : '';
+  const line = {
+    ok: at ? `آخر مزامنة الساعة ${at}.` : 'متزامن.',
+    busy: 'بيزامن دلوقتي…',
+    offline: 'مستني النت. كل حاجة محفوظة على الجهاز، وهتترفع لوحدها أول ما النت يرجع.',
+    capped: 'وقفت النهارده عشان وصلت للحد اللي في الكود، وهترجع بكرة لوحدها. بياناتك محفوظة على الجهاز.',
+    error: `المزامنة واقفة (${esc(sx.error)}). لو المشروع اتوقف من قلة الاستخدام، رجّعه من Supabase بزرار Resume.`,
+  }[s.sync] || '';
+  return `<div class="pad"><b>داخل بـ <bdi>${esc(sx.email)}</bdi></b><span>${line}</span>
+    <div class="btns"><button type="button" data-act="ssync">زامن دلوقتي</button><button type="button" data-act="sout">اخرج</button></div></div>`;
+}
+
+export function updateSettings(root, s, ui, sx = { configured: false }) {
   const sp = root?.querySelector('[data-out="speriod"]');
   if (!sp) return;
+  setHtml(root.querySelector('[data-out="ssync"]'), syncCard(s, ui, sx));
+  // الإيميل اللي بتكتبه مش جوه الـ HTML، عشان الكارت مايترسمش من جديد مع كل حرف. فبنرجّعه لو الكارت اترسم
+  const em = root.querySelector('[data-role="semail"]');
+  if (em && em !== document.activeElement && !em.value) em.value = ui.sf.email || '';
   const cur = periodOf(s.periods, s.today);
   if (cur) {
     const d = periodDay(cur, s.today);

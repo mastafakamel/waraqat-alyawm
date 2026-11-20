@@ -7,6 +7,7 @@ import {
   habitsDone, workTotal, expTotal, expByCat, dayRel, lineTarget, uid,
   groupTasks, isOverdue, sortIdeas, searchIdeas, normAr, shortDate, moneySummary, longDate, periodPhase,
   periodOf, periodDay, newPeriod, periodLabel, summaryStart, metricVisible, groupMetrics, metricDesc, metricValue, metricAreas,
+  mergeDoc, parseBackup, takeRemote, useQuota,
 } from '../js/logic.js';
 
 test('الأرقام العربي والإنجليزي بتتحول قبل الحفظ', () => {
@@ -237,4 +238,45 @@ test('مقاييسي: يبان إمتى، والتجميع بالمجال، وا
   assert.equal(metricValue({ t: 'num' }, 78.4), '٧٨٫٤');
   assert.equal(metricValue({ t: 'tri' }, 2), 'تم');
   assert.equal(metricValue({ t: 'time' }, '13:30'), '١٣:٣٠');
+});
+
+test('الاستيراد بيدمج ومابيمسحش: الأيام بالمفاتيح، والقوايم بالـ id، والأحدث يكسب', () => {
+  const local = { updatedAt: 200, data: { mood: 4, post: 'محلي', m: { a: 1 } } };
+  const older = { updatedAt: 100, data: { mood: 2, top: 'من الملف', m: { a: 9, b: 3 } } };
+  const r1 = mergeDoc('day/2026-11-20', local, older);
+  assert.deepEqual(r1.data, { mood: 4, post: 'محلي', top: 'من الملف', m: { a: 1, b: 3 } }); // المحلي أحدث: مفاتيحه تكسب
+  assert.equal(r1.changed, true);
+  const newer = { updatedAt: 300, data: { mood: 5, m: { a: 7 } } };
+  assert.deepEqual(mergeDoc('day/2026-11-20', local, newer).data, { mood: 5, post: 'محلي', m: { a: 7 } });
+  assert.deepEqual(mergeDoc('day/2026-11-20', null, older), { data: older.data, changed: true });
+  assert.equal(mergeDoc('day/2026-11-20', local, { data: null }), null);
+  assert.equal(mergeDoc('day/2026-11-20', local, { updatedAt: 1, data: { mood: 1 } }).changed, false); // مفيش جديد
+  const lt = { updatedAt: 200, data: { items: [{ id: 'x', t: 'محلي' }, { id: 'y', t: 'واي' }] } };
+  const it = { updatedAt: 300, data: { items: [{ id: 'x', t: 'من الملف' }, { id: 'z', t: 'جديد' }] } };
+  assert.deepEqual(mergeDoc('list/tasks', lt, it).data.items.map((x) => `${x.id}:${x.t}`), ['x:من الملف', 'y:واي', 'z:جديد']);
+});
+
+test('ملف النسخة الاحتياطية: بيقبل ملفنا بس، وبيشيل أي مستند غريب', () => {
+  const ok = JSON.stringify({ app: 'waraqat-alyawm', v: 1, docs: [
+    { id: 'day/2026-11-20', data: { mood: 4 }, updatedAt: 1 },
+    { id: 'list/tasks', data: { items: [] }, updatedAt: 1 },
+    { id: 'local/session', data: { token: 'x' } }, // ده مايتستوردش أبداً
+    { id: 'day/../x', data: {} },
+  ] });
+  assert.deepEqual(parseBackup(ok).map((d) => d.id), ['day/2026-11-20', 'list/tasks']);
+  assert.throws(() => parseBackup('مش json'), /مش JSON/);
+  assert.throws(() => parseBackup('{"docs":[]}'), /مش نسخة/);
+});
+
+test('المزامنة: الأحدث يكسب، وحد الاستخدام في اليوم', () => {
+  assert.equal(takeRemote(null, { updated_at: 5 }), true);
+  assert.equal(takeRemote({ updatedAt: 10 }, { updated_at: 5 }), false);
+  assert.equal(takeRemote({ updatedAt: 10 }, { updated_at: 11 }), true);
+  let q = useQuota(undefined, '2026-11-20', 2);
+  assert.deepEqual(q, { ok: true, meta: { day: '2026-11-20', n: 1 } });
+  q = useQuota(q.meta, '2026-11-20', 2);
+  assert.equal(q.ok, true);
+  q = useQuota(q.meta, '2026-11-20', 2);
+  assert.equal(q.ok, false); // وصل للحد
+  assert.deepEqual(useQuota(q.meta, '2026-11-21', 2), { ok: true, meta: { day: '2026-11-21', n: 1 } }); // يوم جديد
 });

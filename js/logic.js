@@ -356,6 +356,71 @@ export function moneySummary(days, from, to) {
   return { spent, income, cats: Object.entries(by).sort((a, b) => b[1] - a[1]) };
 }
 
+// ---------- النسخة الاحتياطية والمزامنة ----------
+export const BACKUP_APP = 'waraqat-alyawm';
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * الاستيراد بيدمج ومابيمسحش حاجة. local وincoming: { data, updatedAt } (أو null).
+ * - القوايم (list/…): كل العناصر من الاتنين بالـ id. ولو نفس العنصر في الاتنين، بتاع المستند الأحدث هو اللي بيكسب.
+ * - الأيام: كل المفاتيح من الاتنين. ولو نفس المفتاح في الاتنين، الأحدث هو اللي بيكسب. ونفس الكلام جوه m (قيم المقاييس).
+ * بيرجّع { data, changed }، أو null لو الملف مفيهوش بيانات للمستند ده.
+ */
+export function mergeDoc(id, local, incoming) {
+  if (!incoming?.data || typeof incoming.data !== 'object') return null;
+  if (!local?.data) return { data: incoming.data, changed: true };
+  const newer = (incoming.updatedAt || 0) > (local.updatedAt || 0);
+  let data;
+  if (id.startsWith('list/')) {
+    const items = [...(local.data.items || [])];
+    for (const it of incoming.data.items || []) {
+      const i = items.findIndex((x) => String(x.id) === String(it.id));
+      if (i < 0) items.push(it);
+      else if (newer) items[i] = it;
+    }
+    data = { ...local.data, items };
+  } else {
+    data = { ...local.data };
+    for (const [k, v] of Object.entries(incoming.data)) {
+      if (k === 'm' && v && typeof v === 'object' && data.m && typeof data.m === 'object') {
+        data.m = newer ? { ...data.m, ...v } : { ...v, ...data.m };
+      } else if (!(k in data) || newer) {
+        data[k] = v;
+      }
+    }
+  }
+  return { data, changed: !same(data, local.data) };
+}
+
+/** بيقرا ملف النسخة الاحتياطية، ولو مش ملفنا بيرمي رسالة مفهومة. */
+export function parseBackup(text) {
+  let j;
+  try {
+    j = JSON.parse(text);
+  } catch {
+    throw new Error('الملف ده مش JSON');
+  }
+  if (!j || j.app !== BACKUP_APP || !Array.isArray(j.docs)) throw new Error('الملف ده مش نسخة من ورقة اليوم');
+  const ok = (d) => d && typeof d.id === 'string' && /^(day\/\d{4}-\d{2}-\d{2}|list\/(tasks|ideas|metrics|periods))$/.test(d.id) && d.data && typeof d.data === 'object';
+  return j.docs.filter(ok);
+}
+
+/** المزامنة: آخر تعديل بيكسب على مستوى المستند كله. ناخد اللي على السيرفر لو مش عندنا أو أحدث. */
+export function takeRemote(local, remote) {
+  return !local || (+remote.updated_at || 0) > (+local.updatedAt || 0);
+}
+
+/**
+ * حد للاستخدام في الكود عشان الخطة المجانية: عدد طلبات المزامنة في اليوم.
+ * meta = { day, n }. بيرجّع { ok, meta } والـ meta الجديدة اللي تتحفظ.
+ */
+export function useQuota(meta, today, cap) {
+  const m = meta?.day === today ? { ...meta } : { day: today, n: 0 };
+  if (m.n >= cap) return { ok: false, meta: m };
+  m.n += 1;
+  return { ok: true, meta: m };
+}
+
 /** "سطر لليوم": لو فيه كلام قبل كده، الجديد بيتضاف بعده بفاصل " · ". */
 export function mergeLine(old, line) {
   return has(old) ? `${old} · ${line}` : line;
