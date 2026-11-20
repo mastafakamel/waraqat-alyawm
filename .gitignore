@@ -1,0 +1,9 @@
+# الريبو عام (GitHub Pages)، فالملفات الشخصية بتفضل على الجهاز بس
+WORKLOG.md
+PLAN.md
+DESIGN.md
+designs/
+
+# إعدادات الأدوات على الجهاز
+.claude/
+__pycache__/
