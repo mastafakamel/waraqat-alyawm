@@ -2,13 +2,14 @@
 //
 // ترتيب تبويبة اليوم (التصميم "ج: خط اليوم"):
 //   شريط ٤ أرقام ← المزاج والفترات الأربعة (والفترة اللي إنت فيها بتكتب فيها على طول) ← العادات صف بيتسحب
-//   ← الصلوات ← آخر اليوم (أجّلت إيه وأهم حاجة) ← مهام النهارده
+//   ← الصلوات ← آخر اليوم (أجّلت إيه وأهم حاجة) ← مهام النهارده ← مقاييسي ← "قيس حاجة جديدة" و"الإعدادات"
 
 import {
   HABITS, PERIODS, dateTitle, dayRel, starState, starCount, fmtNum, arDigits, sleepMinutes, fmtHM,
-  habitsDone, workTotal, expTotal, todayTasks, groupTasks, has, periodPhase,
+  habitsDone, workTotal, expTotal, todayTasks, groupTasks, has, periodPhase, periodOf, periodDay,
 } from '../logic.js';
 import { esc, ic, P } from '../ui.js';
+import { metricsSection } from './metrics.js';
 
 const STATUS = { loading: 'بيحمّل…', saving: 'بيحفظ…', saved: 'محفوظ على الجهاز', memory: 'مش بيتحفظ على الجهاز!' };
 
@@ -36,10 +37,15 @@ export function renderHeader(s) {
       <button class="navb" type="button" data-act="next" aria-label="اليوم اللي بعده">${ic(P.next)}</button>
     </div>
     <div class="top-r2">
-      <span class="chip-day">${dayRel(s.cur, s.today)}</span>
+      <span class="chip-day">${dayRel(s.cur, s.today)}${dayOfPeriod(s)}</span>
       ${star}
       <span class="saved" data-out="saved"></span>
     </div>`;
+}
+/** "، يوم ٣ من ١١" لو اليوم المفتوح جوه فترة. */
+function dayOfPeriod(s) {
+  const d = periodDay(periodOf(s.periods, s.cur), s.cur);
+  return d ? `، يوم ${fmtNum(d.n)} من ${fmtNum(d.of)}` : '';
 }
 /** حالة الحفظ بتتغيّر كتير، فبتتكتب كنص من غير ما الهيدر يترسم من جديد. */
 export function updateStatus(root, s) {
@@ -164,7 +170,8 @@ export function renderToday(s) {
     ${timeline(s, ok)}
     ${habitPills(s, ok)}
     ${endOfDay(s)}
-    ${tasksToday(s)}`;
+    ${tasksToday(s)}
+    ${metricsSection(s)}`;
 }
 
 export function renderTabs(s) {

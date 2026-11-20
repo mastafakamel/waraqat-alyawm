@@ -2,11 +2,12 @@
 
 import {
   state, subscribe, loadDay, setK, setKOn, flush, loadLists, refreshToday, addIdea, addTask, getDayData,
-  patchItem, removeItem, restoreItem, allDays,
+  patchItem, removeItem, restoreItem, allDays, setMetric, addItem, saveList,
 } from './store.js';
 import { askPersist, getDoc } from './db.js';
 import {
   addDays, cycleTri, rateTap, readNumber, toEn, parseExpense, fmtNum, missingStars, EXP_CATS, lineTarget, mergeLine,
+  uid, newPeriod, periodOf, periodLabel, AREAS,
 } from './logic.js';
 import { $, $$, esc, openSheet, requestClose, isSheetOpen, sheetEl, syncFields, toast, setHtml } from './ui.js';
 import { renderHeader, updateStatus, renderToday, renderTabs } from './views/today.js';
@@ -15,11 +16,17 @@ import { dockHtml, updateDock } from './views/dock.js';
 import { tasksShell, updateTasks } from './views/tasks.js';
 import { ideasShell, updateIdeas } from './views/ideas.js';
 import { moneyShell, updateMoney } from './views/money.js';
+import {
+  SUGGEST, metricSheet, metricForm, updateMetricForm, settingsSheet, updateSettings,
+} from './views/metrics.js';
 
 // حالة الواجهة بس (مش بتتحفظ). drafts = اللي اتكتب في خانات الإضافة ولسه ماتحفظش، عشان مايضيعش لو غيّرت التبويبة.
 const ui = {
   cat: EXP_CATS[0], guide: null, qmode: 'idea', qmenu: false, qcat: EXP_CATS[0],
   tpri: false, twhen: 'today', icat: 'تاني', drafts: {},
+  mf: null, // فورم المقياس المفتوح: { id?, n, t, u, a, w, newArea }
+  mfFrom: null, // 'settings' لو الفورم اتفتح من الإعدادات، عشان نرجعلها بعد الحفظ
+  pedit: false, // تعديل تواريخ الفترة مفتوح
 };
 const DRAFTS = ['taskin', 'ideain', 'iq', 'mamt', 'mdesc', 'linein'];
 
@@ -70,6 +77,8 @@ function render() {
   if (sh) {
     syncFields(sh, state.day);
     updateOutputs(sh, state);
+    updateSettings(sh, state, ui);
+    if (ui.mf) updateMetricForm(sh, ui.mf, state);
   }
 }
 subscribe(render);
@@ -256,6 +265,87 @@ function addIdeaFromForm(form) {
   return toast('الفكرة اتحفظت');
 }
 
+// ---------- مقاييسي والإعدادات ----------
+const findMetric = (id) => state.metrics.find((x) => String(x.id) === String(id));
+
+function openSettings() {
+  ui.mf = null;
+  ui.mfFrom = null;
+  ui.pedit = false;
+  openSheet(settingsSheet());
+  updateSettings(sheetEl(), state, ui);
+}
+
+/** فورم مقياس: من غير id = جديد، ومع id = تعديل. */
+function openMetricForm(id) {
+  const m = id ? findMetric(id) : null;
+  ui.mfFrom = sheetEl()?.querySelector('[data-out="speriod"]') ? 'settings' : null;
+  ui.mf = m
+    ? { id: m.id, n: m.n, t: m.t, u: m.u || '', a: m.a, w: m.w || 'day', newArea: false }
+    : { n: '', t: 'count', u: '', a: AREAS[0], w: 'day', newArea: false };
+  openSheet({ ...metricForm(ui.mf, state), onClose: () => { ui.mf = null; } });
+  updateMetricForm(sheetEl(), ui.mf, state);
+}
+
+function afterMetricForm() {
+  if (ui.mfFrom === 'settings') openSettings();
+  else requestClose();
+}
+
+function saveMetric() {
+  const f = ui.mf;
+  const n = f.n.trim();
+  if (!n) {
+    toast('اكتب اسم المقياس');
+    return sheetEl()?.querySelector('[data-role="mname"]').focus();
+  }
+  const a = f.a.trim() || AREAS[0];
+  const u = f.t === 'count' || f.t === 'num' ? f.u.trim() : '';
+  if (f.id) {
+    patchItem('metrics', f.id, { n, t: f.t, u: u || undefined, a, w: f.w });
+    toast('اتحفظ التعديل');
+  } else {
+    addItem('metrics', { id: uid(), n, t: f.t, ...(u ? { u } : {}), a, w: f.w, on: true, at: Date.now() });
+    toast(`اتضاف "${n}" لمقاييسي`);
+  }
+  return afterMetricForm();
+}
+
+function deleteMetric() {
+  const r = removeItem('metrics', ui.mf.id);
+  afterMetricForm();
+  // الأرقام اللي اتسجلت قبل كده بتفضل في الأيام، و"رجّع" بيرجّع المقياس نفسه
+  if (r) toast(`اتمسح "${r.item.n}"`, 'رجّع', () => restoreItem('metrics', r));
+}
+
+/** فترة جديدة من النهارده (١١ يوم). لو فيه فترة شغالة بتخلص امبارح. */
+function startPeriod() {
+  refreshToday();
+  const before = structuredClone(state.periods);
+  const cur = periodOf(state.periods, state.today);
+  if (cur && cur.from === state.today) return toast('فيه فترة بادئة النهارده بالفعل');
+  if (cur) patchItem('periods', cur.id, { to: addDays(state.today, -1) });
+  const p = newPeriod(state.today);
+  addItem('periods', p);
+  return toast(`بدأت فترة: ${periodLabel(p)}`, 'رجّع', () => {
+    state.periods = before;
+    saveList('periods');
+  });
+}
+
+function editPeriodDate(el) {
+  const cur = periodOf(state.periods, state.today);
+  if (!cur || !el.value) return;
+  const key = el.dataset.role === 'pfrom' ? 'from' : 'to';
+  const next = { from: cur.from, to: cur.to, [key]: el.value };
+  if (next.from > next.to) {
+    toast('تاريخ البداية لازم يبقى قبل النهاية');
+    el.value = cur[key];
+    return;
+  }
+  patchItem('periods', cur.id, next);
+}
+
 // ---------- التنقل ----------
 async function go(n) {
   await loadDay(addDays(state.cur, n)); // loadDay بيحفظ اللي مستني الأول
@@ -343,6 +433,46 @@ document.addEventListener('click', async (e) => {
       return it && patchItem('ideas', id, { pin: !it.pin });
     }
     case 'idel': return deleteItem('ideas', id);
+    // مقاييسي
+    case 'mplus': return setMetric(id, (+(state.day.m?.[id]) || 0) + 1);
+    case 'mtri': return setMetric(id, cycleTri(state.day.m?.[id]) || '');
+    case 'medit': {
+      const m = findMetric(id);
+      if (!m) return undefined;
+      openSheet(metricSheet(m));
+      return syncFields(sheetEl(), state.day);
+    }
+    case 'settings': return openSettings();
+    case 'mform': return openMetricForm(id);
+    case 'mtoggle': {
+      const m = findMetric(id);
+      return m && patchItem('metrics', id, { on: !m.on });
+    }
+    case 'msugg': {
+      const x = SUGGEST[+b.dataset.i];
+      Object.assign(ui.mf, { n: x.n, t: x.t, u: x.u, a: x.a, w: x.w, newArea: false });
+      const sh = sheetEl();
+      sh.querySelector('[data-role="mname"]').value = x.n;
+      sh.querySelector('[data-role="munit"]').value = x.u;
+      return updateMetricForm(sh, ui.mf, state);
+    }
+    case 'mtype': ui.mf.t = b.dataset.v; return updateMetricForm(sheetEl(), ui.mf, state);
+    case 'mwhen': ui.mf.w = b.dataset.v; return updateMetricForm(sheetEl(), ui.mf, state);
+    case 'marea':
+      Object.assign(ui.mf, { a: b.dataset.v, newArea: false });
+      return updateMetricForm(sheetEl(), ui.mf, state);
+    case 'mareanew': {
+      Object.assign(ui.mf, { newArea: true, a: '' });
+      updateMetricForm(sheetEl(), ui.mf, state);
+      const inp = sheetEl().querySelector('[data-role="marea"]');
+      inp.value = '';
+      return inp.focus();
+    }
+    case 'msave': return saveMetric();
+    case 'mdel': return deleteMetric();
+    // الفترة
+    case 'pnew': return startPeriod();
+    case 'pedit': ui.pedit = !ui.pedit; return updateSettings(sheetEl(), state, ui);
     default: return undefined;
   }
 });
@@ -407,6 +537,14 @@ document.addEventListener('input', (e) => {
   const role = el.dataset.role;
   if (role === 'expin') return updateParse();
   if (role === 'quickin') return updateDock($('#dock'), ui, state.cur !== state.today);
+  if (ui.mf && (role === 'mname' || role === 'munit' || role === 'marea')) {
+    ui.mf[{ mname: 'n', munit: 'u', marea: 'a' }[role]] = el.value;
+    return updateMetricForm(sheetEl(), ui.mf, state);
+  }
+  if (el.dataset.m) { // قيمة مقياس من شاشته
+    const v = el.dataset.type === 'num' ? readNumber(el.value) : el.value;
+    return setMetric(el.dataset.m, typeof v === 'string' && !v.trim() ? '' : v);
+  }
   if (DRAFTS.includes(role)) {
     ui.drafts[role] = el.value;
     if (role === 'iq') updateView(); // البحث بيفلتر وإنت بتكتب
@@ -421,6 +559,12 @@ document.addEventListener('input', (e) => {
   return setK(k, v);
 });
 
+// تواريخ الفترة: بتتحفظ لما تختار من الـ date picker
+document.addEventListener('change', (e) => {
+  const role = e.target.dataset?.role;
+  if (role === 'pfrom' || role === 'pto') editPeriodDate(e.target);
+});
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && isSheetOpen()) requestClose();
 });
@@ -433,8 +577,10 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', () => { flush(); });
 
 // ---------- الشغل من غير نت (Service Worker) ----------
-// على localhost مش بنسجّله، عشان وإحنا بنعدّل الكود التعديل يبان على طول من غير ما يتخزّن.
-if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
+// على جهاز التطوير (localhost أو 127.0.0.1) مش بنسجّله، عشان التعديل يبان على طول من غير ما يتخزّن.
+// ولو عايز تجرّبه هناك: ضيف ?sw=1 للرابط.
+const devHost = ['localhost', '127.0.0.1'].includes(location.hostname) && !new URLSearchParams(location.search).has('sw');
+if ('serviceWorker' in navigator && !devHost) {
   const hadOld = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('./sw.js').then((reg) => {
     // التطبيق ممكن يفضل مفتوح أيام، فكل ما يرجع قدامك بنشوف لو فيه نسخة جديدة

@@ -6,7 +6,7 @@
 // (و node --test بيفشل لو نسيت.)
 
 // <stamp>
-const VERSION = '20cd942511';
+const VERSION = 'e2a30ececc';
 const FILES = [
   './',
   'index.html',
@@ -24,6 +24,7 @@ const FILES = [
   'js/ui.js',
   'js/views/dock.js',
   'js/views/ideas.js',
+  'js/views/metrics.js',
   'js/views/money.js',
   'js/views/sheets.js',
   'js/views/tasks.js',

@@ -10,6 +10,8 @@ export const state = {
   day: {}, // بيانات اليوم المفتوح
   tasks: [],
   ideas: [],
+  metrics: [], // مقاييسي: { id, n, t, u, a, w, on, at }
+  periods: [], // الفترات: { id, from, to }
   tab: 'day',
   status: 'loading', // loading | saving | saved | memory
 };
@@ -90,9 +92,9 @@ export async function setKOn(key, k, v) {
 
 // ---------- القوايم ----------
 export async function loadLists() {
-  const [t, i] = await Promise.all([getDoc('list/tasks'), getDoc('list/ideas')]);
-  state.tasks = t?.data?.items || [];
-  state.ideas = i?.data?.items || [];
+  const names = ['tasks', 'ideas', 'metrics', 'periods'];
+  const docs = await Promise.all(names.map((n) => getDoc(`list/${n}`)));
+  names.forEach((n, i) => { state[n] = docs[i]?.data?.items || []; });
 }
 export function saveList(name) {
   mark(`list/${name}`, { items: state[name] });
@@ -105,6 +107,20 @@ export function addIdea(t, c = 'تاني') {
 export function addTask(t, { pri = false, due = state.today } = {}) {
   state.tasks.push({ id: uid(), t, pri, due, done: false, at: Date.now() });
   saveList('tasks');
+}
+
+/** قيمة مقياس في اليوم المفتوح: day.m = { <id>: قيمة }. القيمة الفاضية بتتشال. */
+export function setMetric(id, v) {
+  const m = { ...(state.day.m || {}) };
+  if (v === '' || v === null || v === undefined) delete m[id];
+  else m[id] = v;
+  setK('m', Object.keys(m).length ? m : '');
+}
+
+/** يضيف عنصر لقايمة (metrics أو periods) ويحفظ. */
+export function addItem(name, item) {
+  state[name].push(item);
+  saveList(name);
 }
 
 /** يعدّل عنصر في قايمة (tasks أو ideas). المفاتيح اللي قيمتها undefined بتتشال. */

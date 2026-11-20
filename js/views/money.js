@@ -1,6 +1,6 @@
 // views/money.js — تبويبة الفلوس لليوم المفتوح، وتحتها ملخص من أول الفترة لحد النهارده.
 
-import { EXP_CATS, FIRST_PERIOD, expTotal, expByCat, moneySummary, longDate, fmtNum } from '../logic.js';
+import { EXP_CATS, expTotal, expByCat, moneySummary, summaryStart, fmtNum } from '../logic.js';
 import { esc, setHtml } from '../ui.js';
 import { expListHtml } from './sheets.js';
 
@@ -46,14 +46,14 @@ export function updateMoney(root, s, ui, loadDays) {
 
   // ملخص الفترة بيتحسب من كل الأيام، فبيستنى IndexedDB. لو اتطلب تاني قبل ما يخلص، القديم بيتساب.
   const my = ++sumToken;
-  const from = FIRST_PERIOD.from;
+  const { from, title } = summaryStart(s.periods, s.today); // من أول الفترة، ولو مفيش فترة من أول الشهر
   loadDays().then((days) => {
     if (my !== sumToken) return;
     const box = root.querySelector('[data-out="sum"]');
     if (!box) return;
     const sum = moneySummary(days, from, s.today);
     const max = sum.cats[0]?.[1] || 1;
-    const head = `<b class="sum-h">من ${longDate(from)} لحد دلوقتي</b>`;
+    const head = `<b class="sum-h">${title}</b>`;
     if (!sum.spent && !sum.income) {
       setHtml(box, `${head}<p class="empty-s" style="padding:0;text-align:right">لسه مفيش مصاريف ولا دخل. أول ما تسجّل، الإجمالي والتقسيم هيظهروا هنا.</p>`);
       return;

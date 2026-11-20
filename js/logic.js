@@ -252,11 +252,88 @@ export function shortDate(v) {
 
 // ---------- الفلوس على مدى فترة ----------
 /** أول فترة تسجيل. في المرحلة ٤ الفترات هتتحفظ في list/periods وتتعدّل من الإعدادات. */
-export const FIRST_PERIOD = { from: '2026-11-20', to: '2026-11-30' };
-
 /** "٢٠ نوفمبر" */
 export function longDate(key) {
   return new Date(`${key}T12:00:00`).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long' });
+}
+
+// ---------- الفترات (list/periods) ----------
+/** الفترة اللي فيها اليوم ده، أو null. */
+export function periodOf(periods, key) {
+  return (periods || []).find((p) => p.from <= key && key <= p.to) || null;
+}
+/** يوم كام من كام: { n: 3, of: 11 } */
+export function periodDay(p, key) {
+  if (!p) return null;
+  const days = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 864e5);
+  return { n: days(p.from, key) + 1, of: days(p.from, p.to) + 1 };
+}
+/** فترة جديدة من يوم معيّن، ١١ يوم زي الأولى. */
+export function newPeriod(from, len = 11) {
+  return { id: uid(), from, to: addDays(from, len - 1) };
+}
+/** "٢٠ – ٣٠ نوفمبر" ، "٢٨ نوفمبر – ٨ ديسمبر" */
+export function periodLabel(p) {
+  const [a, b] = [new Date(`${p.from}T12:00:00`), new Date(`${p.to}T12:00:00`)];
+  if (a.getMonth() === b.getMonth()) return `${fmtNum(a.getDate())} – ${longDate(p.to)}`;
+  return `${longDate(p.from)} – ${longDate(p.to)}`;
+}
+/** بداية ملخص الفلوس: أول الفترة اللي فيها النهارده، ولو مفيش فترة: أول الشهر. */
+export function summaryStart(periods, today) {
+  const p = periodOf(periods, today);
+  return p ? { from: p.from, title: `من ${longDate(p.from)} لحد دلوقتي` } : { from: `${today.slice(0, 8)}01`, title: 'من أول الشهر لحد دلوقتي' };
+}
+
+// ---------- مقاييسي (list/metrics) ----------
+// { id, n: الاسم, t: النوع, u: الوحدة, a: المجال, w: يبان إمتى, on: ظاهر, at }
+// والقيم في اليوم: day.m = { <id>: قيمة }
+export const METRIC_TYPES = [['tri', 'تم / جزئي'], ['count', 'عدّاد'], ['num', 'رقم'], ['time', 'وقت'], ['text', 'كلام']];
+export const METRIC_WHEN = [['day', 'طول اليوم'], ...PERIODS.map(([k, l]) => [k, l])];
+export const AREAS = ['البيزنس', 'الصحة', 'الموبايل والسوشيال'];
+
+/** المجالات: الأساسية، وبعدها أي مجال جديد اتعمل في المقاييس. */
+export function metricAreas(metrics) {
+  const out = [...AREAS];
+  for (const m of metrics || []) if (m.a && !out.includes(m.a)) out.push(m.a);
+  return out;
+}
+
+/** المقياس يبان في اليوم ده؟ لو مقفول لأ. ولو ليه فترة، بيبان من أول ما الفترة دي تيجي (والأيام اللي فاتت كله باين). */
+export function metricVisible(m, cur, today, hour) {
+  if (!m.on) return false;
+  if (!m.w || m.w === 'day') return true;
+  const i = PERIODS.findIndex(([k]) => k === m.w);
+  return i < 0 || periodPhase(i, cur, today, hour) !== 'future';
+}
+
+/** [[المجال، [مقاييس]]] بترتيب المجالات. */
+export function groupMetrics(metrics) {
+  const order = metricAreas(metrics);
+  const by = new Map();
+  for (const m of metrics || []) {
+    const a = m.a || order[0];
+    if (!by.has(a)) by.set(a, []);
+    by.get(a).push(m);
+  }
+  return order.filter((a) => by.has(a)).map((a) => [a, by.get(a)]);
+}
+
+/** "عدّاد بالكوباية، طول اليوم" */
+export function metricDesc(m) {
+  const t = (METRIC_TYPES.find(([k]) => k === m.t) || [])[1] || '';
+  const w = (METRIC_WHEN.find(([k]) => k === (m.w || 'day')) || [])[1] || '';
+  const unit = m.u && (m.t === 'count' || m.t === 'num') ? ` بال${m.u.replace(/^ال/, '')}` : '';
+  return `${t}${unit}، ${w}${m.on ? '' : '، مقفول'}`;
+}
+
+/** قيمة المقياس للعرض. tri بيرجّع الكلمة (تم، جزئي، لسه). */
+export function metricValue(m, v) {
+  if (m.t === 'tri') return ['لسه', 'جزئي', 'تم'][+v || 0];
+  if (m.t === 'count') return fmtNum(+v || 0);
+  if (v === undefined || v === null || v === '') return '';
+  if (m.t === 'num') return fmtNum(+v);
+  if (m.t === 'time') return arDigits(v);
+  return String(v);
 }
 
 /**

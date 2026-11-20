@@ -107,6 +107,12 @@ export function syncFields(root, day) {
     const t = el.dataset.type;
     el.value = v == null ? '' : t === 'num' || t === 'hrs' || t === 'dig' ? showNum(v) : String(v);
   }
+  // خانات المقاييس: القيمة في day.m[id]
+  for (const el of $$('[data-m]', root)) {
+    if (el === active) continue;
+    const v = day.m?.[el.dataset.m];
+    el.value = v == null ? '' : el.dataset.type === 'num' ? showNum(v) : String(v);
+  }
   for (const g of $$('[data-rate]', root)) {
     const v = day[g.dataset.rate] || 0;
     for (const b of $$('button', g)) {

@@ -6,6 +6,7 @@ import {
   cycleTri, rateTap, parseExpense, starCount, missingStars, itemsWord, todayTasks, mergeLine,
   habitsDone, workTotal, expTotal, expByCat, dayRel, lineTarget, uid,
   groupTasks, isOverdue, sortIdeas, searchIdeas, normAr, shortDate, moneySummary, longDate, periodPhase,
+  periodOf, periodDay, newPeriod, periodLabel, summaryStart, metricVisible, groupMetrics, metricDesc, metricValue, metricAreas,
 } from '../js/logic.js';
 
 test('الأرقام العربي والإنجليزي بتتحول قبل الحفظ', () => {
@@ -195,4 +196,45 @@ test('خط اليوم: كل فترة فاتت ولا دلوقتي ولا لسه'
   assert.deepEqual([0, 1, 2, 3].map((i) => periodPhase(i, t, t, 2)), ['past', 'past', 'past', 'now']);
   assert.equal(periodPhase(3, '2026-11-19', t, 9), 'past'); // يوم فات
   assert.equal(periodPhase(0, '2026-11-21', t, 9), 'future'); // يوم جاي
+});
+
+test('الفترات: يوم كام من كام، والفترة الجديدة ١١ يوم، وبداية ملخص الفلوس', () => {
+  const p = { id: 'x', from: '2026-11-20', to: '2026-11-30' };
+  assert.equal(periodOf([p], '2026-11-22'), p);
+  assert.equal(periodOf([p], '2026-12-01'), null);
+  assert.deepEqual(periodDay(p, '2026-11-22'), { n: 3, of: 11 });
+  assert.equal(periodDay(null, '2026-11-22'), null);
+  const np = newPeriod('2026-11-28');
+  assert.equal(np.from, '2026-11-28');
+  assert.equal(np.to, '2026-12-08');
+  assert.equal(periodLabel(p), '٢٠ – ٣٠ نوفمبر');
+  assert.equal(periodLabel(np), '٢٨ نوفمبر – ٨ ديسمبر');
+  assert.deepEqual(summaryStart([p], '2026-11-25'), { from: '2026-11-20', title: 'من ٢٠ نوفمبر لحد دلوقتي' });
+  assert.deepEqual(summaryStart([], '2026-11-25'), { from: '2026-11-01', title: 'من أول الشهر لحد دلوقتي' });
+});
+
+test('مقاييسي: يبان إمتى، والتجميع بالمجال، والوصف والقيمة', () => {
+  const t = '2026-11-20';
+  const night = { id: 'a', n: 'خطوات', t: 'num', a: 'الصحة', w: 'p4', on: true };
+  const all = { id: 'b', n: 'مية', t: 'count', u: 'كوباية', a: 'الصحة', w: 'day', on: true };
+  const off = { id: 'c', n: 'سوشيال', t: 'num', a: 'الموبايل والسوشيال', w: 'day', on: false };
+  // الساعة ٧ بالليل: "قبل النوم" لسه ماجاش، فالخطوات مستخبية. والمقفول مستخبي دايماً
+  assert.equal(metricVisible(night, t, t, 19), false);
+  assert.equal(metricVisible(night, t, t, 22), true);
+  assert.equal(metricVisible(night, '2026-11-19', t, 9), true); // يوم فات: كله باين
+  assert.equal(metricVisible(all, t, t, 9), true);
+  assert.equal(metricVisible(off, t, t, 9), false);
+  const biz = { id: 'd', n: 'مكالمات', t: 'count', a: 'البيزنس', w: 'day', on: true };
+  const own = { id: 'e', n: 'ورد', t: 'tri', a: 'الدين', w: 'p1', on: true };
+  assert.deepEqual(groupMetrics([night, own, biz, all]).map(([a, ms]) => [a, ms.map((m) => m.id)]), [['البيزنس', ['d']], ['الصحة', ['a', 'b']], ['الدين', ['e']]]);
+  assert.deepEqual(metricAreas([own]), ['البيزنس', 'الصحة', 'الموبايل والسوشيال', 'الدين']);
+  assert.equal(metricDesc(all), 'عدّاد بالكوباية، طول اليوم');
+  assert.equal(metricDesc(night), 'رقم، قبل النوم');
+  assert.equal(metricDesc(off), 'رقم، طول اليوم، مقفول');
+  assert.equal(metricValue(all, undefined), '٠');
+  assert.equal(metricValue(all, 5), '٥');
+  assert.equal(metricValue(night, ''), '');
+  assert.equal(metricValue({ t: 'num' }, 78.4), '٧٨٫٤');
+  assert.equal(metricValue({ t: 'tri' }, 2), 'تم');
+  assert.equal(metricValue({ t: 'time' }, '13:30'), '١٣:٣٠');
 });
