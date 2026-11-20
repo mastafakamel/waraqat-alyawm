@@ -6,7 +6,7 @@
 // (و node --test بيفشل لو نسيت.)
 
 // <stamp>
-const VERSION = '5491e71b7d';
+const VERSION = '3fb0ea3d4d';
 const FILES = [
   './',
   'index.html',

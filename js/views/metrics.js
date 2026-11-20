@@ -142,17 +142,12 @@ function syncCard(s, ui, sx) {
     return `<div class="pad"><b>مش متظبطة لسه</b><span>كل حاجة محفوظة على الجهاز ده بس. المزامنة بين الموبايل واللابتوب محتاجة مشروع Supabase (الخطوات في README).</span></div>`;
   }
   if (s.sync === 'signedout' || s.sync === 'off') {
-    if (ui.sf.step === 'code') {
-      return `<div class="pad"><b>اكتب الكود</b><span>بعتنا كود من ٦ أرقام لـ <bdi>${esc(ui.sf.email)}</bdi>. لو مالقيتهوش، بص في الـ Spam.</span>
-        <form class="addrow" data-act="scode" style="margin-top:10px">
-          <input class="fld" data-role="scode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="الكود" aria-label="الكود" dir="ltr">
-          <button class="b-pri sbtn" type="submit">دخول</button></form>
-        <div class="btns"><button type="button" data-act="sback">غيّر الإيميل</button><button type="button" data-act="sresend">ابعت كود تاني</button></div></div>`;
-    }
-    return `<div class="pad"><b>مش مسجّل دخول</b><span>كل حاجة محفوظة على الجهاز ده بس. ادخل بإيميلك على الموبايل واللابتوب، والاتنين هيبقوا نفس البيانات.</span>
-      <form class="addrow" data-act="semail" style="margin-top:10px">
-        <input class="fld" type="email" data-role="semail" inputmode="email" autocomplete="email" placeholder="إيميلك" aria-label="إيميلك" dir="ltr">
-        <button class="b-pri sbtn" type="submit">ابعت الكود</button></form></div>`;
+    return `<div class="pad"><b>مش مسجّل دخول</b><span>كل حاجة محفوظة على الجهاز ده بس. ادخل بنفس الإيميل والباسورد على الموبايل واللابتوب، والاتنين هيبقوا نفس البيانات.</span>
+      <form class="sform" data-act="slogin">
+        <input class="fld" type="email" data-role="semail" inputmode="email" autocomplete="username" placeholder="الإيميل" aria-label="الإيميل" dir="ltr">
+        <input class="fld" type="password" data-role="spass" autocomplete="current-password" placeholder="الباسورد" aria-label="الباسورد" dir="ltr">
+        <div class="btns" style="margin-top:0"><button class="pri" type="submit">دخول</button><button type="button" data-act="ssignup">أول مرة؟ اعمل حساب</button></div>
+      </form></div>`;
   }
   const at = sx.last ? fmt12(new Date(sx.last).toTimeString().slice(0, 5)) : '';
   const line = {

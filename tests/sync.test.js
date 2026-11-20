@@ -1,17 +1,17 @@
 // اختبار المزامنة ضد سيرفر Supabase مزيّف جوه الاختبار.
-// السيرفر بيفهم نفس الطلبات (الكود، والدخول، وput_docs، والسحب)، وبيكتب المستند بس لو updated_at أحدث، زي الـ SQL بالظبط.
+// السيرفر بيفهم نفس الطلبات (حساب جديد، والدخول بالباسورد، وput_docs، والسحب)، وبيكتب المستند بس لو updated_at أحدث، زي الـ SQL بالظبط.
 // IndexedDB مش موجود في Node، فـ db.js بيشتغل من الذاكرة لوحده.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
 
-const { configure, sendCode, verifyCode, syncNow, signOut, info } = await import('../js/sync.js');
+const { configure, signUp, signIn, syncNow, signOut, info } = await import('../js/sync.js');
 const { state, setK, flush, loadDay } = await import('../js/store.js');
 const { getDoc, putDoc } = await import('../js/db.js');
 
 // ---------- السيرفر المزيّف ----------
-const server = { docs: new Map(), seq: 0, sent: [], calls: [] };
+const server = { docs: new Map(), seq: 0, users: new Map(), signupsOpen: true, confirmEmail: false, calls: [] };
 const stamp = () => new Date(Date.UTC(2026, 10, 20) + (server.seq += 1) * 1000).toISOString();
 const json = (body, status = 200) => ({ ok: status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
 
@@ -20,10 +20,16 @@ globalThis.fetch = async (url, { method = 'GET', headers = {}, body } = {}) => {
   const b = body ? JSON.parse(body) : {};
   server.calls.push(`${method} ${u.pathname}`);
   assert.equal(headers.apikey, 'anon-test');
-  if (u.pathname === '/auth/v1/otp') { server.sent.push(b.email); return json({}); }
-  if (u.pathname === '/auth/v1/verify') {
-    if (b.token !== '123456') return json({ msg: 'Token has expired or is invalid' }, 403);
-    return json({ access_token: 'acc', refresh_token: 'ref', expires_in: 3600, user: { email: b.email } });
+  const session = (email) => json({ access_token: 'acc', refresh_token: 'ref', expires_in: 3600, user: { email } });
+  if (u.pathname === '/auth/v1/signup') {
+    if (!server.signupsOpen) return json({ code: 422, error_code: 'signup_disabled', msg: 'Signups not allowed for this instance' }, 422);
+    if (server.users.has(b.email)) return json({ code: 422, error_code: 'user_already_exists', msg: 'User already registered' }, 422);
+    server.users.set(b.email, b.password);
+    return server.confirmEmail ? json({ id: 'u1', email: b.email }) : session(b.email); // لو التأكيد شغال: مفيش جلسة
+  }
+  if (u.pathname === '/auth/v1/token' && u.searchParams.get('grant_type') === 'password') {
+    if (server.users.get(b.email) !== b.password) return json({ code: 400, error_code: 'invalid_credentials', msg: 'Invalid login credentials' }, 400);
+    return session(b.email);
   }
   assert.equal(headers.Authorization, 'Bearer acc'); // باقي الطلبات لازم بالجلسة
   if (u.pathname === '/rest/v1/rpc/put_docs') {
@@ -50,15 +56,18 @@ test('المزامنة: الدخول بالكود، والرفع، والسحب�
   await syncNow();
   assert.equal(state.sync, 'signedout');
 
-  // الكود
-  await sendCode('me@example.com');
-  assert.deepEqual(server.sent, ['me@example.com']);
-  await assert.rejects(verifyCode('me@example.com', '000000'), (e) => e.status === 403);
+  // لو "Confirm email" لسه شغال في Supabase: الحساب بيتعمل من غير جلسة، والرسالة بتقول اقفله
+  server.confirmEmail = true;
+  await assert.rejects(signUp('other@example.com', 'pass-12345'), (e) => e.code === 'confirm_on');
+  server.confirmEmail = false;
 
-  // بيانات قبل الدخول، وبعدين الدخول بيرفعها كلها
+  // دخول قبل ما يبقى فيه حساب: غلط
+  await assert.rejects(signIn('me@example.com', 'pass-12345'), (e) => e.code === 'invalid_credentials');
+
+  // بيانات قبل الدخول، وبعدين الحساب الجديد بيرفعها كلها
   setK('mood', 4);
   await flush();
-  await verifyCode('me@example.com', '123456');
+  await signUp('me@example.com', 'pass-12345');
   assert.equal(state.sync, 'ok');
   assert.equal(info.email, 'me@example.com');
   assert.deepEqual(server.docs.get('day/2026-11-20').data, { mood: 4 });
@@ -89,6 +98,17 @@ test('المزامنة: الدخول بالكود، والرفع، والسحب�
   assert.equal(state.sync, 'signedout');
   assert.equal(state.day.mood, 5);
   assert.equal(await getDoc('local/session').then((d) => d?.data ?? null), null);
+
+  // نفس الإيميل تاني كحساب جديد: موجود بالفعل. والباسورد الغلط مرفوض. والصح بيدخّل
+  await assert.rejects(signUp('me@example.com', 'pass-12345'), (e) => e.code === 'user_already_exists');
+  await assert.rejects(signIn('me@example.com', 'wrong-pass'), (e) => e.status === 400);
+  await signIn('me@example.com', 'pass-12345');
+  assert.equal(state.sync, 'ok');
+
+  // بعد ما نقفل التسجيل في Supabase: محدش يقدر يعمل حساب
+  server.signupsOpen = false;
+  await assert.rejects(signUp('stranger@example.com', 'pass-12345'), (e) => e.code === 'signup_disabled');
+  await signOut();
 });
 
 test('حد الاستخدام في اليوم بيوقف المزامنة', async () => {

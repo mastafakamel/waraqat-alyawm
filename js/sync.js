@@ -1,6 +1,7 @@
 // sync.js — المزامنة مع Supabase بـ fetch عادي (من غير SDK).
 //
-// - الدخول: كود من ٦ أرقام على الإيميل (OTP). الجلسة بتتحفظ في local/session وبتتجدد لوحدها.
+// - الدخول: إيميل وباسورد (من غير أي إيميلات). الجلسة بتتحفظ في local/session وبتتجدد لوحدها.
+//   (كان كود OTP، بس Supabase مابقاش بيسمح تعدّل قالب الإيميل من غير SMTP خاص)
 // - الرفع: كل المستندات اللي dirty في طلب واحد (put_docs). السيرفر بيكتب بس لو updated_at أحدث.
 // - السحب: كل اللي synced_at بتاعه بعد آخر سحب. ولو أحدث من اللي عندنا، بيحل محله (آخر تعديل يكسب، على مستوى المستند).
 // - حد للاستخدام: QUOTA طلب في اليوم بالكتير، عشان الخطة المجانية مايحصلهاش أي حاجة حتى لو فيه غلطة بتعمل لفة.
@@ -52,11 +53,13 @@ async function api(path, { method = 'GET', body, auth = true } = {}) {
   const res = await fetch(`${URL_}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) {
     let msg = `${res.status}`;
+    let code = '';
     try {
       const j = await res.json();
       msg = j.msg || j.message || j.error_description || j.error || msg;
+      code = j.error_code || j.code || j.error || '';
     } catch { /* مش JSON */ }
-    throw err(msg, { status: res.status });
+    throw err(msg, { status: res.status, code: String(code) });
   }
   return res.status === 204 ? null : res.json();
 }
@@ -90,17 +93,28 @@ async function accessToken() {
   return s.access_token;
 }
 
-export async function sendCode(email) {
-  await api('/auth/v1/otp', { method: 'POST', body: { email, create_user: true }, auth: false });
-}
-
-export async function verifyCode(email, code) {
-  const r = await api('/auth/v1/verify', { method: 'POST', body: { type: 'email', email, token: code }, auth: false });
+async function startSession(r, email) {
+  if (!r?.access_token) {
+    // التسجيل اتعمل بس من غير جلسة: يعني "Confirm email" لسه شغال في Supabase
+    throw err('confirm email is on', { code: 'confirm_on' });
+  }
   const s = toSession(r, email);
   await setMeta('session', s);
   await setMeta('cursor', null); // أول مرة: نسحب كل حاجة
   info.email = s.email;
   return syncNow();
+}
+
+/** الدخول بالإيميل والباسورد. */
+export async function signIn(email, password) {
+  const r = await api('/auth/v1/token?grant_type=password', { method: 'POST', body: { email, password }, auth: false });
+  return startSession(r, email);
+}
+
+/** حساب جديد (مرة واحدة بس). "Confirm email" لازم يكون مقفول في Supabase عشان مايتبعتش إيميل. */
+export async function signUp(email, password) {
+  const r = await api('/auth/v1/signup', { method: 'POST', body: { email, password }, auth: false });
+  return startSession(r, email);
 }
 
 export async function signOut() {

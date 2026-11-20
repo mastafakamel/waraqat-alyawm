@@ -6,7 +6,7 @@ import {
 } from './store.js';
 import { exportFile, importFile } from './backup.js';
 import {
-  configured, info as syncInfo, initSync, schedule, syncNow, sendCode, verifyCode, signOut,
+  configured, info as syncInfo, initSync, schedule, syncNow, signIn, signUp, signOut,
 } from './sync.js';
 import { askPersist, getDoc } from './db.js';
 import {
@@ -31,7 +31,7 @@ const ui = {
   mf: null, // فورم المقياس المفتوح: { id?, n, t, u, a, w, newArea }
   mfFrom: null, // 'settings' لو الفورم اتفتح من الإعدادات، عشان نرجعلها بعد الحفظ
   pedit: false, // تعديل تواريخ الفترة مفتوح
-  sf: { step: 'email', email: '' }, // دخول المزامنة: الإيميل وبعدين الكود
+  sf: { email: '' }, // الإيميل اللي اتكتب في دخول المزامنة (الباسورد مابيتحفظش)
 };
 const sx = () => ({ configured: configured(), ...syncInfo }); // حالة المزامنة لكارت الإعدادات
 const DRAFTS = ['taskin', 'ideain', 'iq', 'mamt', 'mdesc', 'linein'];
@@ -379,32 +379,31 @@ async function doImport(input) {
   }
 }
 
-// ---------- دخول المزامنة ----------
-const SYNC_ERR = (e) => (e.status === 429 ? 'استنى شوية وجرّب تاني (فيه حد لعدد الإيميلات)' : e instanceof TypeError ? 'مفيش نت' : 'حصلت مشكلة، جرّب تاني');
-async function askCode(email) {
-  const v = (email || '').trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return toast('اكتب إيميل صحيح');
-  try {
-    await sendCode(v);
-    ui.sf = { step: 'code', email: v };
-    updateSettings(sheetEl(), state, ui, sx());
-    sheetEl()?.querySelector('[data-role="scode"]')?.focus();
-    return toast('بعتنا الكود على إيميلك');
-  } catch (e) {
-    return toast(SYNC_ERR(e));
-  }
+// ---------- دخول المزامنة (إيميل وباسورد) ----------
+function loginError(e) {
+  const t = `${e.code} ${e.message}`.toLowerCase();
+  if (e instanceof TypeError) return 'مفيش نت';
+  if (e.code === 'confirm_on') return 'الحساب اتعمل بس محتاج تأكيد بالإيميل. اقفل "Confirm email" في Supabase (README) وادخل تاني';
+  if (t.includes('invalid') && t.includes('credential')) return 'الإيميل أو الباسورد غلط';
+  if (t.includes('already') || t.includes('exists')) return 'الإيميل ده عليه حساب بالفعل، دوس "دخول"';
+  if (t.includes('signup') && (t.includes('disabled') || t.includes('not allowed'))) return 'عمل الحسابات مقفول في المشروع، دوس "دخول"';
+  if (t.includes('password')) return 'الباسورد ضعيف، خليه ٨ حروف على الأقل وفيه أرقام';
+  if (e.status === 429) return 'محاولات كتير، استنى شوية وجرّب تاني';
+  return 'حصلت مشكلة، جرّب تاني';
 }
-async function submitCode(form) {
-  const code = toEn(form.querySelector('[data-role="scode"]').value).replace(/\D/g, '');
-  if (code.length !== 6) return toast('الكود ٦ أرقام');
+async function login(form, isNew) {
+  const email = form.querySelector('[data-role="semail"]').value.trim();
+  const pass = form.querySelector('[data-role="spass"]').value;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return toast('اكتب إيميل صحيح');
+  if (pass.length < (isNew ? 8 : 1)) return toast(isNew ? 'الباسورد ٨ حروف على الأقل' : 'اكتب الباسورد');
   try {
-    toast('بيدخل…');
-    await verifyCode(ui.sf.email, code);
-    ui.sf = { step: 'email', email: '' };
+    toast(isNew ? 'بيعمل الحساب…' : 'بيدخل…');
+    await (isNew ? signUp : signIn)(email, pass);
+    ui.sf = { email: '' };
     updateSettings(sheetEl(), state, ui, sx());
-    return toast('دخلت ✓، والمزامنة شغالة');
+    return toast(isNew ? 'الحساب اتعمل ✓، والمزامنة شغالة' : 'دخلت ✓، والمزامنة شغالة');
   } catch (e) {
-    return toast(e.status === 401 || e.status === 403 || e.status === 400 ? 'الكود غلط أو خلص، اطلب واحد جديد' : SYNC_ERR(e));
+    return toast(loginError(e));
   }
 }
 
@@ -539,8 +538,7 @@ document.addEventListener('click', async (e) => {
     case 'export': return doExport();
     case 'import': return sheetEl()?.querySelector('[data-role="importfile"]').click();
     // المزامنة
-    case 'sback': ui.sf.step = 'email'; return updateSettings(sheetEl(), state, ui, sx());
-    case 'sresend': return askCode(ui.sf.email);
+    case 'ssignup': return login(b.closest('form'), true);
     case 'ssync': return syncNow();
     case 'sout':
       await signOut();
@@ -551,8 +549,7 @@ document.addEventListener('click', async (e) => {
 
 const FORMS = {
   addexp: addExpense, quick: handleQuick, addtask: addTaskFromForm, addidea: addIdeaFromForm, addmoney: addMoney, addline: addLine,
-  semail: (f) => askCode(f.querySelector('[data-role="semail"]').value),
-  scode: submitCode,
+  slogin: (f) => login(f, false),
 };
 document.addEventListener('submit', (e) => {
   const fn = FORMS[e.target.dataset.act];
