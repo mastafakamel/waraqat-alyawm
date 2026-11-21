@@ -9,6 +9,7 @@ import {
   periodOf, periodDay, newPeriod, periodLabel, summaryStart, metricVisible, groupMetrics, metricDesc, metricValue, metricAreas,
   mergeDoc, parseBackup, takeRemote, useQuota, dayLine, dayDigest, weekDigest, reportBlocks, dayKeyAt,
   weekKeys, dayStatus, starSplit, dayNums, avgOf, baselineFor, compareTo, fmtDiff,
+  suggestTimes, lastWith, readDuration, recentValues,
 } from '../js/logic.js';
 
 test('الأرقام العربي والإنجليزي بتتحول قبل الحفظ', () => {
@@ -438,4 +439,48 @@ test('المقارنة بمتوسطك: الأيام اللي فيها قيمة �
   assert.equal(fmtDiff('min', 70), '١:١٠');
   assert.equal(fmtDiff('h', 0.75), '٠٫٨');
   assert.equal(fmtDiff('money', 42.5), '٤٣');
+});
+
+// ---------- نظام الإدخال (الدفعة ٦) ----------
+const HIST = [
+  { key: '2026-11-16', data: { sleep: '23:55', wake: '06:30', screen: '4:50', w1p: 'موقع الأسواف', post: 'القراية' } },
+  { key: '2026-11-17', data: { sleep: '00:20', wake: '06:45' } },
+  { key: '2026-11-18', data: { sleep: '23:30', wake: '06:10', w1p: 'ورقة اليوم', w2p: 'موقع الأسواف', post: 'ولا حاجة' } },
+  { key: '2026-11-19', data: { sleep: '00:45', wake: '07:05', w1p: 'ورقة اليوم', post: 'المشي' } },
+  { key: '2026-11-20', data: { sleep: '00:15', wake: '06:40', screen: '4:20', w1p: 'ورقة اليوم', post: 'مكالمة البنك' } },
+  { key: '2026-11-21', data: { sleep: '01:05' } }, // اليوم نفسه: مابيدخلش في الاقتراحات
+];
+
+test('اقتراحات الوقت: ٥ chips كل ربع ساعة حوالين الوسيط، والوسيط بيفهم إن ١١:٣٠ و١٢:٤٥ قريبين', () => {
+  assert.deepEqual(suggestTimes(HIST, 'sleep', '2026-11-21', '00:00'), ['23:45', '00:00', '00:15', '00:30', '00:45']);
+  assert.deepEqual(suggestTimes(HIST, 'wake', '2026-11-21', '06:30'), ['06:15', '06:30', '06:45', '07:00', '07:15']);
+  // من غير تاريخ: حوالين القيمة الافتراضية
+  assert.deepEqual(suggestTimes([], 'sleep', '2026-11-21', '00:00'), ['23:30', '23:45', '00:00', '00:15', '00:30']);
+});
+
+test('"زي امبارح": آخر يوم قبل اليوم المفتوح فيه المفاتيح كلها', () => {
+  assert.deepEqual(lastWith(HIST, '2026-11-21', ['sleep', 'wake']), { sleep: '00:15', wake: '06:40' });
+  assert.deepEqual(lastWith(HIST, '2026-11-21', ['screen']), { screen: '4:20' });
+  assert.deepEqual(lastWith(HIST, '2026-11-17', ['screen']), { screen: '4:50' });
+  assert.equal(lastWith(HIST, '2026-11-16', ['sleep', 'wake']), null);
+});
+
+test('مدة الشاشة: اللي بيتكتب بأرقام بس بيتفهم ويتحفظ بنفس شكل "٥:٣٠" القديم', () => {
+  assert.equal(readDuration('420'), '4:20');
+  assert.equal(readDuration('٤٢٠'), '4:20');
+  assert.equal(readDuration('1130'), '11:30');
+  assert.equal(readDuration('5'), '5:00'); // ٥ = ساعات
+  assert.equal(readDuration('45'), '0:45'); // أكبر من ٢٤ = دقايق
+  assert.equal(readDuration('٢٫٥'), '2:30');
+  assert.equal(readDuration('4:20'), '4:20');
+  assert.equal(readDuration('٤:٠٥'), '4:05');
+  assert.equal(readDuration(''), '');
+  assert.equal(readDuration('470'), ''); // ٧٠ دقيقة مش منطقي
+  assert.equal(readDuration('abc'), '');
+});
+
+test('آخر قيم مختلفة (المشاريع، وأجّلت إيه): الأحدث الأول، ومن غير تكرار', () => {
+  assert.deepEqual(recentValues(HIST, ['w1p', 'w2p', 'w3p', 'w4p'], '2026-11-21'), ['ورقة اليوم', 'موقع الأسواف']);
+  assert.deepEqual(recentValues(HIST, 'post', '2026-11-21', 3, ['ولا حاجة']), ['مكالمة البنك', 'المشي', 'القراية']);
+  assert.deepEqual(recentValues(HIST, 'post', '2026-11-19', 3), ['ولا حاجة', 'القراية']);
 });

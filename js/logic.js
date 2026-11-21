@@ -272,6 +272,71 @@ export function fmtDiff(kind, diff) {
   return fmtNum(kind === 'money' ? Math.round(diff) : diff);
 }
 
+// ---------- نظام الإدخال: اقتراحات من أيامك اللي فاتت (DESIGN.md: الإدخال) ----------
+const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+/**
+ * ٥ أوقات (HH:MM) كل ربع ساعة حوالين وسيط آخر ٧ أيام قبل cur، للـ chips.
+ * الوقت بيلف بعد ١٢ بالليل، فكل قيمة بتتقرّب للأولى (١١:٣٠ و١٢:٤٥ = ساعة وربع فرق، مش ١١ ساعة).
+ * لو مفيش تاريخ: حوالين fallback.
+ */
+export function suggestTimes(days, key, cur, fallback) {
+  const by = new Map((days || []).map((x) => [x.key, x.data || {}]));
+  const vals = weekKeys(addDays(cur, -1)).map((k) => mins(by.get(k)?.[key])).filter((v) => v != null);
+  let center = mins(fallback) ?? 0;
+  if (vals.length) {
+    const ref = vals[0];
+    const near = vals.map((v) => (v - ref > 720 ? v - 1440 : ref - v > 720 ? v + 1440 : v)).sort((a, b) => a - b);
+    center = Math.round(near[Math.floor((near.length - 1) / 2)] / 15) * 15;
+  }
+  return [-30, -15, 0, 15, 30].map((d) => hhmm((((center + d) % 1440) + 1440) % 1440));
+}
+
+/** "زي امبارح": قيم المفاتيح دي من آخر يوم قبل cur فيه كلهم، أو null. */
+export function lastWith(days, cur, keys) {
+  const sorted = (days || []).filter((x) => x.key < cur).sort((a, b) => b.key.localeCompare(a.key));
+  for (const { data } of sorted) {
+    if (keys.every((k) => has(data?.[k]))) return Object.fromEntries(keys.map((k) => [k, data[k]]));
+  }
+  return null;
+}
+
+/**
+ * مدة الشاشة اللي بتتكتب بكيبورد أرقام → "H:MM" (نفس شكل screen القديم).
+ * "٤٢٠" = ٤:٢٠، و"٥" = ٥ ساعات، و"٤٥" = ٤٥ دقيقة (أكبر من ٢٤)، و"٢٫٥" = ٢:٣٠، و"٤:٢٠" زي ما هي. غير كده: ''.
+ */
+export function readDuration(s) {
+  const t = toEn(s).trim();
+  let m = null;
+  if (/^\d{1,2}:\d{2}$/.test(t)) {
+    const [h, mm] = t.split(':').map(Number);
+    if (mm < 60) m = h * 60 + mm;
+  } else if (/^\d*\.\d+$/.test(t)) m = Math.round(parseFloat(t) * 60);
+  else if (/^\d{1,2}$/.test(t)) m = +t <= 24 ? +t * 60 : +t;
+  else if (/^\d{3,4}$/.test(t)) {
+    const h = +t.slice(0, -2);
+    const mm = +t.slice(-2);
+    if (mm < 60) m = h * 60 + mm;
+  }
+  if (m == null || m > 1440) return '';
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/** آخر n قيم مختلفة للمفاتيح دي (المشاريع، أو أجّلت إيه) من الأيام اللي قبل cur، الأحدث الأول. */
+export function recentValues(days, keys, cur, n = 3, skip = []) {
+  const ks = [].concat(keys);
+  const sorted = (days || []).filter((x) => x.key < cur).sort((a, b) => b.key.localeCompare(a.key));
+  const out = [];
+  for (const { data } of sorted) {
+    for (const k of ks) {
+      const v = String(data?.[k] ?? '').trim();
+      if (v && !skip.includes(v) && !out.includes(v)) out.push(v);
+      if (out.length >= n) return out;
+    }
+  }
+  return out;
+}
+
 // ---------- المهام ----------
 /** مهام النهارده = ميعادها النهارده أو قبله ولسه ماخلصتش، + اللي خلصت النهارده. */
 export function todayTasks(tasks, today) {

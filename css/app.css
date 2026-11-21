@@ -156,8 +156,16 @@ svg { display: block; }
 
 /* chips بقيمة جاهزة (الساعات، وبعدين الأوقات والمشاريع): ٤٤ على الأقل، والمختار حدود بلون الكلام */
 .chs { display: flex; flex-wrap: wrap; gap: 6px; }
-.ch { min-width: 44px; min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surf); font: 700 15px var(--disp); color: var(--ink); }
+/* خط ١٤ وحشو ١٠: الخمس أوقات بيدخلوا في سطر واحد على ٣٦٠ */
+.ch { min-width: 44px; min-height: 44px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surf); font: 700 14px var(--disp); color: var(--ink); }
 .ch.on, .ch[aria-pressed="true"] { border: 2px solid var(--pri); background: var(--surf2); }
+.ch.wide { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 52px; font: 500 14px var(--sans); text-align: right; }
+.ch.wide b { font: 700 15px var(--disp); }
+.ch.wide small { font-size: 12px; color: var(--muted); }
+.f.other { margin-top: 8px; }
+.f.other .lbl { font-size: 12.5px; font-weight: 500; }
+.wph b { font-size: 14px; }
+.note.err { color: var(--attn); font-weight: 600; }
 .lnk2 { align-self: flex-start; min-height: 44px; padding: 0; border: 0; background: none; font-size: 13.5px; font-weight: 600; color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
 .sec .ask { color: var(--attn); }
 
@@ -343,7 +351,8 @@ html.typing-page .app { padding-bottom: 24px; }
 .bd { font-size: 12px; font-weight: 700; color: var(--attn); margin-inline-start: 4px; }
 
 /* ---------- الشاشة اللي بتطلع من تحت ---------- */
-.ov { position: fixed; inset: 0; z-index: 20; background: var(--scrim); display: flex; flex-direction: column; justify-content: flex-end; }
+/* الـ sheet بتعلى فوق الكيبورد (--kb من visualViewport في main.js، زي الشريط السريع). على أندرويد الشاشة بتصغر لوحدها فـ --kb = ٠ */
+.ov { position: fixed; inset: 0; z-index: 20; background: var(--scrim); display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: var(--kb, 0px); }
 .sheet { width: 100%; max-width: 560px; margin: 0 auto; max-height: 90%; max-height: 90dvh; display: flex; flex-direction: column; background: var(--bg); border-top: 1px solid var(--line); border-radius: 26px 26px 0 0; animation: up .22s ease-out; }
 @keyframes up { from { transform: translateY(100%); } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }

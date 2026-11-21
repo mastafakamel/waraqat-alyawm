@@ -64,9 +64,9 @@ export function metricSheet(m) {
   const id = esc(m.id);
   let field;
   if (m.t === 'time') field = `<input class="fld" type="time" data-m="${id}" data-type="time" aria-label="${esc(m.n)}">`;
-  else if (m.t === 'text') field = `<textarea class="fld" rows="3" data-m="${id}" data-type="txt" aria-label="${esc(m.n)}" placeholder="اكتب هنا…"></textarea>`;
+  else if (m.t === 'text') field = `<textarea class="fld" rows="3" data-focus enterkeyhint="done" data-m="${id}" data-type="txt" aria-label="${esc(m.n)}" placeholder="اكتب هنا…"></textarea>`;
   else {
-    field = `<div class="unitrow"><input class="fld" data-m="${id}" data-type="num" inputmode="decimal" autocomplete="off" aria-label="${esc(m.n)}" placeholder="${m.t === 'count' ? '٠' : 'الرقم'}">${m.u ? `<span>${esc(m.u)}</span>` : ''}</div>`;
+    field = `<div class="unitrow"><input class="fld" data-focus data-m="${id}" data-type="num" inputmode="decimal" enterkeyhint="done" autocomplete="off" aria-label="${esc(m.n)}" placeholder="${m.t === 'count' ? '٠' : 'الرقم'}">${m.u ? `<span>${esc(m.u)}</span>` : ''}</div>`;
   }
   return {
     label: m.n,

@@ -114,7 +114,7 @@ export function syncFields(root, day) {
     if (el === active) continue;
     const v = day[el.dataset.k];
     const t = el.dataset.type;
-    el.value = v == null ? '' : t === 'num' || t === 'hrs' || t === 'dig' ? showNum(v) : String(v);
+    el.value = v == null ? '' : t === 'num' || t === 'hrs' || t === 'dig' || t === 'dur' ? showNum(v) : String(v);
   }
   // خانات المقاييس: القيمة في day.m[id]
   for (const el of $$('[data-m]', root)) {

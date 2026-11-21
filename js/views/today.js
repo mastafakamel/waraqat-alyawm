@@ -95,7 +95,7 @@ export function salahRow() {
 // الفرق اللي أقل من eps = "زي متوسطك": ٥ دقايق، وربع ساعة شغل، و٥ جنيه.
 const CELLS = [
   { k: 'sleep', m: 'sleep', l: 'نوم', a: 'النوم', kind: 'min', eps: 5, act: 'data-act="sheet" data-sheet="sleep"' },
-  { k: 'screen', m: 'screen', l: 'شاشة', a: 'الشاشة', kind: 'min', eps: 5, act: 'data-act="sheet" data-sheet="sleep"' },
+  { k: 'screen', m: 'screen', l: 'شاشة', a: 'الشاشة', kind: 'min', eps: 5, act: 'data-act="sheet" data-sheet="screen"' },
   { k: 'work', m: 'work', l: 'ساعة شغل', a: 'الشغل', kind: 'h', eps: 0.25, act: 'data-act="sheet" data-sheet="work"' },
   { k: 'money', m: 'spend', l: 'جنيه', a: 'المصروف', kind: 'money', eps: 5, act: 'data-act="tab" data-tab="money"' },
 ];

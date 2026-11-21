@@ -10,7 +10,7 @@ import {
 } from './sync.js';
 import { askPersist, getDoc } from './db.js';
 import {
-  addDays, cycleTri, rateTap, rateSet, readNumber, toEn, parseExpense, fmtNum, missingStars, EXP_CATS, lineTarget, mergeLine,
+  addDays, cycleTri, rateTap, rateSet, readNumber, readDuration, toEn, parseExpense, fmtNum, missingStars, EXP_CATS, lineTarget, mergeLine,
   uid, newPeriod, periodOf, periodLabel, AREAS, weekKeys, dayStatus, baselineFor, starSplit,
 } from './logic.js';
 import { monthSheet, updateMonth, shiftMonth } from './views/month.js';
@@ -157,14 +157,24 @@ async function handleQuick(form) {
   return undefined;
 }
 
+/** الأيام اللي قبل اليوم المفتوح (من شريط الأيام)، ومنها اقتراحات الـ sheets: الأوقات، و"زي امبارح"، والمشاريع. */
+function withHistory() {
+  ui.hist = [...win.days].map(([key, data]) => ({ key, data }));
+}
+
 function afterOpen() {
   const sh = sheetEl();
   syncFields(sh, state.day);
   updateOutputs(sh, state);
   updateParse();
+  // التركيز على الخانة اللي عليها data-focus لو فاضية (الـ sheets اللي بتبدأ بـ chips مافيهاش، عشان الكيبورد مايغطيش الـ chips)
+  const f = sh?.querySelector('[data-focus]');
+  if (f && !f.value) f.focus({ preventScroll: true });
 }
 
-function openNamed(id) {
+function openNamed(id, { keepRows = false } = {}) {
+  if (!keepRows) ui.workRows = 1;
+  withHistory();
   openSheet(sheetFor(id, state, ui));
   afterOpen();
 }
@@ -181,6 +191,7 @@ function startGuide(startKey) {
 }
 function showStep() {
   const g = ui.guide;
+  withHistory();
   openSheet({
     ...guideStep(g.order[g.i], g.i, g.order.length, state, ui),
     onClose: () => {
@@ -574,6 +585,20 @@ document.addEventListener('click', async (e) => {
       return updateDock($('#dock'), ui, state.cur !== state.today);
     case 'gnext': return nextStep();
     case 'sheet': return openNamed(b.dataset.sheet);
+    // "زي امبارح": بيملا كذا مفتاح بدوسة (النوم والصحيان). بيكتب فوق القيمة لو موجودة، فبيدّي "رجّع"
+    case 'likey': {
+      const keys = b.dataset.keys.split(',');
+      const vals = b.dataset.vals.split(',');
+      const before = Object.fromEntries(keys.map((k) => [k, state.day[k] ?? '']));
+      keys.forEach((k, i) => setK(k, vals[i]));
+      if (keys.some((k) => before[k] && before[k] !== state.day[k])) {
+        toast('اتملت زي امبارح', 'رجّع', () => keys.forEach((k) => setK(k, before[k])));
+      }
+      return undefined;
+    }
+    case 'workmore': // مشروع كمان (لحد ٤)
+      ui.workRows = (ui.workRows || 1) + 1;
+      return 'guide' in b.dataset ? showStep() : openNamed('work', { keepRows: true });
     case 'tab':
       state.tab = b.dataset.tab;
       render();
@@ -605,7 +630,7 @@ document.addEventListener('click', async (e) => {
       const m = findMetric(id);
       if (!m) return undefined;
       openSheet(metricSheet(m));
-      return syncFields(sheetEl(), state.day);
+      return afterOpen(); // القيمة، والتركيز على الخانة لو فاضية
     }
     case 'settings': return openSettings();
     case 'mform': return openMetricForm(id);
@@ -681,6 +706,10 @@ const typingClass = (el) => {
 document.addEventListener('focusin', (e) => {
   const c = typingClass(e.target);
   if (c) document.documentElement.classList.add(c);
+  // خانة جوه sheet: بعد ما الكيبورد يطلع، الخانة تيجي في النص عشان مايغطيهاش
+  if (e.target.matches?.('input, textarea') && e.target.closest('.sheet')) {
+    setTimeout(() => { if (document.activeElement === e.target) e.target.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 300);
+  }
 });
 document.addEventListener('focusout', (e) => {
   const c = typingClass(e.target);
@@ -738,6 +767,12 @@ document.addEventListener('input', (e) => {
   let v = el.value;
   if (t === 'num') v = readNumber(v);
   else if (t === 'hrs' || t === 'dig') v = toEn(v).trim();
+  else if (t === 'dur') {
+    // الشاشة: "٤٢٠" ← "4:20". لو لسه مش مفهوم وإنت بتكتب، القيمة القديمة بتفضل، والملاحظة تحت الخانة بتقول
+    const d = readDuration(v);
+    if (v.trim() && !d) return updateOutputs(sheetEl(), state);
+    v = d;
+  }
   return setK(k, v);
 });
 
@@ -750,6 +785,14 @@ document.addEventListener('change', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && isSheetOpen()) requestClose();
+  // Enter في خانة جوه sheet (مش جوه form، ومش سطور متعددة): الخانة اللي بعدها، والأخيرة بتقفل
+  const el = e.target;
+  if (e.key !== 'Enter' || e.isComposing || !el.matches?.('input.fld') || el.form || !el.closest('.sheet')) return;
+  e.preventDefault();
+  const all = [...sheetEl().querySelectorAll('input.fld:not([type="time"]), textarea.fld')].filter((x) => x.getClientRects().length);
+  const next = all[all.indexOf(el) + 1];
+  if (next) next.focus();
+  else { el.blur(); requestClose(); }
 });
 
 // قبل ما التطبيق يروح للخلفية أو يتقفل: احفظ اللي مستني
