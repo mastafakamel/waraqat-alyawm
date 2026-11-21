@@ -1,18 +1,21 @@
-// views/today.js — الهيدر وتبويبة "اليوم" والتبويبات. بيرسم من الحالة بس، ومبيغيّرش حاجة.
+// views/today.js — الهيدر وتبويبة «اليوم» (تصميم موحّد هادي بمساحات تنفّس واضحة: Obsidian & Champagne).
 //
-// ترتيب تبويبة اليوم (DESIGN.md نسخة ٢، المرجع designs/redesign-final.html):
-//   ملخص النهارده ("فاضل دلوقتي" + "بالليل" + ٤ أرقام بمقارنة متوسطك) ← المزاج والفترات الأربعة
-//   ← العادات ← الصلوات ← آخر اليوم ← تقرير الذكاء الاصطناعي ← مهام النهارده ← مقاييسي ← "قيس حاجة جديدة" و"الإعدادات"
-// ctx = حاجات محسوبة برّه (main.js) من أيام تانية غير المفتوح: { status: {مفتاح: حالة}, base: {sleep, screen, work, spend}, hour }
+// الترتيب:
+//   الهيدر (رقم الأسبوع + التاريخ الكبير + حلقات السبت←الجمعة)
+//   ← كارت «نبض اليوم» الموحّد (فاضل دلوقتي + النوم والشغل فوق + العادات والشاشة والفلوس تحت)
+//   ← «توزيع وقتك» (شريط الـ ٢٤ ساعة بسلم زمني + تجميع المجالات من غير مربعات مزدحمة)
+//   ← «أركان حياتك» (٤ كروت موحّدة بشرطات تقدّم مقسّمة + الصلوات)
+//   ← «المزاج وآخر اليوم» ← «تقرير الذكاء الاصطناعي» ← «مهام النهارده» ← «مقاييسي»
 
 import {
-  HABITS, PERIODS, dateTitle, fmtNum, fmtHM, habitsDone, todayTasks, groupTasks, has, periodPhase, periodOf, periodDay,
-  isOverdue, shortDate, starSplit, dayStatus, weekKeys, dayNums, compareTo, fmtDiff,
+  HABITS, HABIT_GROUPS, habitGroupStats, dateTitle, fmtNum, fmtHM, habitsDone, todayTasks, groupTasks, has,
+  periodOf, periodDay, isOverdue, shortDate, starSplit, dayStatus, dayProgress, satWeekKeys, weekNumber,
+  dayNums, compareTo, fmtDiff, timeByCat, fmtHours, hoursWord,
 } from '../logic.js';
-import { esc, ic, P, setHtml } from '../ui.js';
+import { esc, ic, ico, P, setHtml } from '../ui.js';
+import { timeStackBar } from './time.js';
 import { metricsSection } from './metrics.js';
 import { aiSection } from './ai.js';
-
 
 export const HINTS = {
   sleep: 'وقت ما نمت ووقت ما صحيت، والمدة بتتحسب لوحدها',
@@ -25,48 +28,81 @@ export const HINTS = {
   top: 'جملة واحدة كفاية',
 };
 
-// ---------- الهيدر ----------
-// getDay(): ٠ الأحد … ٦ السبت
-const WD = ['ح', 'ن', 'ث', 'ر', 'خ', 'ج', 'س'];
-const DAY_WORD = { full: 'اتسجل كله', part: 'ناقص', none: 'مش متسجل' };
-const MARK = { full: 'done', part: 'part', none: 'nolog' };
+const HABIT_NAME = new Map(HABITS);
 
-/** "الأربعاء ١٨" */
+// ---------- الهيدر ----------
+const WD = ['ح', 'ن', 'ث', 'ر', 'خ', 'ج', 'س'];
+const DAY_WORD = { full: 'اتسجل كله', part: 'ناقص', none: 'مش متسجل', future: 'يوم جاي' };
+
 function dayShort(key) {
   return new Date(`${key}T12:00:00`).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric' });
 }
 
-/**
- * السطر الأول: التاريخ (دوسة بتفتح الشهر)، و"يوم ٣ من ١١" لو جوه فترة، وحالة الحفظ.
- * وتحته شريط آخر ٧ أيام لحد النهارده (الأقدم على اليمين)، وكل يوم عليه حالته. ولو اليوم المفتوح مش النهارده: شريط "بتعدّل يوم فات".
- */
+function weekRange(keys) {
+  const a = new Date(`${keys[0]}T12:00:00`);
+  const b = new Date(`${keys[6]}T12:00:00`);
+  if (a.getMonth() === b.getMonth()) return `${fmtNum(a.getDate())} – ${shortDate(keys[6])}`;
+  return `${shortDate(keys[0])} – ${shortDate(keys[6])}`;
+}
+
+/** حلقة إنجاز دقيقة حوالين رقم كل يوم في شريط الأسبوع. */
+function dayRing(pct, future) {
+  const r = 14.5;
+  const c = 2 * Math.PI * r;
+  const off = c - (c * Math.max(0, Math.min(100, pct))) / 100;
+  const cls = pct === 100 ? ' full' : pct > 0 ? ' part' : '';
+  return `<svg class="dring${future ? ' fut' : ''}${cls}" width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+    <circle class="dring-bg" cx="17" cy="17" r="${r}"/>
+    ${pct > 0 ? `<circle class="dring-fg" cx="17" cy="17" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/>` : ''}
+  </svg>`;
+}
+
 export function renderHeader(s, ctx = {}) {
   const pd = periodDay(periodOf(s.periods, s.cur), s.cur);
-  const days = weekKeys(s.today).map((k) => {
-    // اليوم المفتوح من الذاكرة (فيه تعديلات لسه ماتحفظتش)، والباقي من ctx
-    const st = k === s.cur ? dayStatus(s.day) : ctx.status?.[k] || 'none';
+  const wKeys = satWeekKeys(s.cur);
+  const wNum = weekNumber(s.cur);
+
+  const days = wKeys.map((k) => {
+    const future = k > s.today;
+    const isCur = k === s.cur;
+    const st = future ? 'future' : (isCur ? dayStatus(s.day) : ctx.status?.[k] || 'none');
+    const pct = future ? 0 : (isCur ? dayProgress(s.day) : ctx.pct?.[k] || 0);
     const d = new Date(`${k}T12:00:00`);
-    const sel = k === s.cur;
-    return `<button class="wd${sel ? ' sel' : ''}" type="button" data-act="day" data-key="${k}"${sel ? ' aria-current="date"' : ''}
-      aria-label="${dayShort(k)}${k === s.today ? '، النهارده' : ''}: ${DAY_WORD[st]}"><span class="l">${WD[d.getDay()]}</span><span class="n">${fmtNum(d.getDate())}</span><i class="dot sm ${MARK[st]}" aria-hidden="true"></i></button>`;
+    const isToday = k === s.today;
+    const cls = `wd${isCur ? ' sel' : ''}${isToday && !isCur ? ' is-today' : ''}${st === 'full' ? ' done-pill' : ''}${future ? ' fut' : ''}`;
+    return `<button class="${cls}" type="button" data-act="day" data-key="${k}"${isCur ? ' aria-current="date"' : ''}
+      aria-label="${dayShort(k)}${isToday ? '، النهارده' : ''}: ${DAY_WORD[st]}">
+      <span class="l">${WD[d.getDay()]}</span>
+      <span class="wd-ring">${dayRing(pct, future)}<span class="n">${fmtNum(d.getDate())}</span></span>
+    </button>`;
   }).join('');
+
   const away = s.cur === s.today ? '' : `<div class="away"><span><b>${s.cur < s.today ? 'بتعدّل يوم فات:' : 'يوم جاي:'}</b> ${dayShort(s.cur)}</span>
       <button class="awayb" type="button" data-act="today">ارجع للنهارده${ic(P.chev)}</button></div>`;
-  return `<div class="top-r1">
-      <h1 class="date"><button class="dateb" type="button" data-act="month" aria-label="${dateTitle(s.cur)}، اختار يوم تاني">${dateTitle(s.cur)}</button></h1>
-      ${pd ? `<span class="pday">يوم ${fmtNum(pd.n)} من ${fmtNum(pd.of)}</span>` : ''}
+
+  return `<div class="top-meta">
+      <button class="wk-pill" type="button" data-act="month" aria-label="الأسبوع ${fmtNum(wNum)}، اختار يوم من الشهر">
+        <b>الأسبوع ${fmtNum(wNum)}</b><span>· ${weekRange(wKeys)}</span>
+      </button>
       <span class="saved" data-out="saved"></span>
     </div>
-    <div class="wk" role="group" aria-label="آخر ٧ أيام">${days}</div>${away}`;
+    <div class="top-hero">
+      <div class="top-dt">
+        <h1 class="date"><button class="dateb" type="button" data-act="month" aria-label="${dateTitle(s.cur)}، اختار يوم تاني">${dateTitle(s.cur)}</button></h1>
+        ${pd ? `<span class="pday">يوم ${fmtNum(pd.n)} من ${fmtNum(pd.of)} في الفترة</span>` : ''}
+      </div>
+      <div class="wk-navs" role="group" aria-label="التنقل بين الأسابيع">
+        <button class="wk-nav" type="button" data-act="wprev" aria-label="الأسبوع اللي فات">${ic(P.prev)}</button>
+        <button class="wk-nav" type="button" data-act="wnext" aria-label="الأسبوع اللي بعده">${ic(P.next)}</button>
+      </div>
+    </div>
+    <div class="wk" role="group" aria-label="أسبوع من السبت للجمعة">${days}</div>${away}`;
 }
-/** حالة الحفظ بتتغيّر كتير، فبتتحدّث لوحدها من غير ما الهيدر يترسم من جديد. */
-// [الكلام، الأيقونة، النوع]. النوع: ok نعناعي (خلص)، wait رمادي (لسه أو مستني)، warn كهرماني (محتاج انتباهك).
-// "مستني النت" رمادي مش نعناعي: البيانات على الجهاز، بس لسه ماوصلتش. و"مش بيتحفظ" كهرماني (كان نعناعي بالغلط).
+
 const SAVE = {
   loading: ['بيحمّل…', '', 'wait'], saving: ['بيحفظ…', '', 'wait'],
   memory: ['مش بيتحفظ على الجهاز', 'alert', 'warn'], saved: ['على الجهاز', 'check', 'ok'],
 };
-// بعد الحفظ على الجهاز، الكلام بيقول المزامنة وصلت لفين
 const SYNC = {
   ok: ['اتزامن', 'check', 'ok'], busy: ['بيزامن…', '', 'wait'], offline: ['مستني النت', 'cloudOff', 'wait'],
   error: ['المزامنة واقفة', 'alert', 'warn'], capped: ['المزامنة واقفة', 'alert', 'warn'],
@@ -90,113 +126,169 @@ export function salahRow() {
     ${[1, 2, 3, 4, 5].map((i) => `<button class="ps" type="button" data-v="${i}" aria-label="${i} من ٥">${fmtNum(i)}</button>`).join('')}</div></div>`;
 }
 
-// ---------- ملخص النهارده ----------
-// بيجاوب سؤالين من غير scroll: فاضل إيه دلوقتي؟ وماشي إزاي (مقارنة بمتوسطك)؟
-// الفرق اللي أقل من eps = "زي متوسطك": ٥ دقايق، وربع ساعة شغل، و٥ جنيه.
-const CELLS = [
-  { k: 'sleep', m: 'sleep', l: 'نوم', a: 'النوم', kind: 'min', eps: 5, act: 'data-act="sheet" data-sheet="sleep"' },
-  { k: 'screen', m: 'screen', l: 'شاشة', a: 'الشاشة', kind: 'min', eps: 5, act: 'data-act="sheet" data-sheet="screen"' },
-  { k: 'work', m: 'work', l: 'ساعة شغل', a: 'الشغل', kind: 'h', eps: 0.25, act: 'data-act="sheet" data-sheet="work"' },
-  { k: 'money', m: 'spend', l: 'جنيه', a: 'المصروف', kind: 'money', eps: 5, act: 'data-act="tab" data-tab="money"' },
-];
+// ---------- كارت «نبض اليوم» الموحّد (بدل ٦ صناديق منفصلة) ----------
 const ARROW = { up: 'M12 19V5M6 11l6-6 6 6', down: 'M12 5v14M6 13l6 6 6-6' };
-const showNum = (kind, v) => (kind === 'min' ? fmtHM(Math.round(v)) : fmtNum(kind === 'money' ? Math.round(v) : v));
+const showVal = (kind, v) => (kind === 'min' ? fmtHM(Math.round(v)) : fmtNum(kind === 'money' ? Math.round(v) : v));
 
-function summary(s, split, ctx) {
+function diffText(v, base, kind, eps, isLater) {
+  if (v != null) {
+    const cmp = compareTo(v, base, eps);
+    if (cmp?.dir === 'same') return '<span class="pm-sub">= زي متوسطك</span>';
+    if (cmp) return `<span class="pm-sub"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${ARROW[cmp.dir]}"/></svg>${fmtDiff(kind, cmp.diff)}</span>`;
+    return '';
+  }
+  if (isLater) return '<span class="pm-sub">بالليل</span>';
+  if (base != null) return `<span class="pm-sub">متوسطك ${showVal(kind, base)}</span>`;
+  return '<span class="pm-sub">ناقص</span>';
+}
+
+function summary(s, split, ctx, tb) {
   const { now, later } = split;
   const base = ctx.base || {};
   const isToday = s.cur === s.today;
   const future = s.cur > s.today;
-  let head;
-  if (!now.length && !later.length) head = '<div class="sum-ok"><i class="dot done" aria-hidden="true"></i>اليوم اتسجل كله</div>';
-  else if (!now.length) head = `<div class="sum-h"><b>${future ? 'ده يوم جاي' : 'مفيش حاجة ناقصة دلوقتي'}</b></div>`;
-  else {
-    head = `<div class="sum-h"><b>فاضل${isToday ? ' دلوقتي' : ''} <em>${fmtNum(now.length)}</em></b>
+
+  let headHtml;
+  if (!now.length && !later.length) {
+    headHtml = '<div class="pulse-ok"><i class="dot done" aria-hidden="true"></i><span>اليوم مكتمل كله</span></div>';
+  } else if (!now.length) {
+    headHtml = `<div class="pulse-h"><b>${future ? 'ده يوم جاي' : 'مفيش حاجة ناقصة دلوقتي'}</b></div>`;
+  } else {
+    headHtml = `<div class="pulse-h"><b>فاضل${isToday ? ' دلوقتي' : ''} <em>${fmtNum(now.length)}</em></b>
         <button class="sum-go" type="button" data-act="guide">كمّل بالترتيب${ic(P.chev)}</button></div>
       <div class="sum-miss">${now.map((x) => `<button class="mchip" type="button" data-act="guide" data-q="${x.k}" aria-label="${x.t}: ناقص"><i class="dot miss" aria-hidden="true"></i>${x.t}</button>`).join('')}</div>`;
   }
-  // البنود اللي وقتها لسه ماجاش: سطر رمادي، من غير كهرماني (مش ناقصة لسه)
   const lat = later.length && !future
     ? `<p class="sum-later"><i class="dot later" aria-hidden="true"></i><span>بالليل: ${later.map((x) => x.t).join('، ')}</span></p>` : '';
+
   const nums = dayNums(s.day);
   const laterK = new Set(later.map((x) => x.k));
-  const anyBase = CELLS.some((c) => base[c.m] != null);
-  const cells = CELLS.map((c) => {
-    const v = nums[c.m];
-    const b = base[c.m];
-    let d = '';
-    if (v != null) {
-      const cmp = compareTo(v, b, c.eps);
-      if (cmp?.dir === 'same') d = '<span class="st-d">= زي متوسطك</span>';
-      else if (cmp) d = `<span class="st-d"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${ARROW[cmp.dir]}"/></svg>${fmtDiff(c.kind, cmp.diff)}</span>`;
-    } else if (laterK.has(c.k)) d = '<span class="st-d">بالليل</span>';
-    else if (b != null) d = `<span class="st-d">متوسطك ${showNum(c.kind, b)}</span>`;
-    const state = v != null ? '' : laterK.has(c.k) ? 'later' : 'miss';
-    const say = v != null ? showNum(c.kind, v) : state === 'later' ? 'لسه، بالليل' : 'ناقص';
-    return `<button class="st${c.k === 'money' ? ' money' : ''}${state ? ` ${state}` : ''}" type="button" ${c.act} aria-label="${c.a}: ${say}">
-      <span class="st-v">${v != null ? showNum(c.kind, v) : '—'}</span>
-      <span class="st-k">${state ? `<i class="dot ${state}" aria-hidden="true"></i>` : ''}${c.l}</span>${d}</button>`;
+
+  const sleepMin = nums.sleep ?? (tb.by.sleep ? tb.by.sleep * 60 : null);
+  const workH = nums.work ?? (tb.by.work ?? null);
+  const hDone = habitsDone(s.day);
+  const hPart = HABITS.filter(([k]) => s.day[k] === 1).length;
+  const hPct = Math.round(((hDone + hPart * 0.5) / HABITS.length) * 100);
+  const salah = +s.day.salah || 0;
+
+  const sleepPct = sleepMin != null ? Math.min(100, Math.round((sleepMin / 480) * 100)) : 0;
+  const workPct = workH != null ? Math.min(100, Math.round((workH / 7) * 100)) : 0;
+
+  const heroRow = `<div class="pm-hero">
+      <button class="pm-cell hero${sleepMin == null ? ' none' : ''}" type="button" data-act="sheet" data-sheet="sleep" aria-label="النوم: ${sleepMin != null ? fmtHM(Math.round(sleepMin)) : 'ناقص'}">
+        <span class="pm-k"><span>النوم</span><span class="pm-ic">${ico('moon')}</span></span>
+        <span class="pm-v">${sleepMin != null ? fmtHM(Math.round(sleepMin)) : '—'}</span>
+        ${nums.sleep == null && tb.by.sleep ? '<span class="pm-sub">من سجل الوقت</span>' : diffText(nums.sleep, base.sleep, 'min', 5, laterK.has('sleep'))}
+        <span class="pm-line"><i style="width:${sleepPct}%"></i></span>
+      </button>
+      <button class="pm-cell hero${workH == null ? ' none' : ''}" type="button" data-act="sheet" data-sheet="work" aria-label="الشغل: ${workH != null ? `${fmtNum(workH)} ساعة` : 'ناقص'}">
+        <span class="pm-k"><span>الشغل</span><span class="pm-ic">${ico('brief')}</span></span>
+        <span class="pm-v">${workH != null ? `${fmtNum(workH)} <small>س</small>` : '—'}</span>
+        ${nums.work == null && tb.by.work ? '<span class="pm-sub">من سجل الوقت</span>' : diffText(nums.work, base.work, 'h', 0.25, laterK.has('work'))}
+        <span class="pm-line"><i style="width:${workPct}%"></i></span>
+      </button>
+    </div>`;
+
+  const subRow = `<div class="pm-sub3">
+      <button class="pm-cell${hDone || hPart ? ' done' : ' none'}" type="button" data-act="scroll" data-to="pillars" aria-label="العادات: ${fmtNum(hDone)} من ١٣">
+        <span class="pm-k"><span>العادات</span><span class="pm-ic">${ico('check')}</span></span>
+        <span class="pm-v sm">${fmtNum(hDone)}<small>/${fmtNum(HABITS.length)}</small></span>
+        <span class="pm-sub">صلوات ${fmtNum(salah)}/٥</span>
+        <span class="pm-line done"><i style="width:${hPct}%"></i></span>
+      </button>
+      <button class="pm-cell${nums.screen == null ? ' none' : ''}" type="button" data-act="sheet" data-sheet="screen" aria-label="الشاشة: ${nums.screen != null ? fmtHM(Math.round(nums.screen)) : 'ناقص'}">
+        <span class="pm-k"><span>الشاشة</span><span class="pm-ic">${ico('phone')}</span></span>
+        <span class="pm-v sm">${nums.screen != null ? fmtHM(Math.round(nums.screen)) : '—'}</span>
+        ${diffText(nums.screen, base.screen, 'min', 5, laterK.has('screen'))}
+      </button>
+      <button class="pm-cell${nums.spend != null ? ' money' : ' none'}" type="button" data-act="tab" data-tab="money" aria-label="الفلوس: ${nums.spend != null ? `${fmtNum(Math.round(nums.spend))} جنيه` : 'ناقص'}">
+        <span class="pm-k"><span>الفلوس</span><span class="pm-ic">${ico('wallet')}</span></span>
+        <span class="pm-v sm">${nums.spend != null ? `${fmtNum(Math.round(nums.spend))} <small>ج</small>` : '—'}</span>
+        ${diffText(nums.spend, base.spend, 'money', 5, laterK.has('money'))}
+      </button>
+    </div>`;
+
+  const anyBase = ['sleep', 'screen', 'work', 'spend'].some((m) => base[m] != null);
+  const cap = anyBase ? 'الأسهم مقارنة بمتوسط آخر ٧ أيام' : 'المقارنة بمتوسطك بتظهر بعد ٣ أيام تسجيل';
+
+  return `<section class="pulse${!now.length && !later.length ? ' ok' : ''}" aria-label="ملخص اليوم">
+      <div class="pulse-top">${headHtml}${lat}</div>
+      ${heroRow}
+      ${subRow}
+      <p class="pulse-cap">${cap}</p>
+    </section>`;
+}
+
+// ---------- توزيع الوقت حسب المجالات (متجمّع من تاب «الوقت») ----------
+function timeSummary(tb) {
+  const head = `<div class="sec"><b>توزيع وقتك</b><span class="mut">${tb.total ? `${fmtNum(tb.total)} من ٢٤ ساعة` : 'لسه مفيش ساعات'}</span></div>`;
+  if (!tb.total) {
+    return `${head}<section class="panel tsum-empty" aria-label="توزيع الوقت">
+      <p>سجّل ساعات يومك في تاب «الوقت»، وهتتجمّع هنا تلقائياً لكل مجال (نوم، شغل، تعلم، مواصلات…).</p>
+      <button class="lnk" type="button" data-act="tab" data-tab="time">سجّل ساعات اليوم${ic(P.chev)}</button>
+    </section>`;
+  }
+  const grid = tb.rows.map((r) => {
+    const val = r.hours === 1 ? 'ساعة' : r.hours === 2 ? 'ساعتين' : `${fmtNum(r.hours)} <small>${hoursWord(r.hours)}</small>`;
+    const pct = Math.round((r.hours / tb.total) * 100);
+    return `<button class="ts-item tc-${r.id}" type="button" data-act="timecat" data-c="${r.id}" aria-label="${r.name}: ${fmtHours(r.hours)}">
+      <span class="ts-ic">${ico(r.icon)}</span>
+      <span class="ts-m"><span class="ts-top"><span class="ts-n">${r.name}</span><span class="ts-p">${fmtNum(pct)}٪</span></span><span class="ts-v">${val}</span></span>
+    </button>`;
   }).join('');
-  const cap = anyBase ? 'الأسهم: مقارنة بمتوسط آخر ٧ أيام' : 'لسه بدري نقارن بمتوسطك (محتاج ٣ أيام)';
-  return `<section class="sum" aria-label="ملخص اليوم">${head}${lat}
-    <div class="st4">${cells}</div><p class="sum-cap">${cap}</p></section>`;
+  const left = 24 - tb.total;
+  return `${head}<section class="panel tsum" aria-label="توزيع الوقت">
+      <div class="tscale-wrap">
+        ${timeStackBar(tb)}
+        <div class="tscale" aria-hidden="true"><span>٤ ص</span><span>١٢ م</span><span>٨ م</span><span>٤ ص</span></div>
+      </div>
+      <div class="ts-grid">${grid}</div>
+      <div class="ts-foot">
+        <span>${left > 0 ? `فاضل ${fmtHours(left)} غير مسجّلة` : 'الـ ٢٤ ساعة متسجلين'}</span>
+        <button class="ts-go" type="button" data-act="tab" data-tab="time">سجّل الساعات${ic(P.chev)}</button>
+      </div>
+    </section>`;
 }
 
-// ---------- المزاج والفترات ----------
-/** الطاقة: ٥ أعمدة (المليان = الرقم)، وتحتها "طاقة ٤" عشان تتفهم من غير ما تعدّ. */
-function energyBars(e) {
-  const n = +e || 0;
-  return `<span class="tp-en"><span class="tp-e" aria-hidden="true">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= n ? 'on' : ''}"></i>`).join('')}</span>
-    <small>طاقة ${n ? fmtNum(n) : '—'}</small></span>`;
-}
-
-// miss = البنود ★ الناقصة اللي وقتها جه بس (اللي لسه وقتها ماجاش مابيتكتبش عليها "ناقص")
-function timeline(s, miss, hour) {
-  const d = s.day;
-  const mood = `<div class="moodr"><span class="ml">مزاجك النهارده${miss.has('mood') ? '<small>ناقص</small>' : ''}</span>
-    <div class="pseg amb" data-rate="mood" role="group" aria-label="المزاج من ٥">${[1, 2, 3, 4, 5].map((i) => `<button class="ps" type="button" data-v="${i}" aria-label="${i} من ٥">${fmtNum(i)}</button>`).join('')}</div></div>`;
-
-  const rows = PERIODS.map(([k, label, range], i) => {
-    const phase = periodPhase(i, s.cur, s.today, hour);
-    const txt = (d[`${k}t`] || '').trim();
-    const h = +String(d[`${k}h`] || '').replace(/[^\d.]/g, '') || 0;
-    const filled = !!txt || has(d[`${k}e`]) || h > 0;
-    const parts = [];
-    if (txt) parts.push(esc(txt));
-    if (h) parts.push(`${fmtNum(h)} ساعة`);
-    let sub;
-    if (parts.length) sub = `<span class="tp-t txt">${parts.join('، ')}</span>`;
-    else if (phase === 'future' && !filled) sub = '<span class="tp-t">لسه</span>';
-    else if (phase === 'now') sub = '';
-    else sub = '<span class="tp-t">دوس واكتب عملت إيه</span>';
-    const short = range.replace(/^من /, '');
-    const row = `<button class="tp ${phase}${filled ? ' done' : ''}" type="button" data-act="sheet" data-sheet="${k}" aria-label="${label}: ${filled ? 'عدّل' : 'سجّل'} عملت إيه والطاقة والساعات">
-      <span class="tp-dot"></span>
-      <span class="tp-m"><span class="tp-h"><b>${label}</b><small>${short}</small>${phase === 'now' ? '<span class="nowc">دلوقتي</span>' : ''}</span>${sub}</span>
-      ${energyBars(d[`${k}e`])}</button>`;
-    if (phase !== 'now') return row;
-    return `<div class="tpw">${row}
-      <form class="tp-in" data-act="addline">
-        <input class="qf" data-role="linein" placeholder="عملت إيه ${label}؟" aria-label="عملت إيه ${label}" autocomplete="off" enterkeyhint="send">
-        <button class="qgo" type="submit" aria-label="سجّل">${ic(P.send)}</button>
-      </form></div>`;
-  }).join('');
-
-  return `<div class="sec"><b>يومك بالفترات</b></div>
-    <section class="tline" aria-label="يومك بالفترات">${mood}<div class="tps">${rows}</div></section>`;
-}
-
-// ---------- العادات ----------
-function habitPills(s, miss) {
+// ---------- أركان حياتك (لغة ألوان موحّدة: محايد/شامبين → زمردي عند التمام) ----------
+function pillarsSection(s, miss) {
   const n = habitsDone(s.day);
   const head = miss.has('habits') ? '<span class="ask">ناقص</span>' : `<span>${fmtNum(n)} من ١٣ تم</span>`;
-  // الـ ١٣ ظاهرين في شبكة (كان صف بيتسحب، وكان باين منه ٤ بس على ٣٩٠). والدوسة بتلف: فاضي ← تم ← جزئي ← فاضي
-  return `<div class="sec"><b>العادات</b>${head}</div>
-    <section class="panel" aria-label="العادات والصلوات">${habitsGrid(s.day, true)}${salahRow()}</section>`;
+
+  const cards = HABIT_GROUPS.map((g) => {
+    const st = habitGroupStats(s.day, g);
+    const allDone = st.done === st.total;
+    let sub = `فاضل ${fmtNum(st.total - st.done)}`;
+    if (allDone) sub = 'الركن ده كمل النهارده';
+    else if (st.part) sub = `فاضل ${fmtNum(st.total - st.done)} · ${fmtNum(st.part)} جزئي`;
+
+    const segs = `<div class="pil-segs" style="grid-template-columns:repeat(${st.total},1fr)" aria-hidden="true">
+      ${g.keys.map((k) => {
+        const v = +s.day[k] || 0;
+        return `<i class="${v === 2 ? 'v2' : v === 1 ? 'v1' : ''}"></i>`;
+      }).join('')}</div>`;
+
+    return `<section class="panel pillar${allDone ? ' done' : ''}" aria-label="${g.name}">
+        <div class="pil-h">
+          <span class="pil-med">${ico(g.icon)}</span>
+          <div class="pil-m"><b>${g.name}</b><span class="${allDone ? 'ok' : ''}">${sub}</span></div>
+          <span class="pil-cnt">${fmtNum(st.done)}/${fmtNum(st.total)}</span>
+        </div>
+        ${segs}
+        <div class="habits2">${g.keys.map((k) => {
+          const l = HABIT_NAME.get(k) || k;
+          return `<button class="hp" type="button" data-tri="${k}" data-label="${l}"><i></i><span>${l}</span></button>`;
+        }).join('')}</div>
+        ${g.withSalah ? salahRow() : ''}
+      </section>`;
+  }).join('');
+
+  return `<div class="sec" id="pillars"><b>أركان حياتك</b>${head}</div>
+    <div class="pillars">${cards}</div>
+    <button class="gh full" type="button" data-act="sheet" data-sheet="habits">أرقام وتفاصيل العادات (الورد، التمرين، القهوة…)</button>`;
 }
 
-// ---------- آخر اليوم ----------
-/** سطر بدايرة حالته (DESIGN.md: العلامات): تم، أو ناقص (وقته جه)، أو بعدين (متقطعة). */
+// ---------- المزاج وآخر اليوم ----------
 function row({ sheet, t, sub, subCls = '', st }) {
   const word = { done: 'اتسجل', miss: 'ناقص', later: 'بالليل' }[st];
   return `<button class="lr c" type="button" data-act="sheet" data-sheet="${sheet}" aria-label="${t} ${word}">
@@ -205,12 +297,14 @@ function row({ sheet, t, sub, subCls = '', st }) {
 }
 function endOfDay(s, miss) {
   const d = s.day;
-  // ناقص (كهرماني) لو وقته جه، و"بالليل" (رمادي) لو لسه
   const sub = (k, empty) => (has(d[k]) ? [esc(d[k]), 'txt', 'done'] : miss.has(k) ? [empty, 'ask', 'miss'] : ['بالليل', '', 'later']);
   const [ps, pc, pst] = sub('post', 'ناقص، دوس واكتب');
   const [ts, tc, tst] = sub('top', 'ناقص، جملة قبل ما تنام');
-  return `<div class="sec"><b>آخر اليوم</b></div>
+  const mood = `<div class="moodr"><span class="ml">مزاجك النهارده${miss.has('mood') ? '<small>ناقص</small>' : ''}</span>
+    <div class="pseg amb" data-rate="mood" role="group" aria-label="المزاج من ٥">${[1, 2, 3, 4, 5].map((i) => `<button class="ps" type="button" data-v="${i}" aria-label="${i} من ٥">${fmtNum(i)}</button>`).join('')}</div></div>`;
+  return `<div class="sec"><b>المزاج وآخر اليوم</b></div>
     <section class="ledger">
+      ${mood}
       ${row({ sheet: 'post', t: 'أجّلت إيه؟', sub: ps, subCls: pc, st: pst })}
       ${row({ sheet: 'top', t: 'أهم حاجة حصلت', sub: ts, subCls: tc, st: tst })}
     </section>`;
@@ -218,9 +312,9 @@ function endOfDay(s, miss) {
 
 // ---------- مهام النهارده ----------
 function tasksToday(s) {
-  const all = todayTasks(s.tasks, s.today); // المفتوحة لحد النهارده + اللي خلصت النهارده
+  const all = todayTasks(s.tasks, s.today);
   const done = all.filter((t) => t.done).length;
-  const open = groupTasks(s.tasks, s.today).today.slice(0, 3); // أول ٣ بالترتيب: المهم الأول وبعدين الأقدم
+  const open = groupTasks(s.tasks, s.today).today.slice(0, 3);
   const head = `<div class="sec"><b>مهام النهارده</b>${all.length ? `<span>${fmtNum(done)} من ${fmtNum(all.length)} خلصت</span>` : ''}</div>`;
   const rows = open.map((t) => `<div class="tk${t.pri ? ' pri' : ''}">
       <button class="tk-c" type="button" data-act="tdone" data-id="${esc(t.id)}" aria-pressed="false" aria-label="علّم إنها خلصت: ${esc(t.t)}"><i></i></button>
@@ -234,9 +328,10 @@ export function renderToday(s, ctx = {}) {
   const hour = ctx.hour ?? new Date().getHours();
   const split = starSplit(s.day, s.cur, s.today, hour);
   const miss = new Set(split.now.map((x) => x.k));
-  return `${summary(s, split, ctx)}
-    ${timeline(s, miss, hour)}
-    ${habitPills(s, miss)}
+  const tb = timeByCat(s.day);
+  return `${summary(s, split, ctx, tb)}
+    ${timeSummary(tb)}
+    ${pillarsSection(s, miss)}
     ${endOfDay(s, miss)}
     ${aiSection(s)}
     ${tasksToday(s)}
@@ -245,7 +340,14 @@ export function renderToday(s, ctx = {}) {
 
 export function renderTabs(s) {
   const open = todayTasks(s.tasks, s.today).filter((t) => !t.done).length;
-  // الرقم على التبويبة = حاجة محتاجاك (مهام النهارده المفتوحة) بس. عدد الأفكار كان بيزيد على طول ومش محتاج منك حاجة
-  const tabs = [['day', 'اليوم', 0], ['tasks', 'مهام', open], ['ideas', 'أفكار', 0], ['money', 'فلوس', 0]];
-  return tabs.map(([k, l, n]) => `<button class="tab" type="button" data-act="tab" data-tab="${k}"${s.tab === k ? ' aria-current="page"' : ''}>${l}${n ? `<span class="bd">${fmtNum(n)}</span>` : ''}</button>`).join('');
+  const tabs = [
+    ['day', 'اليوم', 'sun', 0],
+    ['time', 'الوقت', 'clock', 0],
+    ['tasks', 'مهام', 'tasks', open],
+    ['ideas', 'أفكار', 'ideas', 0],
+    ['money', 'فلوس', 'wallet', 0],
+  ];
+  return tabs.map(([k, l, icon, n]) => `<button class="tab" type="button" data-act="tab" data-tab="${k}"${s.tab === k ? ' aria-current="page"' : ''}>
+    <span class="tab-ic">${ico(icon)}${n ? `<span class="bd">${fmtNum(n)}</span>` : ''}</span>
+    <span class="tab-l">${l}</span></button>`).join('');
 }

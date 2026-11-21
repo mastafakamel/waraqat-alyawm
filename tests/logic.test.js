@@ -8,8 +8,10 @@ import {
   groupTasks, isOverdue, sortIdeas, searchIdeas, normAr, shortDate, moneySummary, longDate, periodPhase,
   periodOf, periodDay, newPeriod, periodLabel, summaryStart, metricVisible, groupMetrics, metricDesc, metricValue, metricAreas,
   mergeDoc, parseBackup, takeRemote, useQuota, dayLine, dayDigest, weekDigest, reportBlocks, dayKeyAt,
-  weekKeys, dayStatus, starSplit, dayNums, avgOf, baselineFor, compareTo, fmtDiff,
+  weekKeys, satWeekKeys, weekNumber, HABITS, HABIT_GROUPS, habitGroupStats,
+  dayStatus, dayProgress, starSplit, dayNums, avgOf, baselineFor, compareTo, fmtDiff,
   suggestTimes, lastWith, readDuration, recentValues,
+  fmtHour, hourSpan, hoursWord, fmtHours, timeByCat, sleepHourList,
 } from '../js/logic.js';
 
 test('الأرقام العربي والإنجليزي بتتحول قبل الحفظ', () => {
@@ -390,6 +392,11 @@ test('شريط الأيام: ٧ مفاتيح من الأقدم، وحالة كل
   assert.equal(dayStatus({ ai: { t: 'تقرير', at: 1 } }), 'none'); // التقرير لوحده مش تسجيل
   assert.equal(dayStatus({ mood: 3 }), 'part');
   assert.equal(dayStatus(FULL_DAY), 'full');
+  assert.equal(dayProgress({}), 0);
+  assert.equal(dayProgress({ ai: { t: 'تقرير' } }), 0);
+  assert.equal(dayProgress({ hrs: { 9: { c: 'work' } } }), 15);
+  assert.equal(dayProgress({ sleep: '00:15', mood: 4 }), 25);
+  assert.equal(dayProgress(FULL_DAY), 100);
 });
 
 test('فاضل دلوقتي ولا بعدين: كل بند ★ ليه وقت بيبقى فيه ناقص', () => {
@@ -483,4 +490,72 @@ test('آخر قيم مختلفة (المشاريع، وأجّلت إيه): ال�
   assert.deepEqual(recentValues(HIST, ['w1p', 'w2p', 'w3p', 'w4p'], '2026-11-21'), ['ورقة اليوم', 'موقع الأسواف']);
   assert.deepEqual(recentValues(HIST, 'post', '2026-11-21', 3, ['ولا حاجة']), ['مكالمة البنك', 'المشي', 'القراية']);
   assert.deepEqual(recentValues(HIST, 'post', '2026-11-19', 3), ['ولا حاجة', 'القراية']);
+});
+
+// ---------- أركان الحياة + الأسبوع السبت←الجمعة + سجل الوقت ساعة بساعة ----------
+test('شريط الأسبوع الثابت من السبت للجمعة، ورقم الأسبوع واحد للأسبوع كله', () => {
+  const expected = ['2026-11-14', '2026-11-15', '2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20'];
+  assert.deepEqual(satWeekKeys('2026-11-14'), expected); // السبت
+  assert.deepEqual(satWeekKeys('2026-11-18'), expected); // الأربعاء
+  assert.deepEqual(satWeekKeys('2026-11-20'), expected); // الجمعة
+  // رقم الأسبوع ثابت من السبت للجمعة، والسبت الجديد بيزيد ١
+  assert.equal(weekNumber('2026-11-14'), 47);
+  assert.equal(weekNumber('2026-11-18'), 47);
+  assert.equal(weekNumber('2026-11-20'), 47);
+  assert.equal(weekNumber('2026-11-21'), 48); // السبت اللي بعده
+  assert.equal(weekNumber('2026-01-01'), 1);
+  assert.equal(weekNumber('2026-01-03'), 2);
+});
+
+test('أركان الحياة بتغطي الـ ١٣ عادة كلهم من غير تكرار ولا نقص، والنسبة صح', () => {
+  const grouped = HABIT_GROUPS.flatMap((g) => g.keys);
+  assert.equal(grouped.length, HABITS.length);
+  assert.deepEqual(new Set(grouped), new Set(HABITS.map(([k]) => k)));
+  const deen = HABIT_GROUPS[0];
+  assert.deepEqual(habitGroupStats({ fajr: 2, wird: 2, azkm: 1 }, deen), { done: 2, part: 1, total: 4, pct: 63 });
+  assert.deepEqual(habitGroupStats({ fajr: 2, wird: 2, azkm: 2, azke: 2 }, deen), { done: 4, part: 0, total: 4, pct: 100 });
+});
+
+test('سجل الوقت: تجميع المجالات، وامتداد الساعات، وملء النوم، والدمج والذكاء الاصطناعي', () => {
+  assert.equal(fmtHour(4), '٤ ص');
+  assert.equal(fmtHour(12), '١٢ م');
+  assert.equal(fmtHour(17), '٥ م');
+  assert.equal(fmtHour(0), '١٢ ص');
+  assert.equal(hoursWord(1), 'ساعة');
+  assert.equal(hoursWord(2), 'ساعتين');
+  assert.equal(hoursWord(5), 'ساعات');
+  assert.equal(fmtHours(1), 'ساعة');
+  assert.equal(fmtHours(2), 'ساعتين');
+  assert.equal(fmtHours(5), '٥ ساعات');
+  assert.equal(fmtHours(12), '١٢ ساعة');
+  assert.deepEqual(hourSpan(9, 3), [9, 10, 11]);
+  assert.deepEqual(hourSpan(23, 3), [23, 0, 1]);
+  assert.deepEqual(hourSpan(2, 4), [2, 3]); // مايلفش على ٤ الفجر بتاع بكرة
+  // ملء النوم من وقت النوم والصحيان
+  assert.deepEqual(sleepHourList('23:30', '06:30'), [23, 0, 1, 2, 3, 4, 5]);
+  assert.deepEqual(sleepHourList('00:15', '06:40'), [0, 1, 2, 3, 4, 5]);
+  assert.deepEqual(sleepHourList('', '06:40'), []);
+  // تجميع ساعات كل مجال
+  const d = {
+    hrs: {
+      9: { c: 'work', t: 'ورقة اليوم' },
+      10: { c: 'work', t: 'مكالمة' },
+      11: { c: 'work' },
+      8: { c: 'move', t: 'طريق الشغل' },
+      15: { c: 'learn', t: 'إنجليزي' },
+      16: { c: '', t: 'ملاحظة بس من غير مجال' },
+    },
+  };
+  const tb = timeByCat(d);
+  assert.equal(tb.total, 5);
+  assert.deepEqual(tb.rows.map((r) => [r.id, r.hours]), [['work', 3], ['learn', 1], ['move', 1]]);
+  // الاستيراد بيدمج hrs من غير ما يمسح ساعات أي طرف
+  const m = mergeDoc('day/2026-11-20', { updatedAt: 200, data: { hrs: { 9: { c: 'work' } } } }, { updatedAt: 100, data: { hrs: { 9: { c: 'rest' }, 10: { c: 'learn' } } } });
+  assert.deepEqual(m.data.hrs, { 9: { c: 'work' }, 10: { c: 'learn' } });
+  // تقرير الذكاء الاصطناعي اليومي والأسبوعي بياخد توزيع الوقت
+  const dig = dayDigest('2026-11-20', d);
+  assert.match(dig, /توزيع الوقت \(5 ساعة\): شغل 3 ساعة، تعلم 1 ساعة، مواصلات 1 ساعة/);
+  assert.match(dig, /ورقة اليوم/);
+  const wdig = weekDigest('2026-11-21', [{ key: '2026-11-20', data: d }]);
+  assert.match(wdig, /توزيع الوقت في الأسبوع \(5 ساعة\): شغل 3 ساعة، تعلم 1 ساعة، مواصلات 1 ساعة/);
 });

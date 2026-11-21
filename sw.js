@@ -6,7 +6,7 @@
 // (و node --test بيفشل لو نسيت.)
 
 // <stamp>
-const VERSION = '511f69c7f0';
+const VERSION = '71de07e7f7';
 const FILES = [
   './',
   'index.html',
@@ -34,6 +34,7 @@ const FILES = [
   'js/views/month.js',
   'js/views/sheets.js',
   'js/views/tasks.js',
+  'js/views/time.js',
   'js/views/today.js',
   'icons/apple-touch-icon.png',
   'icons/favicon-32.png',

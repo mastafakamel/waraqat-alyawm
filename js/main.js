@@ -11,11 +11,13 @@ import {
 import { askPersist, getDoc } from './db.js';
 import {
   addDays, cycleTri, rateTap, rateSet, readNumber, readDuration, toEn, parseExpense, fmtNum, missingStars, EXP_CATS, lineTarget, mergeLine,
-  uid, newPeriod, periodOf, periodLabel, AREAS, weekKeys, dayStatus, baselineFor, starSplit,
+  uid, newPeriod, periodOf, periodLabel, AREAS, weekKeys, satWeekKeys, dayStatus, dayProgress, baselineFor, starSplit,
+  hourSpan, sleepHourList, fmtHour, fmtHours,
 } from './logic.js';
 import { monthSheet, updateMonth, shiftMonth } from './views/month.js';
 import { $, $$, esc, openSheet, requestClose, isSheetOpen, sheetEl, syncFields, toast, toastErr, setHtml } from './ui.js';
 import { renderHeader, updateStatus, renderToday, renderTabs } from './views/today.js';
+import { renderTime, hourSheet, updateHourSheet } from './views/time.js';
 import { sheetFor, guideStep, updateOutputs } from './views/sheets.js';
 import { dockHtml, updateDock } from './views/dock.js';
 import { tasksShell, updateTasks } from './views/tasks.js';
@@ -37,14 +39,17 @@ const ui = {
   sf: { email: '' }, // الإيميل اللي اتكتب في دخول المزامنة (الباسورد مابيتحفظش)
   month: null, // sheet الشهر مفتوح على أنهي شهر "YYYY-MM"، وحالات أيامه
   monthStatus: {},
+  tbrush: 'work', // المجال المختار للتلوين السريع في تاب «الوقت» (أو 'clear')
+  tperiod: 'all', // فلتر الفترات في تاب «الوقت»
+  hf: null, // sheet تفاصيل ساعة: { h, c, t, span }
 };
 
 // ---------- الأيام اللي حوالين اليوم المفتوح ----------
-// شريط الأيام (آخر ٧ لحد النهارده) والمقارنة بمتوسطك (آخر ٧ قبل اليوم المفتوح) محتاجين أيام تانية من IndexedDB.
+// شريط الأسبوع (السبت←الجمعة) والمقارنة بمتوسطك (آخر ٧ قبل اليوم المفتوح) محتاجين أيام تانية من IndexedDB.
 // بتتحمّل لما اليوم المفتوح أو النهارده يتغيّروا بس، واليوم المفتوح نفسه بيتاخد من الذاكرة (فيه تعديلات لسه ماتحفظتش).
 const win = { cur: null, today: null, days: new Map() };
 async function loadWindow() {
-  const want = new Set([...weekKeys(state.today), ...weekKeys(addDays(state.cur, -1))]);
+  const want = new Set([...satWeekKeys(state.cur), ...weekKeys(state.today), ...weekKeys(addDays(state.cur, -1))]);
   want.delete(state.cur);
   const at = `${state.cur}|${state.today}`;
   const docs = await Promise.all([...want].map(async (k) => [k, (await getDoc(`day/${k}`))?.data || null]));
@@ -60,10 +65,14 @@ function winCtx() {
   }
   const days = [...win.days].map(([key, data]) => ({ key, data }));
   const status = {};
-  for (const [k, d] of win.days) status[k] = dayStatus(d);
+  const pct = {};
+  for (const [k, d] of win.days) {
+    status[k] = dayStatus(d);
+    pct[k] = dayProgress(d);
+  }
   const base = {};
   for (const m of ['sleep', 'screen', 'work', 'spend']) base[m] = baselineFor(days, state.cur, m);
-  return { status, base, hour: new Date().getHours() };
+  return { status, pct, base, hour: new Date().getHours() };
 }
 const sx = () => ({ configured: configured(), ...syncInfo }); // حالة المزامنة لكارت الإعدادات
 const DRAFTS = ['taskin', 'ideain', 'iq', 'mamt', 'mdesc', 'linein'];
@@ -95,6 +104,9 @@ function render() {
       shown = state.tab;
     }
     tab.update(view);
+  } else if (state.tab === 'time') {
+    setHtml(view, renderTime(state, ui, ctx));
+    shown = 'time';
   } else {
     // صف العادات بيتسحب لجنب: لو الصفحة اترسمت من جديد، نرجّعه لنفس مكانه بدل ما ينط لأوله
     const keep = $$('[data-keep-scroll]', view).map((el) => [el.dataset.keepScroll, el.scrollLeft]);
@@ -120,6 +132,7 @@ function render() {
     if (ui.mf) updateMetricForm(sh, ui.mf, state);
     updateAiSheet(sh, state);
     if (ui.month) updateMonth(sh, ui.month, state, ui.monthStatus);
+    if (ui.hf) updateHourSheet(sh, ui.hf);
   }
 }
 subscribe(render);
@@ -147,10 +160,16 @@ async function handleQuick(form) {
     await setKOn(today, 'exp', [...(d.exp || []), { a: r.a, w: r.w, c: ui.qcat }]);
     toast(`اتسجل ${fmtNum(r.a)} جنيه · ${ui.qcat}${where}`);
   } else {
-    const { key, label } = lineTarget(new Date().getHours());
+    const nowH = new Date().getHours();
+    const { key, label } = lineTarget(nowH);
     const d = await getDayData(today);
     await setKOn(today, key, mergeLine(d[key], v));
-    toast(`اتكتب في ${label}${where}`);
+    // بيتسجل كمان في الساعة الحالية في تاب «الوقت» من غير ما يغيّر مجالها لو متحدد
+    const curHrs = { ...(d.hrs || {}) };
+    const slot = curHrs[String(nowH)] || { c: '' };
+    curHrs[String(nowH)] = { c: slot.c || '', t: mergeLine(slot.t, v) };
+    await setKOn(today, 'hrs', curHrs);
+    toast(`اتكتب في ${fmtHour(nowH)} (${label})${where}`);
   }
   inp.value = '';
   updateDock($('#dock'), ui, state.cur !== today);
@@ -514,6 +533,71 @@ function moveMonth(n) {
   loadMonthStatus(ui.month);
 }
 
+// ---------- سجل الوقت ساعة بساعة (تاب «الوقت») ----------
+function saveHrs(next) {
+  setK('hrs', Object.keys(next).length ? next : '');
+}
+function paintHour(hStr) {
+  const next = { ...(state.day.hrs || {}) };
+  const prev = next[hStr];
+  if (ui.tbrush === 'clear') {
+    delete next[hStr];
+  } else if (prev?.c === ui.tbrush) {
+    if (prev.t) next[hStr] = { c: '', t: prev.t };
+    else delete next[hStr];
+  } else {
+    next[hStr] = prev?.t ? { c: ui.tbrush, t: prev.t } : { c: ui.tbrush };
+  }
+  saveHrs(next);
+}
+function openHourEdit(h) {
+  const prev = state.day.hrs?.[String(h)];
+  ui.hf = { h, c: prev?.c || (ui.tbrush !== 'clear' ? ui.tbrush : 'work'), t: prev?.t || '', span: 1 };
+  openSheet({ ...hourSheet(h, ui.hf), onClose: () => { ui.hf = null; } });
+  updateHourSheet(sheetEl(), ui.hf);
+  afterOpen();
+}
+function saveHourSheet() {
+  if (!ui.hf) return undefined;
+  const note = (sheetEl()?.querySelector('[data-role="hnote"]')?.value ?? ui.hf.t ?? '').trim();
+  const list = hourSpan(ui.hf.h, ui.hf.span);
+  const next = { ...(state.day.hrs || {}) };
+  for (const h of list) {
+    next[String(h)] = note ? { c: ui.hf.c, t: note } : { c: ui.hf.c };
+  }
+  saveHrs(next);
+  requestClose();
+  if (list.length > 1) toast(`اتسجل ${fmtHours(list.length)}`);
+  return undefined;
+}
+function clearHourSheet() {
+  if (!ui.hf) return undefined;
+  const list = hourSpan(ui.hf.h, ui.hf.span);
+  const before = structuredClone(state.day.hrs || {});
+  const next = { ...before };
+  let removed = 0;
+  for (const h of list) {
+    if (next[String(h)]) { delete next[String(h)]; removed += 1; }
+  }
+  if (removed) {
+    saveHrs(next);
+    toast(removed > 1 ? `اتمسح ${fmtHours(removed)}` : `اتمسحت الساعة ${fmtHour(ui.hf.h)}`, 'رجّع', () => saveHrs(before));
+  }
+  return requestClose();
+}
+function fillSleepHours() {
+  const list = sleepHourList(state.day.sleep, state.day.wake);
+  if (!list.length) return openNamed('sleep');
+  const before = structuredClone(state.day.hrs || {});
+  const next = { ...before };
+  for (const h of list) {
+    const prev = next[String(h)];
+    next[String(h)] = prev?.t ? { c: 'sleep', t: prev.t } : { c: 'sleep' };
+  }
+  saveHrs(next);
+  return toast(`اتملى ${fmtHours(list.length)} نوم`, 'رجّع', () => saveHrs(before));
+}
+
 // ---------- السطر في الفترة اللي إنت فيها (خط اليوم) ----------
 function addLine(form) {
   const inp = form.querySelector('[data-role="linein"]');
@@ -579,6 +663,32 @@ document.addEventListener('click', async (e) => {
     case 'month': return openMonth();
     case 'mprev': return moveMonth(-1);
     case 'mnext': return moveMonth(1);
+    case 'wprev': return goTo(addDays(state.cur, -7));
+    case 'wnext': return goTo(addDays(state.cur, 7));
+    case 'scroll': return document.getElementById(b.dataset.to)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // تاب «الوقت»: تلوين بلمسة + تفاصيل الساعة + ملء النوم
+    case 'timecat':
+      ui.tbrush = b.dataset.c;
+      state.tab = 'time';
+      render();
+      return window.scrollTo(0, 0);
+    case 'tbrush':
+      ui.tbrush = b.dataset.c;
+      return render();
+    case 'tperiod':
+      ui.tperiod = b.dataset.v;
+      return render();
+    case 'fillsleep': return fillSleepHours();
+    case 'hset': return paintHour(b.dataset.h);
+    case 'hedit': return openHourEdit(+b.dataset.h);
+    case 'hcat':
+      if (ui.hf) { ui.hf.c = b.dataset.c; updateHourSheet(sheetEl(), ui.hf); }
+      return undefined;
+    case 'hspan':
+      if (ui.hf) { ui.hf.span = +b.dataset.n; updateHourSheet(sheetEl(), ui.hf); }
+      return undefined;
+    case 'hsave': return saveHourSheet();
+    case 'hclear': return clearHourSheet();
     case 'guide': return startGuide(b.dataset.q); // من "فاضل دلوقتي": من أول بند ناقص، أو من الاسم اللي دوست عليه
     case 'qmenu':
       ui.qmenu = !ui.qmenu;
@@ -681,7 +791,7 @@ document.addEventListener('click', async (e) => {
 
 const FORMS = {
   addexp: addExpense, quick: handleQuick, addtask: addTaskFromForm, addidea: addIdeaFromForm, addmoney: addMoney, addline: addLine,
-  slogin: (f) => login(f, false),
+  slogin: (f) => login(f, false), hsave: saveHourSheet,
 };
 document.addEventListener('submit', (e) => {
   const fn = FORMS[e.target.dataset.act];
@@ -750,6 +860,10 @@ document.addEventListener('input', (e) => {
   }
   if (role === 'semail') {
     ui.sf.email = el.value;
+    return undefined;
+  }
+  if (ui.hf && role === 'hnote') {
+    ui.hf.t = el.value;
     return undefined;
   }
   if (el.dataset.m) { // قيمة مقياس من شاشته

@@ -6,11 +6,37 @@ export const HABITS = [
   ['eng', 'إنجليزي'], ['read', 'قراءة'], ['tech', 'تعلم تقني'], ['said', 'قلت اللي حسيته'],
   ['wed', 'الفرح/الشقة'],
 ];
+/** تقسيم العادات الـ ١٣ على جوانب الحياة الأربعة (عرض بس، ومفاتيح البيانات نفسها). */
+export const HABIT_GROUPS = [
+  { id: 'deen', name: 'الدين والروح', icon: 'star', keys: ['fajr', 'wird', 'azkm', 'azke'], withSalah: true },
+  { id: 'health', name: 'الصحة والجسم', icon: 'heart', keys: ['ex', 'walk', 'meals', 'nojunk'] },
+  { id: 'growth', name: 'التعلم والتطوير', icon: 'book', keys: ['eng', 'read', 'tech'] },
+  { id: 'life', name: 'العلاقات والحياة', icon: 'home', keys: ['said', 'wed'] },
+];
 export const PERIODS = [
   ['p1', 'بعد الفجر', 'من ٤ الفجر لـ ١٢ الضهر'],
   ['p2', 'بعد الضهر', 'من ١٢ لـ ٥ العصر'],
   ['p3', 'بعد المغرب', 'من ٥ لـ ٩ بالليل'],
   ['p4', 'قبل النوم', 'بعد ٩ بالليل'],
+];
+/** ساعات اليوم المنطقي (من ٤ الفجر لـ ٣ الفجر) متوزعة على الفترات الأربعة. */
+export const PERIOD_HOURS = [
+  [4, 5, 6, 7, 8, 9, 10, 11],
+  [12, 13, 14, 15, 16],
+  [17, 18, 19, 20],
+  [21, 22, 23, 0, 1, 2, 3],
+];
+export const DAY_HOURS = PERIOD_HOURS.flat();
+/** مجالات سجل الوقت (تاب «الوقت»). القيمة في اليوم: day.hrs = { "9": { c: "work", t?: "ملاحظة" } } */
+export const TIME_CATS = [
+  { id: 'sleep', name: 'نوم', icon: 'moon' },
+  { id: 'work', name: 'شغل', icon: 'brief' },
+  { id: 'learn', name: 'تعلم', icon: 'book' },
+  { id: 'move', name: 'مواصلات', icon: 'move' },
+  { id: 'health', name: 'صحة', icon: 'heart' },
+  { id: 'deen', name: 'دين', icon: 'star' },
+  { id: 'life', name: 'علاقات', icon: 'home' },
+  { id: 'rest', name: 'راحة', icon: 'rest' },
 ];
 export const EXP_CATS = ['أكل', 'مواصلات', 'بيت', 'شخصي', 'شغل', 'فرح'];
 export const IDEA_CATS = ['مشروع', 'شغل', 'شخصي', 'تعلم', 'تاني'];
@@ -224,9 +250,105 @@ export function dayStatus(d) {
   return starCount(d) === STAR_ITEMS.length ? 'full' : 'part';
 }
 
+/** نسبة إنجاز اليوم للحلقة الصغيرة حوالين كل يوم في شريط الأسبوع (٠ لـ ١٠٠). */
+export function dayProgress(d) {
+  if (!d || !logged(d)) return 0;
+  const sc = starCount(d);
+  return sc ? Math.round((sc / STAR_ITEMS.length) * 100) : 15;
+}
+
 /** n مفاتيح لحد endKey، من الأقدم للأحدث (الأقدم بيترسم على اليمين). */
 export function weekKeys(endKey, n = 7) {
   return Array.from({ length: n }, (_, i) => addDays(endKey, i - n + 1));
+}
+
+/** ٧ أيام الأسبوع الثابت من السبت للجمعة اللي فيه key (السبت الأول على اليمين في RTL). */
+export function satWeekKeys(key) {
+  const d = new Date(`${key}T12:00:00`);
+  const offset = (d.getDay() + 1) % 7; // السبت = ٠، الأحد = ١، … الجمعة = ٦
+  const sat = addDays(key, -offset);
+  return Array.from({ length: 7 }, (_, i) => addDays(sat, i));
+}
+
+/** رقم الأسبوع في السنة (بداية الأسبوع من السبت). كل أيام السبت–الجمعة ليهم نفس الرقم. */
+export function weekNumber(key) {
+  const y = key.slice(0, 4);
+  const jan1 = new Date(`${y}-01-01T12:00:00`);
+  const d = new Date(`${key}T12:00:00`);
+  const jan1Offset = (jan1.getDay() + 1) % 7;
+  const doy = Math.round((d - jan1) / 864e5);
+  return Math.floor((doy + jan1Offset) / 7) + 1;
+}
+
+/** نسبة إنجاز ركن من أركان الحياة: التمام ١ والجزئي ٠٫٥. */
+export function habitGroupStats(day = {}, group) {
+  const keys = group?.keys || [];
+  const done = keys.filter((k) => day[k] === 2).length;
+  const part = keys.filter((k) => day[k] === 1).length;
+  const total = keys.length;
+  const pct = total ? Math.round(((done + part * 0.5) / total) * 100) : 0;
+  return { done, part, total, pct };
+}
+
+// ---------- سجل الوقت ساعة بساعة (day.hrs) ----------
+const TIME_CAT_MAP = new Map(TIME_CATS.map((c) => [c.id, c]));
+
+/** ٩ ← "٩ ص" ، ١٧ ← "٥ م" ، ٠ ← "١٢ ص" */
+export function fmtHour(h) {
+  const n = ((+h % 24) + 24) % 24;
+  return `${fmtNum(n % 12 || 12)} ${n < 12 ? 'ص' : 'م'}`;
+}
+
+/** عدد ساعات ورا بعض جوّه نفس اليوم المنطقي (من ٤ ص لـ ٣ ص) من غير ما يلفّ لبكرة. */
+export function hourSpan(startHour, count = 1) {
+  const i = DAY_HOURS.indexOf(((+startHour % 24) + 24) % 24);
+  if (i < 0) return [];
+  return DAY_HOURS.slice(i, i + Math.max(1, +count || 1));
+}
+
+/** ١ ← "ساعة" ، ٢ ← "ساعتين" ، ٥ ← "ساعات" */
+export function hoursWord(n) {
+  if (n === 1) return 'ساعة';
+  if (n === 2) return 'ساعتين';
+  return n <= 10 ? 'ساعات' : 'ساعة';
+}
+
+/** صيغة عربية سليمة للساعات من غير تكرار الرقم في المثنى: ١ ← "ساعة" ، ٢ ← "ساعتين" ، ٣ ← "٣ ساعات" ، ١٢ ← "١٢ ساعة". */
+export function fmtHours(n) {
+  if (n === 1) return 'ساعة';
+  if (n === 2) return 'ساعتين';
+  return `${fmtNum(n)} ${hoursWord(n)}`;
+}
+
+/** تجميع ساعات اليوم حسب المجال: { total, by, rows: [{ id, name, icon, hours }] } مترتبة من الأكبر للأصغر. */
+export function timeByCat(day = {}) {
+  const hrs = day?.hrs;
+  const by = {};
+  let total = 0;
+  if (hrs && typeof hrs === 'object') {
+    for (const h of DAY_HOURS) {
+      const c = hrs[String(h)]?.c;
+      if (c && TIME_CAT_MAP.has(c)) {
+        by[c] = (by[c] || 0) + 1;
+        total += 1;
+      }
+    }
+  }
+  const rows = TIME_CATS
+    .filter((cat) => by[cat.id])
+    .map((cat) => ({ ...cat, hours: by[cat.id] }))
+    .sort((a, b) => b.hours - a.hours);
+  return { total, by, rows };
+}
+
+/** الساعات اللي اتنام فيها من sleep و wake عشان زرار "ملء النوم" في تاب الوقت. */
+export function sleepHourList(sleep, wake) {
+  const s = mins(sleep);
+  const dur = sleepMinutes(sleep, wake);
+  if (s == null || dur == null || dur === 0) return [];
+  const start = Math.floor((s + 29) / 60) % 24;
+  const count = Math.max(1, Math.min(16, Math.round(dur / 60)));
+  return Array.from({ length: count }, (_, i) => (start + i) % 24);
 }
 
 /** الأرقام الأربعة بتاعة الملخص بالدقايق والساعات والجنيه، و null للي ماتسجلش (مش صفر). */
@@ -527,8 +649,8 @@ export function mergeDoc(id, local, incoming) {
   } else {
     data = { ...local.data };
     for (const [k, v] of Object.entries(incoming.data)) {
-      if (k === 'm' && v && typeof v === 'object' && data.m && typeof data.m === 'object') {
-        data.m = newer ? { ...data.m, ...v } : { ...v, ...data.m };
+      if ((k === 'm' || k === 'hrs') && v && typeof v === 'object' && data[k] && typeof data[k] === 'object') {
+        data[k] = newer ? { ...data[k], ...v } : { ...v, ...data[k] };
       } else if (!(k in data) || newer) {
         data[k] = v;
       }
@@ -663,6 +785,15 @@ export function dayDigest(key, d = {}, { prev = null, tasks = [], metrics = [] }
     return p.length ? `- ${l}: ${p.join('، ')}` : '';
   }).filter(Boolean);
   if (per.length) L.push('الفترات:', ...per);
+  const tb = timeByCat(d);
+  if (tb.total) {
+    L.push(`توزيع الوقت (${tb.total} ساعة): ${tb.rows.map((r) => `${r.name} ${r.hours} ساعة`).join('، ')}`);
+    const notes = DAY_HOURS
+      .map((h) => [h, d.hrs?.[String(h)]])
+      .filter(([, x]) => x && has(x.t))
+      .map(([h, x]) => `${h}:00 ${TIME_CAT_MAP.get(x.c)?.name || ''} (${clip(x.t, 40)})`);
+    if (notes.length) L.push(`- تفاصيل الساعات: ${clip(notes.join('، '), 320)}`);
+  }
   if (has(d.up)) L.push(`رفع طاقته: ${clip(d.up)}`);
   if (has(d.down)) L.push(`وطّى طاقته: ${clip(d.down)}`);
   if (has(d.unpl)) L.push(`مهام طلعت من غير تخطيط: ${toEn(d.unpl)}`);
@@ -749,6 +880,18 @@ export function weekDigest(endKey, days, { tasks = [], metrics = [] } = {}) {
 
   const pe = PERIODS.map(([k, l]) => [l, avg(pick((d) => (has(d[`${k}e`]) ? +d[`${k}e`] : null)))]).filter(([, v]) => v != null);
   if (pe.length) L.push(`متوسط الطاقة في كل فترة: ${pe.map(([l, v]) => `${l} ${v}/5`).join('، ')}`);
+
+  const wtBy = {};
+  let wtTotal = 0;
+  for (const d of ds) {
+    const tb = timeByCat(d);
+    wtTotal += tb.total;
+    for (const r of tb.rows) wtBy[r.id] = (wtBy[r.id] || 0) + r.hours;
+  }
+  if (wtTotal) {
+    const wtRows = TIME_CATS.filter((c) => wtBy[c.id]).map((c) => [c.name, wtBy[c.id]]).sort((a, b) => b[1] - a[1]);
+    L.push(`توزيع الوقت في الأسبوع (${wtTotal} ساعة): ${wtRows.map(([n, h]) => `${n} ${h} ساعة`).join('، ')}`);
+  }
 
   const habitDays = ds.filter((d) => HABITS.some(([k]) => has(d[k])));
   if (habitDays.length) {
