@@ -29,7 +29,7 @@ export function updateMoney(root, s, ui, loadDays) {
   const isToday = s.cur === s.today;
   const cats = expByCat(s.day).map(([c, v]) => `${esc(c)} ${fmtNum(v)}`);
   setHtml(spent, `<span class="spent-k">${isToday ? 'صرفت النهارده' : 'صرفت في اليوم ده'}</span>
-    <span class="spent-v">${fmtNum(expTotal(s.day))}<small>جنيه</small></span>
+    <span class="spent-v">${(s.day.exp || []).length ? `${fmtNum(expTotal(s.day))}<small>جنيه</small>` : '—'}</span>
     <span class="spent-s">${cats.length ? cats.join('، ') : 'لسه مفيش مصاريف.'}</span>`);
 
   for (const b of root.querySelectorAll('[data-act="cat"]')) {
@@ -59,8 +59,8 @@ export function updateMoney(root, s, ui, loadDays) {
       return;
     }
     setHtml(box, `${head}
-      <div class="sum-tot"><div class="out"><span>صرفت</span><b>${fmtNum(sum.spent)}<small>ج</small></b></div>
-        <div class="in"><span>دخل</span><b>${fmtNum(sum.income)}<small>ج</small></b></div></div>
+      <div class="sum-tot"><div class="out"><span>صرفت</span><b>${sum.spent ? `${fmtNum(sum.spent)}<small>ج</small>` : '—'}</b></div>
+        <div class="in"><span>دخل</span><b>${sum.income ? `${fmtNum(sum.income)}<small>ج</small>` : '—'}</b></div></div>
       ${sum.cats.length
         ? `<div class="sum-bars">${sum.cats.map(([c, v]) => `<div class="br"><span>${esc(c)}</span><span class="br-t"><i style="width:${Math.max(3, Math.round((v / max) * 100))}%"></i></span><span class="br-v">${fmtNum(v)}</span></div>`).join('')}</div>`
         : '<p class="empty-s" style="padding:0;text-align:right">لسه مفيش مصاريف.</p>'}`);

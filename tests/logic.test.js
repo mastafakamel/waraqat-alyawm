@@ -7,7 +7,7 @@ import {
   habitsDone, workTotal, expTotal, expByCat, dayRel, lineTarget, uid,
   groupTasks, isOverdue, sortIdeas, searchIdeas, normAr, shortDate, moneySummary, longDate, periodPhase,
   periodOf, periodDay, newPeriod, periodLabel, summaryStart, metricVisible, groupMetrics, metricDesc, metricValue, metricAreas,
-  mergeDoc, parseBackup, takeRemote, useQuota, dayLine, dayDigest, weekDigest, reportBlocks,
+  mergeDoc, parseBackup, takeRemote, useQuota, dayLine, dayDigest, weekDigest, reportBlocks, dayKeyAt,
 } from '../js/logic.js';
 
 test('الأرقام العربي والإنجليزي بتتحول قبل الحفظ', () => {
@@ -106,6 +106,21 @@ test('مهام النهارده: المفتوحة لحد النهارده + ال
     { id: 'f', due: '2026-11-21', done: false },
   ];
   assert.deepEqual(todayTasks(tasks, today).map((t) => t.id), ['a', 'b', 'd']);
+  // مهمة خلصت ١:٣٠ بالليل (تاريخ ٢١) لسه من مهام يوم ٢٠، لأن اليوم بيبدأ ٤ الفجر
+  const lateNight = new Date('2026-11-21T01:30:00').getTime();
+  assert.deepEqual(todayTasks([{ id: 'g', due: '2026-11-20', done: true, dAt: lateNight }], today).map((t) => t.id), ['g']);
+});
+
+test('اليوم بيبدأ ٤ الفجر، مش ١٢ بالليل', () => {
+  assert.equal(dayKeyAt(new Date('2026-11-21T01:40:00')), '2026-11-20');
+  assert.equal(dayKeyAt(new Date('2026-11-21T03:59:00')), '2026-11-20');
+  assert.equal(dayKeyAt(new Date('2026-11-21T04:00:00')), '2026-11-21');
+  assert.equal(dayKeyAt(new Date('2026-11-21T23:59:00')), '2026-11-21');
+  assert.equal(dayKeyAt(new Date('2026-12-01T00:30:00')), '2026-11-30'); // أول الشهر
+  assert.equal(dayKeyAt(new Date('2027-01-01T02:00:00')), '2026-12-31'); // أول السنة
+  assert.equal(dayKeyAt(new Date('2026-11-21T01:40:00').getTime()), '2026-11-20'); // timestamp كمان
+  // الساعة ١:٤٠ في اليوم المنطقي: الفترات الأولى فاتت، و"قبل النوم" دلوقتي (مش فترات السبت اللي لسه ماحصلتش)
+  assert.deepEqual([0, 1, 2, 3].map((i) => periodPhase(i, '2026-11-20', dayKeyAt(new Date('2026-11-21T01:40:00')), 1)), ['past', 'past', 'past', 'now']);
 });
 
 test('"سطر لليوم" الساعة ٧ بالليل بيروح لـ "بعد المغرب"', () => {
@@ -232,7 +247,12 @@ test('مقاييسي: يبان إمتى، والتجميع بالمجال، وا
   assert.equal(metricDesc(all), 'عدّاد بالكوباية، طول اليوم');
   assert.equal(metricDesc(night), 'رقم، قبل النوم');
   assert.equal(metricDesc(off), 'رقم، طول اليوم، مقفول');
-  assert.equal(metricValue(all, undefined), '٠');
+  // الفاضي مش صفر (DESIGN.md نسخة ٢): العدّاد اللي ماتسجلش بيرجع '' والواجهة بتكتب "—". والصفر بيبان بس لو اتسجل صفر.
+  // (كان '٠'، واتغيّر عمداً في دفعة لغة العلامات.)
+  assert.equal(metricValue(all, undefined), '');
+  assert.equal(metricValue(all, 0), '٠');
+  assert.equal(metricValue({ t: 'tri' }, 0), '');
+  assert.equal(metricValue({ t: 'tri' }, 1), 'جزئي');
   assert.equal(metricValue(all, 5), '٥');
   assert.equal(metricValue(night, ''), '');
   assert.equal(metricValue({ t: 'num' }, 78.4), '٧٨٫٤');

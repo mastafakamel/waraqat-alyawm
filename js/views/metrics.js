@@ -25,13 +25,14 @@ function cell(m, v) {
   const val = metricValue(m, v);
   const unit = m.u && hasUnit(m.t) ? `<small>${esc(m.u)}</small>` : '';
   if (m.t === 'count') {
+    // لو ماتسجلش: "—" مش "٠" (الصفر بيبان بس لو اتسجل صفر)
     return `<div class="mc">
-      <button class="mc-b" type="button" data-act="medit" data-id="${id}" aria-label="${esc(m.n)}: ${val}، دوس تعدّل الرقم"><span class="m">${name}<span class="v">${val}${unit}</span></span></button>
+      <button class="mc-b" type="button" data-act="medit" data-id="${id}" aria-label="${esc(m.n)}: ${val || 'فاضي'}، دوس تعدّل الرقم"><span class="m">${name}<span class="v${val ? '' : ' none'}">${val ? `${val}${unit}` : '—'}</span></span></button>
       <button class="plus" type="button" data-act="mplus" data-id="${id}" aria-label="زوّد ${esc(m.n)} واحد">${ic(P.plus)}</button></div>`;
   }
   if (m.t === 'tri') {
     const st = +v || 0;
-    return `<button class="mc tri-c v${st}" type="button" data-act="mtri" data-id="${id}" aria-label="${esc(m.n)}: ${val}"><span class="m">${name}<span class="v${st ? '' : ' none'}">${val}</span></span><i class="tbox" aria-hidden="true"></i></button>`;
+    return `<button class="mc tri-c v${st}" type="button" data-act="mtri" data-id="${id}" aria-label="${esc(m.n)}: ${val || 'فاضي'}"><span class="m">${name}<span class="v${st ? '' : ' none'}">${val || '—'}</span></span><i class="tbox" aria-hidden="true"></i></button>`;
   }
   return `<button class="mc" type="button" data-act="medit" data-id="${id}" aria-label="${esc(m.n)}: ${val || 'فاضي'}"><span class="m">${name}<span class="v${val ? '' : ' none'}">${val ? `${esc(val)}${unit}` : '—'}</span></span></button>`;
 }

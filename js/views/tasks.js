@@ -29,7 +29,7 @@ function taskRow(t, today, where) {
     : `<button class="ib" type="button" data-act="tmove" data-id="${esc(t.id)}" aria-label="انقلها للنهارده">${ic(P.up)}</button>`;
   return `<div class="tk${t.done ? ' done' : ''}${pri ? ' pri' : ''}">
     <button class="tk-c" type="button" data-act="tdone" data-id="${esc(t.id)}" aria-pressed="${!!t.done}" aria-label="${t.done ? 'رجّعها مفتوحة' : 'علّم إنها خلصت'}: ${esc(t.t)}"><i>${t.done ? ic(P.check) : ''}</i></button>
-    <div class="tk-m"><span class="tk-t">${pri ? '<span class="flag" aria-label="مهم">⚑</span>' : ''}${esc(t.t)}</span>${late ? `<span class="tk-s">متأخرة من ${shortDate(t.due)}</span>` : ''}</div>
+    <div class="tk-m"><span class="tk-t">${pri ? '<span class="flag" aria-label="مهم">⚑</span>' : ''}${esc(t.t)}</span>${late ? `<span class="tk-s">${ic(P.clock)}متأخرة من ${shortDate(t.due)}</span>` : ''}</div>
     ${t.done ? '' : move}
     <button class="ib" type="button" data-act="tdel" data-id="${esc(t.id)}" aria-label="امسح المهمة">${ic(P.close)}</button>
   </div>`;

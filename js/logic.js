@@ -53,6 +53,14 @@ export function readNumber(s) {
 export function keyOf(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+/** اليوم بيبدأ ٤ الفجر: من ١٢ لـ ٤ لسه "قبل النوم" بتاع امبارح (قرار ٢١ نوفمبر). */
+export const DAY_START = 4;
+/** مفتاح اليوم المنطقي لوقت معيّن (Date أو timestamp). الساعة ١:٤٠ يوم ٢١ ← '…-20'. */
+export function dayKeyAt(when = new Date(), startHour = DAY_START) {
+  const d = new Date(when);
+  if (d.getHours() < startHour) d.setDate(d.getDate() - 1);
+  return keyOf(d);
+}
 export function addDays(key, n) {
   const d = new Date(`${key}T12:00:00`);
   d.setDate(d.getDate() + n);
@@ -196,7 +204,7 @@ export function itemsWord(n) {
 /** مهام النهارده = ميعادها النهارده أو قبله ولسه ماخلصتش، + اللي خلصت النهارده. */
 export function todayTasks(tasks, today) {
   return (tasks || []).filter(
-    (t) => (t.due && t.due <= today && !t.done) || (t.done && t.dAt && keyOf(new Date(t.dAt)) === today),
+    (t) => (t.due && t.due <= today && !t.done) || (t.done && t.dAt && dayKeyAt(t.dAt) === today),
   );
 }
 
@@ -326,11 +334,11 @@ export function metricDesc(m) {
   return `${t}${unit}، ${w}${m.on ? '' : '، مقفول'}`;
 }
 
-/** قيمة المقياس للعرض. tri بيرجّع الكلمة (تم، جزئي، لسه). */
+/** قيمة المقياس للعرض، و'' لو ماتسجلش (الواجهة بتكتب "—"، مش صفر ولا "لسه"). tri بيرجّع الكلمة (جزئي، تم). */
 export function metricValue(m, v) {
-  if (m.t === 'tri') return ['لسه', 'جزئي', 'تم'][+v || 0];
-  if (m.t === 'count') return fmtNum(+v || 0);
+  if (m.t === 'tri') return ['', 'جزئي', 'تم'][+v || 0];
   if (v === undefined || v === null || v === '') return '';
+  if (m.t === 'count') return fmtNum(+v || 0);
   if (m.t === 'num') return fmtNum(+v);
   if (m.t === 'time') return arDigits(v);
   return String(v);
@@ -562,7 +570,7 @@ export function dayDigest(key, d = {}, { prev = null, tasks = [], metrics = [] }
   const ms = (metrics || []).filter((m) => d.m && has(d.m[m.id])).map((m) => `${m.n}: ${metricText(m, d.m[m.id])}`);
   if (ms.length) L.push(`مقاييسي: ${ms.join('، ')}`);
 
-  const doneT = (tasks || []).filter((t) => t.done && t.dAt && keyOf(new Date(t.dAt)) === key);
+  const doneT = (tasks || []).filter((t) => t.done && t.dAt && dayKeyAt(t.dAt) === key);
   const openT = (tasks || []).filter((t) => !t.done && t.due && t.due <= key);
   const late = openT.filter((t) => t.due < key).length;
   if (doneT.length || openT.length) {
@@ -625,7 +633,7 @@ export function weekDigest(endKey, days, { tasks = [], metrics = [] } = {}) {
     L.push(`الفلوس: صرف ${r1(money.spent)} جنيه${money.cats.length ? ` (${money.cats.map(([c, v]) => `${c} ${r1(v)}`).join('، ')})` : ''}، ودخل ${r1(money.income)}`);
   }
 
-  const doneW = (tasks || []).filter((t) => t.done && t.dAt && keyOf(new Date(t.dAt)) >= from && keyOf(new Date(t.dAt)) <= endKey).length;
+  const doneW = (tasks || []).filter((t) => t.done && t.dAt && dayKeyAt(t.dAt) >= from && dayKeyAt(t.dAt) <= endKey).length;
   const lateNow = (tasks || []).filter((t) => !t.done && t.due && t.due < endKey).length;
   const later = (tasks || []).filter((t) => !t.done && !t.due).length;
   if (doneW || lateNow || later) L.push(`المهام: خلّص ${doneW} في الأسبوع، و${lateNow} متأخرة دلوقتي، و${later} مستنية من غير ميعاد`);

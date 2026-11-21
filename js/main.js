@@ -13,7 +13,7 @@ import {
   addDays, cycleTri, rateTap, readNumber, toEn, parseExpense, fmtNum, missingStars, EXP_CATS, lineTarget, mergeLine,
   uid, newPeriod, periodOf, periodLabel, AREAS,
 } from './logic.js';
-import { $, $$, esc, openSheet, requestClose, isSheetOpen, sheetEl, syncFields, toast, setHtml } from './ui.js';
+import { $, $$, esc, openSheet, requestClose, isSheetOpen, sheetEl, syncFields, toast, toastErr, setHtml } from './ui.js';
 import { renderHeader, updateStatus, renderToday, renderTabs } from './views/today.js';
 import { sheetFor, guideStep, updateOutputs } from './views/sheets.js';
 import { dockHtml, updateDock } from './views/dock.js';
@@ -110,7 +110,7 @@ async function handleQuick(form) {
     toast('المهمة اتضافت للنهارده');
   } else if (ui.qmode === 'exp') {
     const r = parseExpense(v);
-    if (!r) return toast('اكتب المبلغ رقم');
+    if (!r) return toastErr('اكتب المبلغ رقم، زي ٧٥ غدا');
     const d = await getDayData(today);
     await setKOn(today, 'exp', [...(d.exp || []), { a: r.a, w: r.w, c: ui.qcat }]);
     toast(`اتسجل ${fmtNum(r.a)} جنيه · ${ui.qcat}${where}`);
@@ -152,7 +152,7 @@ function showStep() {
     onClose: () => {
       ui.guide = null;
       render();
-      if (!missingStars(state.day).length) toast('اليوم اتسجل ✓');
+      if (!missingStars(state.day).length) toast('اليوم اتسجل كله');
     },
   });
   afterOpen();
@@ -179,14 +179,14 @@ function updateParse() {
   }
   const r = parseExpense(v);
   out.classList.toggle('err', !r);
-  out.innerHTML = r ? `هيتسجل: <b>${fmtNum(r.a)} جنيه</b>${r.w ? `، ${esc(r.w)}` : ''}، ${ui.cat}` : 'اكتب المبلغ رقم';
+  out.innerHTML = r ? `هيتسجل: <b>${fmtNum(r.a)} جنيه</b>${r.w ? `، ${esc(r.w)}` : ''}، ${ui.cat}` : 'اكتب المبلغ رقم، زي ٧٥ غدا';
 }
 /** سؤال الفلوس في "سؤال بسؤال": سطر واحد زي "٧٥ غدا". */
 function addExpense(form) {
   const inp = form.querySelector('[data-role="expin"]');
   const r = parseExpense(inp.value);
   if (!r) {
-    toast('اكتب المبلغ رقم');
+    toastErr('اكتب المبلغ رقم، زي ٧٥ غدا');
     inp.focus();
     return;
   }
@@ -201,7 +201,7 @@ function addMoney(form) {
   const desc = form.querySelector('[data-role="mdesc"]');
   const r = parseExpense(amt.value);
   if (!r) {
-    toast('اكتب المبلغ رقم');
+    toastErr('اكتب المبلغ رقم، زي ٧٥ غدا');
     amt.focus();
     return;
   }
@@ -305,7 +305,7 @@ function saveMetric() {
   const f = ui.mf;
   const n = f.n.trim();
   if (!n) {
-    toast('اكتب اسم المقياس');
+    toastErr('اكتب اسم المقياس');
     return sheetEl()?.querySelector('[data-role="mname"]').focus();
   }
   const a = f.a.trim() || AREAS[0];
@@ -332,7 +332,7 @@ function startPeriod() {
   refreshToday();
   const before = structuredClone(state.periods);
   const cur = periodOf(state.periods, state.today);
-  if (cur && cur.from === state.today) return toast('فيه فترة بادئة النهارده بالفعل');
+  if (cur && cur.from === state.today) return toastErr('فيه فترة بادئة النهارده بالفعل');
   if (cur) patchItem('periods', cur.id, { to: addDays(state.today, -1) });
   const p = newPeriod(state.today);
   addItem('periods', p);
@@ -348,7 +348,7 @@ function editPeriodDate(el) {
   const key = el.dataset.role === 'pfrom' ? 'from' : 'to';
   const next = { from: cur.from, to: cur.to, [key]: el.value };
   if (next.from > next.to) {
-    toast('تاريخ البداية لازم يبقى قبل النهاية');
+    toastErr('تاريخ البداية لازم يبقى قبل النهاية');
     el.value = cur[key];
     return;
   }
@@ -362,7 +362,7 @@ async function doExport() {
     if (r.how === 'download') toast(`اتنزّل ملف فيه ${fmtNum(r.count)} مستند`);
     else if (r.how === 'share') toast('اتعمل الملف');
   } catch {
-    toast('التصدير ماشتغلش، جرّب تاني');
+    toastErr('التصدير ماشتغلش، جرّب تاني');
   }
 }
 async function doImport(input) {
@@ -378,7 +378,7 @@ async function doImport(input) {
     if (r.lists) parts.push(count(r.lists, 'قايمة واحدة', 'قايمتين', 'قوايم', 'قايمة'));
     toast(parts.length ? `اتدمج: ${parts.join(' و')}` : 'مفيش جديد في الملف، كل اللي فيه موجود عندك');
   } catch (e) {
-    toast(e.message || 'الاستيراد ماشتغلش');
+    toastErr(e.message || 'الاستيراد ماشتغلش');
   }
 }
 
@@ -397,16 +397,16 @@ function loginError(e) {
 async function login(form, isNew) {
   const email = form.querySelector('[data-role="semail"]').value.trim();
   const pass = form.querySelector('[data-role="spass"]').value;
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return toast('اكتب إيميل صحيح');
-  if (pass.length < (isNew ? 8 : 1)) return toast(isNew ? 'الباسورد ٨ حروف على الأقل' : 'اكتب الباسورد');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return toastErr('اكتب إيميل صحيح');
+  if (pass.length < (isNew ? 8 : 1)) return toastErr(isNew ? 'الباسورد ٨ حروف على الأقل' : 'اكتب الباسورد');
   try {
     toast(isNew ? 'بيعمل الحساب…' : 'بيدخل…');
     await (isNew ? signUp : signIn)(email, pass);
     ui.sf = { email: '' };
     updateSettings(sheetEl(), state, ui, sx());
-    return toast(isNew ? 'الحساب اتعمل ✓، والمزامنة شغالة' : 'دخلت ✓، والمزامنة شغالة');
+    return toast(isNew ? 'الحساب اتعمل، والمزامنة شغالة' : 'دخلت، والمزامنة شغالة');
   } catch (e) {
-    return toast(loginError(e));
+    return toastErr(loginError(e));
   }
 }
 
@@ -418,8 +418,8 @@ function openAi(kind) {
 }
 async function makeReport(kind) {
   if (state.aiBusy) return undefined; // تقرير واحد في المرة
-  if (!configured()) return toast(aiError({ code: 'off' }));
-  if (state.sync === 'signedout') return toast(aiError({ signedOut: true }));
+  if (!configured()) return toastErr(aiError({ code: 'off' }));
+  if (state.sync === 'signedout') return toastErr(aiError({ signedOut: true }));
   const key = state.cur;
   state.aiBusy = kind;
   render();
@@ -430,7 +430,7 @@ async function makeReport(kind) {
     const sh = sheetEl();
     if (state.cur === key && (!sh || sh.querySelector('[data-act="airegen"]'))) openSheet(aiSheet(kind, state));
   } catch (e) {
-    toast(aiError(e));
+    toastErr(aiError(e));
   } finally {
     state.aiBusy = null;
     render();

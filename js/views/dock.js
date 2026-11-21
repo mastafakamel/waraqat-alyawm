@@ -52,7 +52,7 @@ export function updateDock(root, ui, away) {
     const r = parseExpense(v);
     if (r) hint.innerHTML = `هيتسجل${where}: <b>${fmtNum(r.a)} جنيه</b>${r.w ? `، ${esc(r.w)}` : ''}، ${ui.qcat}`;
     else {
-      hint.textContent = 'اكتب المبلغ رقم';
+      hint.textContent = 'اكتب المبلغ رقم، زي ٧٥ غدا';
       hint.classList.add('err');
     }
   } else if (ui.qmode === 'line' && v) {

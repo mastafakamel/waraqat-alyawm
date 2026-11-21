@@ -2,11 +2,12 @@
 // والكتابة في IndexedDB بتحصل بعد 600ms من آخر تعديل (ومفيش زرار حفظ).
 
 import { getDoc, putDoc, allDocs, isMemoryOnly } from './db.js';
-import { keyOf, uid } from './logic.js';
+import { dayKeyAt, uid } from './logic.js';
 
+// "النهارده" = اليوم المنطقي (بيبدأ ٤ الفجر)، مش تاريخ الساعة
 export const state = {
-  today: keyOf(new Date()),
-  cur: keyOf(new Date()), // اليوم المفتوح
+  today: dayKeyAt(),
+  cur: dayKeyAt(), // اليوم المفتوح
   day: {}, // بيانات اليوم المفتوح
   tasks: [],
   ideas: [],
@@ -170,9 +171,9 @@ export async function getDayData(key) {
   return doc?.data || {};
 }
 
-/** لو اليوم اتغيّر وإحنا فاتحين التطبيق (عدّت ١٢ بالليل). */
+/** لو اليوم اتغيّر وإحنا فاتحين التطبيق (عدّت ٤ الفجر). */
 export function refreshToday() {
-  const t = keyOf(new Date());
+  const t = dayKeyAt();
   if (t !== state.today) {
     state.today = t;
     emit();

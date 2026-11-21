@@ -8,12 +8,12 @@
 import {
   HABITS, PERIODS, dateTitle, dayRel, starState, starCount, fmtNum, arDigits, sleepMinutes, fmtHM,
   habitsDone, workTotal, expTotal, todayTasks, groupTasks, has, periodPhase, periodOf, periodDay,
+  isOverdue, shortDate,
 } from '../logic.js';
-import { esc, ic, P } from '../ui.js';
+import { esc, ic, P, setHtml } from '../ui.js';
 import { metricsSection } from './metrics.js';
 import { aiSection } from './ai.js';
 
-const STATUS = { loading: 'بيحمّل…', saving: 'بيحفظ…', saved: 'محفوظ على الجهاز', memory: 'مش بيتحفظ على الجهاز!' };
 
 export const HINTS = {
   sleep: 'وقت ما نمت ووقت ما صحيت، والمدة بتتحسب لوحدها',
@@ -49,18 +49,25 @@ function dayOfPeriod(s) {
   const d = periodDay(periodOf(s.periods, s.cur), s.cur);
   return d ? `، يوم ${fmtNum(d.n)} من ${fmtNum(d.of)}` : '';
 }
-/** حالة الحفظ بتتغيّر كتير، فبتتكتب كنص من غير ما الهيدر يترسم من جديد. */
+/** حالة الحفظ بتتغيّر كتير، فبتتحدّث لوحدها من غير ما الهيدر يترسم من جديد. */
+// [الكلام، الأيقونة، النوع]. النوع: ok نعناعي (خلص)، wait رمادي (لسه أو مستني)، warn كهرماني (محتاج انتباهك).
+// "مستني النت" رمادي مش نعناعي: البيانات على الجهاز، بس لسه ماوصلتش. و"مش بيتحفظ" كهرماني (كان نعناعي بالغلط).
+const SAVE = {
+  loading: ['بيحمّل…', '', 'wait'], saving: ['بيحفظ…', '', 'wait'],
+  memory: ['مش بيتحفظ على الجهاز', 'alert', 'warn'], saved: ['على الجهاز', 'check', 'ok'],
+};
 // بعد الحفظ على الجهاز، الكلام بيقول المزامنة وصلت لفين
-const SYNC_TEXT = {
-  ok: 'اتحفظ ✓', busy: 'بيزامن…', offline: 'مستني النت', error: 'المزامنة واقفة', capped: 'المزامنة واقفة',
+const SYNC = {
+  ok: ['اتزامن', 'check', 'ok'], busy: ['بيزامن…', '', 'wait'], offline: ['مستني النت', 'cloudOff', 'wait'],
+  error: ['المزامنة واقفة', 'alert', 'warn'], capped: ['المزامنة واقفة', 'alert', 'warn'],
 };
 export function updateStatus(root, s) {
   const el = root.querySelector('[data-out="saved"]');
   if (!el) return;
-  const local = s.status === 'saving' || s.status === 'loading' || s.status === 'memory';
-  el.textContent = local ? STATUS[s.status] : SYNC_TEXT[s.sync] || STATUS.saved;
-  el.classList.toggle('busy', s.status === 'saving' || (!local && s.sync === 'busy'));
-  el.classList.toggle('warn', !local && (s.sync === 'error' || s.sync === 'capped'));
+  const [text, icon, kind] = s.status !== 'saved' ? SAVE[s.status] : SYNC[s.sync] || SAVE.saved;
+  setHtml(el, `${icon ? ic(P[icon]) : ''}${text}`);
+  el.classList.toggle('busy', kind === 'wait');
+  el.classList.toggle('warn', kind === 'warn');
 }
 
 // ---------- قطع بتتستخدم في الشاشات اللي بتطلع من تحت كمان ----------
@@ -166,7 +173,7 @@ function tasksToday(s) {
   const head = `<div class="sec"><b>مهام النهارده</b>${all.length ? `<span>${fmtNum(done)} من ${fmtNum(all.length)} خلصت</span>` : ''}</div>`;
   const rows = open.map((t) => `<div class="tk${t.pri ? ' pri' : ''}">
       <button class="tk-c" type="button" data-act="tdone" data-id="${esc(t.id)}" aria-pressed="false" aria-label="علّم إنها خلصت: ${esc(t.t)}"><i></i></button>
-      <div class="tk-m"><span class="tk-t">${t.pri ? '<span class="flag" aria-label="مهم">⚑</span>' : ''}${esc(t.t)}</span></div></div>`).join('');
+      <div class="tk-m"><span class="tk-t">${t.pri ? '<span class="flag" aria-label="مهم">⚑</span>' : ''}${esc(t.t)}</span>${isOverdue(t, s.today) ? `<span class="tk-s">${ic(P.clock)}متأخرة من ${shortDate(t.due)}</span>` : ''}</div></div>`).join('');
   const body = rows || `<p class="empty-s">${all.length ? 'خلّصت مهام النهارده كلها.' : 'مفيش مهام للنهارده.'}</p>`;
   return `${head}<section class="list">${body}
     <button class="lnk" type="button" data-act="tab" data-tab="tasks">كل المهام${ic(P.chev)}</button></section>`;
@@ -185,6 +192,7 @@ export function renderToday(s) {
 
 export function renderTabs(s) {
   const open = todayTasks(s.tasks, s.today).filter((t) => !t.done).length;
-  const tabs = [['day', 'اليوم', 0], ['tasks', 'مهام', open], ['ideas', 'أفكار', s.ideas.length], ['money', 'فلوس', 0]];
+  // الرقم على التبويبة = حاجة محتاجاك (مهام النهارده المفتوحة) بس. عدد الأفكار كان بيزيد على طول ومش محتاج منك حاجة
+  const tabs = [['day', 'اليوم', 0], ['tasks', 'مهام', open], ['ideas', 'أفكار', 0], ['money', 'فلوس', 0]];
   return tabs.map(([k, l, n]) => `<button class="tab" type="button" data-act="tab" data-tab="${k}"${s.tab === k ? ' aria-current="page"' : ''}>${l}${n ? `<span class="bd">${fmtNum(n)}</span>` : ''}</button>`).join('');
 }

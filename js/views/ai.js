@@ -28,15 +28,14 @@ export function aiSection(s) {
     const rep = s.day[FIELD[kind]];
     let sub = esc(empty);
     let cls = '';
+    // "بيحلل" و"محتاج تدخل" رمادي: مش بند ناقص، فمش كهرماني (DESIGN.md نسخة ٢)
     if (s.aiBusy === kind) {
       sub = 'بيحلل…';
-      cls = 'ask';
     } else if (rep?.t) {
       sub = esc(preview(rep.t));
       cls = 'txt';
     } else if (off) {
       sub = 'محتاج تدخل بحسابك (الإعدادات ← المزامنة)';
-      cls = 'ask';
     }
     return `<button class="lr c" type="button" data-act="ai" data-kind="${kind}"${s.aiBusy ? ' aria-busy="true"' : ''}>
       <span class="m"><span class="t">${TITLE[kind]}</span><span class="s ${cls}">${sub}</span></span>

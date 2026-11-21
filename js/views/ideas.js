@@ -20,7 +20,7 @@ function ideaCard(i) {
     <p class="idea-t">${esc(i.t)}</p>
     <div class="idea-f">
       <span class="idea-m">${esc(i.c)}، ${shortDate(i.at)}</span>
-      <button class="ib pinb" type="button" data-act="ipin" data-id="${esc(i.id)}" aria-pressed="${!!i.pin}" aria-label="${i.pin ? 'شيل التثبيت' : 'ثبّت الفكرة فوق'}">★</button>
+      <button class="ib pinb" type="button" data-act="ipin" data-id="${esc(i.id)}" aria-pressed="${!!i.pin}" aria-label="${i.pin ? 'شيل التثبيت' : 'ثبّت الفكرة فوق'}">${ic(P.pin)}</button>
       <button class="ib" type="button" data-act="idel" data-id="${esc(i.id)}" aria-label="امسح الفكرة">${ic(P.close)}</button>
     </div></article>`;
 }

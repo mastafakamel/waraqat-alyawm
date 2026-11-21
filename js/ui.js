@@ -17,6 +17,11 @@ export const P = {
   down: 'M12 5v14M6 13l6 6 6-6', // لبعدين (تحت)
   check: 'M5 12.5l4.5 4.5L19 7',
   down2: 'M6 9l6 6 6-6', // سهم صغير لتحت (قايمة بتفتح)
+  // لغة العلامات (DESIGN.md نسخة ٢)
+  clock: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0', // متأخرة
+  alert: 'M12 4l9 16H3L12 4zM12 10v4M12 17.2v.3', // غلط، أو المزامنة واقفة
+  cloudOff: 'M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.2 9.1 4.5 4.5 0 0 0 7 18zM4 4l16 16', // مستني النت
+  pin: 'M9 4h6l-1 6 3 3H7l3-3-1-6zM12 13v7', // فكرة مثبتة
 };
 /**
  * بيغيّر محتوى العنصر بس لو اتغيّر فعلاً. لو العنصر اترسم من جديد وإنت لسه حاطط صباعك على زرار جواه،
@@ -84,15 +89,19 @@ window.addEventListener('popstate', () => { if (open) closeSheet(); });
 
 // ---------- toast ----------
 let toastTimer = null;
-export function toast(msg, action, fn) {
+/** رسالة فوق. النجاح: ✓ وحدود نعناعي. الغلط (err): مثلث وحدود كهرماني، عشان الغلط مايبانش زي النجاح. */
+export function toast(msg, action, fn, { err = false } = {}) {
   const t = $('#toast');
-  t.innerHTML = `<span>${esc(msg)}</span>${action ? `<button type="button">${esc(action)}</button>` : ''}`;
+  t.classList.toggle('err', err);
+  t.innerHTML = `<span class="tm">${ic(err ? P.alert : P.check)}<span>${esc(msg)}</span></span>${action ? `<button type="button">${esc(action)}</button>` : ''}`;
   t.hidden = false;
   const hide = () => { t.hidden = true; };
   if (action) t.querySelector('button').onclick = () => { hide(); fn?.(); };
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(hide, action ? 4500 : 1800);
+  toastTimer = setTimeout(hide, action ? 4500 : err ? 3000 : 1800);
 }
+/** رسالة غلط: بتقول إيه اللي مااتعملش وتعمل إيه. */
+export const toastErr = (msg) => toast(msg, null, null, { err: true });
 
 // ---------- مزامنة الخانات مع بيانات اليوم ----------
 const showNum = (v) => arDigits(String(v)).replace('.', '٫');
