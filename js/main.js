@@ -10,7 +10,7 @@ import {
 } from './sync.js';
 import { askPersist, getDoc } from './db.js';
 import {
-  addDays, cycleTri, rateTap, readNumber, toEn, parseExpense, fmtNum, missingStars, EXP_CATS, lineTarget, mergeLine,
+  addDays, cycleTri, rateTap, rateSet, readNumber, toEn, parseExpense, fmtNum, missingStars, EXP_CATS, lineTarget, mergeLine,
   uid, newPeriod, periodOf, periodLabel, AREAS, weekKeys, dayStatus, baselineFor, starSplit,
 } from './logic.js';
 import { monthSheet, updateMonth, shiftMonth } from './views/month.js';
@@ -538,7 +538,12 @@ document.addEventListener('click', async (e) => {
   const rg = b.closest('[data-rate]');
   if (rg && b.dataset.v) {
     const k = rg.dataset.rate;
-    return setK(k, rateTap(state.day[k], +b.dataset.v));
+    // الصلوات عدد (مليان لحد الرقم)، والمزاج والطاقة تقييم (رقم واحد، ونفسه تاني بيمسحه)
+    return setK(k, rg.dataset.kind === 'count' ? rateTap(state.day[k], +b.dataset.v) : rateSet(state.day[k], +b.dataset.v));
+  }
+  if (b.dataset.set) { // chip بقيمة جاهزة: دوسة بتحفظها، ونفس الـ chip تاني بيمسحها
+    const k = b.dataset.set;
+    return setK(k, String(state.day[k] ?? '') === b.dataset.v ? '' : b.dataset.v);
   }
   if (b.dataset.tri) {
     const k = b.dataset.tri;

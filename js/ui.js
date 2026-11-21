@@ -122,13 +122,21 @@ export function syncFields(root, day) {
     const v = day.m?.[el.dataset.m];
     el.value = v == null ? '' : el.dataset.type === 'num' ? showNum(v) : String(v);
   }
+  // التقييم (المزاج والطاقة): المختار رقم واحد بس. والعدد من ٥ (الصلوات، data-kind="count"): مليان لحد الرقم
   for (const g of $$('[data-rate]', root)) {
-    const v = day[g.dataset.rate] || 0;
+    const v = +day[g.dataset.rate] || 0;
+    const count = g.dataset.kind === 'count';
     for (const b of $$('button', g)) {
-      const on = +b.dataset.v <= v;
+      const on = count ? +b.dataset.v <= v : +b.dataset.v === v;
       b.classList.toggle('on', on);
       b.setAttribute('aria-pressed', on);
     }
+  }
+  // chips بقيمة جاهزة (data-set = المفتاح، data-v = القيمة): المختار هو اللي قيمته زي اللي في اليوم
+  for (const b of $$('[data-set]', root)) {
+    const on = String(day[b.dataset.set] ?? '') === b.dataset.v;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on);
   }
   for (const b of $$('[data-tri]', root)) {
     const v = day[b.dataset.tri] || 0;

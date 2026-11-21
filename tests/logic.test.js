@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   toEn, arDigits, fmtNum, readNumber, addDays, periodIndex, sleepMinutes, fmtHM, fmt12,
-  cycleTri, rateTap, parseExpense, starCount, missingStars, itemsWord, todayTasks, mergeLine,
+  cycleTri, rateTap, rateSet, parseExpense, starCount, missingStars, itemsWord, todayTasks, mergeLine,
   habitsDone, workTotal, expTotal, expByCat, dayRel, lineTarget, uid,
   groupTasks, isOverdue, sortIdeas, searchIdeas, normAr, shortDate, moneySummary, longDate, periodPhase,
   periodOf, periodDay, newPeriod, periodLabel, summaryStart, metricVisible, groupMetrics, metricDesc, metricValue, metricAreas,
@@ -65,11 +65,18 @@ test('العادة بتلف على ٣ حالات: فاضية ← تم ← جزئ
   assert.equal(cycleTri(1), 0);
 });
 
-test('التقييم: رقم جديد بيختار لحده، ونفس الرقم بيقلّل واحد', () => {
+test('العدد من ٥ (الصلوات): رقم جديد بيختار لحده، ونفس الرقم بيقلّل واحد', () => {
   assert.equal(rateTap(0, 4), 4);
   assert.equal(rateTap(4, 2), 2);
   assert.equal(rateTap(4, 4), 3);
   assert.equal(rateTap(1, 1), 0);
+});
+
+test('التقييم (المزاج والطاقة): المختار رقم واحد، ونفس الرقم تاني بيمسحه', () => {
+  assert.equal(rateSet(0, 4), 4);
+  assert.equal(rateSet(undefined, 3), 3);
+  assert.equal(rateSet(4, 2), 2);
+  assert.equal(rateSet(4, 4), ''); // '' = المفتاح بيتشال من اليوم (setK)
 });
 
 test('عداد ★ من ٨', () => {

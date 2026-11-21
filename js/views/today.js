@@ -86,7 +86,7 @@ export function habitsGrid(day, withMore) {
     ${withMore ? '<button class="hp more" type="button" data-act="sheet" data-sheet="habits">الأرقام والتفاصيل</button>' : ''}</div>`;
 }
 export function salahRow() {
-  return `<div class="pray"><span>الصلوات في وقتها</span><div class="pseg" data-rate="salah" role="group" aria-label="الصلوات في وقتها">
+  return `<div class="pray"><span>الصلوات في وقتها</span><div class="pseg" data-rate="salah" data-kind="count" role="group" aria-label="الصلوات في وقتها">
     ${[1, 2, 3, 4, 5].map((i) => `<button class="ps" type="button" data-v="${i}" aria-label="${i} من ٥">${fmtNum(i)}</button>`).join('')}</div></div>`;
 }
 
@@ -143,9 +143,11 @@ function summary(s, split, ctx) {
 }
 
 // ---------- المزاج والفترات ----------
+/** الطاقة: ٥ أعمدة (المليان = الرقم)، وتحتها "طاقة ٤" عشان تتفهم من غير ما تعدّ. */
 function energyBars(e) {
   const n = +e || 0;
-  return `<span class="tp-e" aria-hidden="true">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= n ? (n <= 2 ? 'lo' : 'on') : ''}"></i>`).join('')}</span>`;
+  return `<span class="tp-en"><span class="tp-e" aria-hidden="true">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= n ? 'on' : ''}"></i>`).join('')}</span>
+    <small>طاقة ${n ? fmtNum(n) : '—'}</small></span>`;
 }
 
 // miss = البنود ★ الناقصة اللي وقتها جه بس (اللي لسه وقتها ماجاش مابيتكتبش عليها "ناقص")
@@ -168,7 +170,7 @@ function timeline(s, miss, hour) {
     else if (phase === 'now') sub = '';
     else sub = '<span class="tp-t">دوس واكتب عملت إيه</span>';
     const short = range.replace(/^من /, '');
-    const row = `<button class="tp ${phase}${filled ? ' done' : ''}" type="button" data-act="sheet" data-sheet="energy" aria-label="${label}: افتح الطاقة والمزاج">
+    const row = `<button class="tp ${phase}${filled ? ' done' : ''}" type="button" data-act="sheet" data-sheet="${k}" aria-label="${label}: ${filled ? 'عدّل' : 'سجّل'} عملت إيه والطاقة والساعات">
       <span class="tp-dot"></span>
       <span class="tp-m"><span class="tp-h"><b>${label}</b><small>${short}</small>${phase === 'now' ? '<span class="nowc">دلوقتي</span>' : ''}</span>${sub}</span>
       ${energyBars(d[`${k}e`])}</button>`;
@@ -188,30 +190,29 @@ function timeline(s, miss, hour) {
 function habitPills(s, miss) {
   const n = habitsDone(s.day);
   const head = miss.has('habits') ? '<span class="ask">ناقص</span>' : `<span>${fmtNum(n)} من ١٣ تم</span>`;
+  // الـ ١٣ ظاهرين في شبكة (كان صف بيتسحب، وكان باين منه ٤ بس على ٣٩٠). والدوسة بتلف: فاضي ← تم ← جزئي ← فاضي
   return `<div class="sec"><b>العادات</b>${head}</div>
-    <div class="hs" data-keep-scroll="habits"><div class="pills">
-      ${HABITS.map(([k, l]) => `<button class="pl" type="button" data-tri="${k}" data-label="${l}"><i></i>${l}</button>`).join('')}
-      <button class="pl more" type="button" data-act="sheet" data-sheet="habits">الأرقام</button>
-    </div></div>
-    <section class="panel salah" aria-label="الصلوات">${salahRow()}</section>`;
+    <section class="panel" aria-label="العادات والصلوات">${habitsGrid(s.day, true)}${salahRow()}</section>`;
 }
 
 // ---------- آخر اليوم ----------
-function row({ sheet, t, sub, subCls = '' }) {
-  return `<button class="lr c" type="button" data-act="sheet" data-sheet="${sheet}">
-    <span class="m"><span class="t"><span class="star">★</span> ${t}</span><span class="s ${subCls}">${sub}</span></span>
+/** سطر بدايرة حالته (DESIGN.md: العلامات): تم، أو ناقص (وقته جه)، أو بعدين (متقطعة). */
+function row({ sheet, t, sub, subCls = '', st }) {
+  const word = { done: 'اتسجل', miss: 'ناقص', later: 'بالليل' }[st];
+  return `<button class="lr c" type="button" data-act="sheet" data-sheet="${sheet}" aria-label="${t} ${word}">
+    <i class="dot ${st}" aria-hidden="true"></i><span class="m"><span class="t">${t}</span><span class="s ${subCls}">${sub}</span></span>
     <span class="chev">${ic(P.chev)}</span></button>`;
 }
 function endOfDay(s, miss) {
   const d = s.day;
   // ناقص (كهرماني) لو وقته جه، و"بالليل" (رمادي) لو لسه
-  const sub = (k, empty) => (has(d[k]) ? [esc(d[k]), 'txt'] : miss.has(k) ? [empty, 'ask'] : ['بالليل', '']);
-  const [ps, pc] = sub('post', 'ناقص، دوس واكتب');
-  const [ts, tc] = sub('top', 'ناقص، جملة قبل ما تنام');
+  const sub = (k, empty) => (has(d[k]) ? [esc(d[k]), 'txt', 'done'] : miss.has(k) ? [empty, 'ask', 'miss'] : ['بالليل', '', 'later']);
+  const [ps, pc, pst] = sub('post', 'ناقص، دوس واكتب');
+  const [ts, tc, tst] = sub('top', 'ناقص، جملة قبل ما تنام');
   return `<div class="sec"><b>آخر اليوم</b></div>
     <section class="ledger">
-      ${row({ sheet: 'post', t: 'أجّلت إيه؟', sub: ps, subCls: pc })}
-      ${row({ sheet: 'top', t: 'أهم حاجة حصلت', sub: ts, subCls: tc })}
+      ${row({ sheet: 'post', t: 'أجّلت إيه؟', sub: ps, subCls: pc, st: pst })}
+      ${row({ sheet: 'top', t: 'أهم حاجة حصلت', sub: ts, subCls: tc, st: tst })}
     </section>`;
 }
 

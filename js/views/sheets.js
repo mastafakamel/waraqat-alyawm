@@ -19,6 +19,10 @@ export function rate(k, { big = false, label = '' } = {}) {
   return `<div class="rate${big ? ' big' : ''}" data-rate="${k}" role="group"${label ? ` aria-label="${label}"` : ''}>${[1, 2, 3, 4, 5]
     .map((i) => `<button type="button" data-v="${i}" aria-label="${i} من ٥">${fmtNum(i)}</button>`).join('')}</div>`;
 }
+/** chip بقيمة جاهزة: دوسة بتحفظ القيمة في المفتاح، ونفس الـ chip تاني بيمسحها (main.js: data-set). */
+export function chip(k, v, label = v) {
+  return `<button class="ch" type="button" data-set="${k}" data-v="${v}" aria-pressed="false">${label}</button>`;
+}
 function seg(k, opts) {
   return `<div class="seg2" data-seg="${k}" role="group">${opts.map(([v, l]) => `<button class="so" type="button" data-v="${v}">${l}</button>`).join('')}</div>`;
 }
@@ -42,6 +46,20 @@ function energyBody(s) {
     </div>`).join('')}
     <div class="per"><div class="g2">${input('up', { label: 'رفع طاقتي' })}${input('down', { label: 'وطّى طاقتي' })}</div>
     ${num('unpl', 'مهام طلعت من غير تخطيط (عدد)')}</div>`;
+}
+
+/**
+ * فترة واحدة (الدوس على سطرها في الصفحة): عملت إيه، والطاقة، والساعات chips (١–٦) أو رقم تاني.
+ * المفاتيح نفسها (p1t و p1e و p1h). والساعة من الـ chip بتتحفظ كلام زي "3"، زي اللي بيتكتب في الخانة.
+ */
+function periodBody(i) {
+  const [k, label, range] = PERIODS[i];
+  return `<p class="note" style="margin:0">${range}</p>
+    ${input(`${k}t`, { label: 'عملت إيه؟', ph: 'مثلاً: شغل على الموقع' })}
+    <div><span class="lbl">طاقتك</span>${rate(`${k}e`, { label: `طاقة ${label}` })}<div class="ends"><span>واطية</span><span>عالية</span></div></div>
+    <div><span class="lbl">كام ساعة؟</span><div class="chs">${['1', '2', '3', '4', '5', '6'].map((h) => chip(`${k}h`, h, fmtNum(h))).join('')}</div>
+      <label class="f" style="margin-top:8px"><span class="lbl">أو رقم تاني (زي ١٫٥)</span>${hours(`${k}h`)}</label></div>
+    <button class="lnk2" type="button" data-act="sheet" data-sheet="energy">كل الفترات، واللي رفع ووطّى طاقتك</button>`;
 }
 
 function habitsBody() {
@@ -106,6 +124,11 @@ const SHEETS = {
 };
 
 export function sheetFor(id, s, ui) {
+  const p = /^p([1-4])$/.exec(id); // فترة واحدة: p1 لـ p4
+  if (p) {
+    const title = PERIODS[+p[1] - 1][1];
+    return { label: title, head: head(title), body: periodBody(+p[1] - 1), foot: done };
+  }
   const sh = SHEETS[id];
   return { label: sh.title, head: head(sh.title), body: sh.body(s, ui), foot: done };
 }

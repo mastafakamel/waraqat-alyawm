@@ -152,6 +152,13 @@ svg { display: block; }
 .lr .chev { flex: none; color: var(--muted); }
 .lr .chev .ic { width: 16px; height: 16px; }
 .lr.c { min-height: 54px; padding-block: 7px; }
+.lr > .dot { margin-inline-end: -2px; }
+
+/* chips بقيمة جاهزة (الساعات، وبعدين الأوقات والمشاريع): ٤٤ على الأقل، والمختار حدود بلون الكلام */
+.chs { display: flex; flex-wrap: wrap; gap: 6px; }
+.ch { min-width: 44px; min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surf); font: 700 15px var(--disp); color: var(--ink); }
+.ch.on, .ch[aria-pressed="true"] { border: 2px solid var(--pri); background: var(--surf2); }
+.lnk2 { align-self: flex-start; min-height: 44px; padding: 0; border: 0; background: none; font-size: 13.5px; font-weight: 600; color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
 .sec .ask { color: var(--attn); }
 
 /* ---------- خط اليوم ---------- */
@@ -200,6 +207,9 @@ svg { display: block; }
 .tp-h .nowc { margin-inline-start: auto; font-size: 12px; font-weight: 700; color: var(--attn); }
 .tp-t { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tp-t.txt { color: var(--ink); }
+.tp-en { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 44px; }
+.tp-en small { font-size: 12px; color: var(--muted); line-height: 1.1; white-space: nowrap; }
+.tpw .tp-en small { color: var(--ink); } /* الرمادي على الكهرماني الخفيف بيقع تحت ٤٫٥ */
 .tp-e { flex: none; display: flex; gap: 2px; align-items: flex-end; }
 /* الطاقة: عدد الأعمدة المليانة هو الرقم، بلون الكلام. مفيش أخضر وكهرماني (كانوا بيقولوا "كويس" و"وحش") */
 .tp-e i { width: 6px; height: 16px; border-radius: 2px; border: 1px solid var(--muted); }
