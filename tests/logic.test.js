@@ -8,6 +8,7 @@ import {
   groupTasks, isOverdue, sortIdeas, searchIdeas, normAr, shortDate, moneySummary, longDate, periodPhase,
   periodOf, periodDay, newPeriod, periodLabel, summaryStart, metricVisible, groupMetrics, metricDesc, metricValue, metricAreas,
   mergeDoc, parseBackup, takeRemote, useQuota, dayLine, dayDigest, weekDigest, reportBlocks, dayKeyAt,
+  weekKeys, dayStatus, starSplit, dayNums, avgOf, baselineFor, compareTo, fmtDiff,
 } from '../js/logic.js';
 
 test('الأرقام العربي والإنجليزي بتتحول قبل الحفظ', () => {
@@ -368,4 +369,66 @@ test('نص التقرير بيتقسم لعناوين وبنود وفقرات', 
   assert.deepEqual(b, [
     { h: 'اليوم في سطرين' }, { p: 'يوم كويس.' }, { ul: ['نمت بدري', 'خلصت المهام'] }, { h: 'خطوة لبكرة' }, { p: 'نام قبل ١٢' },
   ]);
+});
+
+// ---------- ملخص النهارده والأسبوع (إعادة التصميم، الدفعة ٤) ----------
+const FULL_DAY = { sleep: '00:15', wake: '06:40', screen: '4:20', mood: 4, fajr: 2, w1h: '6', exp: [{ a: 75, w: 'غدا', c: 'أكل' }], post: 'مكالمة البنك', top: 'خلصت' };
+
+test('شريط الأيام: ٧ مفاتيح من الأقدم، وحالة كل يوم', () => {
+  assert.deepEqual(weekKeys('2026-11-21'), ['2026-11-15', '2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-21']);
+  assert.deepEqual(weekKeys('2026-12-02').slice(0, 2), ['2026-11-26', '2026-11-27']);
+  assert.equal(dayStatus(undefined), 'none');
+  assert.equal(dayStatus({}), 'none');
+  assert.equal(dayStatus({ ai: { t: 'تقرير', at: 1 } }), 'none'); // التقرير لوحده مش تسجيل
+  assert.equal(dayStatus({ mood: 3 }), 'part');
+  assert.equal(dayStatus(FULL_DAY), 'full');
+});
+
+test('فاضل دلوقتي ولا بعدين: كل بند ★ ليه وقت بيبقى فيه ناقص', () => {
+  const keys = (r) => [r.now.map((s) => s.k), r.later.map((s) => s.k)];
+  const t = '2026-11-21';
+  // الصبح: النوم والعادات بس
+  assert.deepEqual(keys(starSplit({}, t, t, 8)), [['sleep', 'habits'], ['screen', 'mood', 'work', 'money', 'post', 'top']]);
+  // بعد المغرب: والشغل والفلوس
+  assert.deepEqual(keys(starSplit({}, t, t, 18)), [['sleep', 'habits', 'work', 'money'], ['screen', 'mood', 'post', 'top']]);
+  // قبل النوم، و١٢–٤ الفجر كمان: كله
+  assert.equal(starSplit({}, t, t, 22).now.length, 8);
+  assert.equal(starSplit({}, t, t, 2).now.length, 8);
+  // يوم فات: كله ناقص. ويوم جاي: كله بعدين
+  assert.equal(starSplit({}, '2026-11-18', t, 8).now.length, 8);
+  assert.equal(starSplit({}, '2026-11-25', t, 23).later.length, 8);
+  // اللي اتسجل مابيظهرش في الاتنين
+  assert.deepEqual(keys(starSplit({ sleep: '00:15', fajr: 2 }, t, t, 8)), [[], ['screen', 'mood', 'work', 'money', 'post', 'top']]);
+});
+
+test('أرقام الملخص، و null للي ماتسجلش (مش صفر)', () => {
+  assert.deepEqual(dayNums(FULL_DAY), { sleep: 385, screen: 260, work: 6, spend: 75 });
+  assert.deepEqual(dayNums({}), { sleep: null, screen: null, work: null, spend: null });
+  assert.equal(dayNums({ screen: '5' }).screen, 300); // "5" = ٥ ساعات
+  assert.equal(dayNums({ w1p: 'ورقة اليوم' }).work, null); // مشروع من غير ساعات = لسه ماتسجلش
+  assert.equal(dayNums({ w1h: '0' }).work, 0); // صفر ساعات اتسجل = صفر
+});
+
+test('المقارنة بمتوسطك: الأيام اللي فيها قيمة بس، و٣ أيام على الأقل', () => {
+  assert.deepEqual(avgOf([null, 2, 4, undefined]), { avg: 3, n: 2 });
+  assert.deepEqual(avgOf([]), { avg: null, n: 0 });
+  const days = [
+    { key: '2026-11-16', data: { sleep: '23:55', wake: '06:30' } }, // 395
+    { key: '2026-11-17', data: { sleep: '00:20', wake: '06:45' } }, // 385
+    { key: '2026-11-18', data: { sleep: '23:30', wake: '06:10' } }, // 400
+    { key: '2026-11-19', data: { mood: 3 } }, // من غير نوم: مابيدخلش المتوسط ولا بيتحسب صفر
+    { key: '2026-11-21', data: { sleep: '01:05', wake: '07:10' } }, // اليوم نفسه: مش داخل في المتوسط
+  ];
+  assert.equal(baselineFor(days, '2026-11-21', 'sleep'), (395 + 385 + 400) / 3);
+  assert.equal(baselineFor(days.slice(0, 2), '2026-11-21', 'sleep'), null); // يومين بس = لسه بدري
+  assert.equal(baselineFor(days, '2026-11-30', 'sleep'), null); // الأيام دي برّه آخر ٧
+  assert.deepEqual(compareTo(365, 389, 5), { dir: 'down', diff: 24 });
+  assert.deepEqual(compareTo(388, 389, 5), { dir: 'same', diff: 0 });
+  assert.deepEqual(compareTo(110, 152.5, 5), { dir: 'down', diff: 42.5 });
+  assert.equal(compareTo(null, 389), null);
+  assert.equal(compareTo(380, null), null);
+  assert.equal(fmtDiff('min', 24), '٢٤د');
+  assert.equal(fmtDiff('min', 70), '١:١٠');
+  assert.equal(fmtDiff('h', 0.75), '٠٫٨');
+  assert.equal(fmtDiff('money', 42.5), '٤٣');
 });

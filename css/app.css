@@ -63,12 +63,34 @@ svg { display: block; }
 
 /* ---------- الهيدر ---------- */
 .top { padding: 0 2px 10px; border-bottom: 1px solid var(--line); }
-.top-r1 { display: flex; align-items: center; gap: 6px; }
-.date { flex: 1; margin: 0; font: 700 clamp(19px, 5.6vw, 22px)/1.5 var(--disp); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* السطر الأول: التاريخ (زرار بيفتح الشهر)، و"يوم ٣ من ١١"، وحالة الحفظ */
+.top-r1 { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.date { flex: 0 1 auto; margin: 0; font: 700 clamp(18px, 5.4vw, 21px)/1.5 var(--disp); white-space: nowrap; overflow: hidden; }
+.dateb { display: block; max-width: 100%; min-height: 44px; padding: 0; border: 0; background: none; font: inherit; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pday { flex: none; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .navb { flex: none; width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--surf); display: grid; place-items: center; }
-.top-r2 { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
-.chip-day { font-size: 12.5px; color: var(--muted); background: var(--surf); border: 1px solid var(--line); border-radius: 8px; padding: 2px 8px; white-space: nowrap; }
-.chip-star { font-size: 12.5px; font-weight: 600; color: var(--amber); background: var(--amber-w); border-radius: 8px; padding: 2px 8px; white-space: nowrap; }
+/* شريط آخر ٧ أيام: الأقدم على اليمين، واليوم المفتوح حدوده بلون الكلام */
+.wk { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; margin-top: 4px; }
+.wd { min-height: 56px; border: 1px solid transparent; border-radius: 12px; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0; }
+.wd .l { font-size: 12px; color: var(--muted); line-height: 1.2; }
+.wd .n { font: 700 15px/1.2 var(--disp); }
+.wd.sel { border: 2px solid var(--pri); background: var(--surf); }
+.away { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; min-height: 48px; padding: 0 4px; padding-inline-start: 12px; border-radius: 12px; background: var(--attn-w); font-size: 13.5px; font-weight: 600; }
+.away b { color: var(--ink); }
+.awayb { flex: none; display: inline-flex; align-items: center; gap: 3px; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surf); font-size: 13.5px; font-weight: 700; }
+.awayb .ic { width: 15px; height: 15px; }
+
+/* العلامات (DESIGN.md: العلامات). دايرة فاضية = فاضي، ٢px كهرماني = ناقص، متقطعة = لسه/بعدين، نصها = جزئي، مليانة بـ ✓ = تم، مربع متقطع = مش متسجل */
+.dot { flex: none; position: relative; display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--muted); }
+.dot.miss { border: 2px solid var(--attn); }
+.dot.later { border-style: dashed; }
+.dot.part { border: 2px solid var(--done); overflow: hidden; }
+.dot.part::after { content: ""; position: absolute; inset: 0 0 0 50%; background: var(--done); }
+.dot.done { border: 0; background: var(--done); }
+.dot.done::after { content: ""; position: absolute; top: 4px; left: 4px; width: 7px; height: 3.5px; border: solid var(--on-done); border-width: 0 0 2px 2px; transform: rotate(-45deg); }
+.dot.nolog { border-style: dashed; border-radius: 4px; }
+.dot.sm { width: 12px; height: 12px; }
+.dot.sm.done::after { top: 3px; left: 2.5px; width: 5px; height: 2.5px; border-width: 0 0 1.6px 1.6px; }
 .saved { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: var(--done); white-space: nowrap; }
 .saved .ic { width: 14px; height: 14px; }
 .saved.busy { color: var(--muted); }
@@ -76,12 +98,21 @@ svg { display: block; }
 
 .body { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; }
 
-/* عداد ★: المكان الوحيد اللي بيقول فاضل كام، والدوس عليه بيبدأ "سؤال بسؤال". الزرار ٤٤ والشكل جواه أصغر */
-.starb { flex: none; height: 44px; padding: 0; border: 0; background: none; display: flex; align-items: center; }
-.starb .pill { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 9px; background: var(--amber-w); color: var(--amber); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
-.starb .pill b { font-weight: 700; padding-inline-start: 7px; border-inline-start: 1px solid currentColor; }
-.starb .pill .ic { width: 13px; height: 13px; margin-inline-start: -4px; }
-.starb.done .pill { background: var(--mint-w); color: var(--mint); }
+/* ---------- ملخص النهارده (بدل عداد ★): "فاضل دلوقتي" بالأسامي، و"بالليل"، و٤ أرقام بمقارنة متوسطك ---------- */
+.sum { background: var(--surf); border: 1px solid var(--line); border-radius: 16px; padding: 10px 12px 0; display: flex; flex-direction: column; gap: 8px; }
+.sum-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
+.sum-h b { font: 700 15px/1.5 var(--disp); }
+.sum-h b em { font-style: normal; color: var(--attn); }
+.sum-go { flex: none; display: inline-flex; align-items: center; gap: 3px; min-height: 44px; padding: 0 2px; border: 0; background: none; font-size: 13.5px; font-weight: 700; text-decoration: underline; text-underline-offset: 4px; }
+.sum-go .ic { width: 15px; height: 15px; }
+.sum-miss { display: flex; flex-wrap: wrap; gap: 6px; }
+.mchip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 11px; border-radius: 12px; border: 1px solid var(--line); background: var(--surf); font-size: 14px; font-weight: 500; white-space: nowrap; }
+.mchip .dot { width: 13px; height: 13px; }
+.sum-ok { display: flex; align-items: center; gap: 8px; min-height: 40px; font-weight: 700; color: var(--done); }
+.sum-later { display: flex; align-items: flex-start; gap: 6px; margin: -2px 0 0; font-size: 12.5px; color: var(--muted); }
+.sum-later .dot { width: 13px; height: 13px; margin-top: 3px; }
+.st4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 -12px; border-top: 1px solid var(--line); }
+.sum-cap { margin: 0 0 6px; font-size: 12px; color: var(--muted); text-align: center; }
 
 /* ---------- عناوين الأقسام ---------- */
 .sec { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 2px 4px -4px; }
@@ -125,14 +156,25 @@ svg { display: block; }
 
 /* ---------- خط اليوم ---------- */
 /* شريط الأرقام الأربعة */
-.strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: var(--surf); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
-.st { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 70px; padding: 4px; border: 0; border-inline-start: 1px solid var(--line); background: none; }
+.st { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 78px; padding: 6px 2px; border: 0; border-inline-start: 1px solid var(--line); background: none; }
 .st:first-child { border-inline-start: 0; }
-.st-v { max-width: 100%; font: 700 19px/1.35 var(--disp); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.st-k { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.st-v { max-width: 100%; font: 700 19px/1.3 var(--disp); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-k { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.st-k .dot { width: 10px; height: 10px; }
+.st-d { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.st-d .ic { width: 12px; height: 12px; stroke-width: 2.4; }
 .st.money .st-v { color: var(--money); }
-.st.miss .st-v { color: var(--muted); }
-.st.miss .st-k { color: var(--attn); font-weight: 600; }
+.st.miss .st-v, .st.later .st-v { color: var(--muted); }
+
+/* sheet الشهر */
+.mnav { display: flex; justify-content: space-between; margin-top: -6px; }
+.mgrid-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.mh { text-align: center; font-size: 12px; color: var(--muted); padding-bottom: 2px; }
+.mday { min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 1px solid transparent; border-radius: 12px; background: none; padding: 0; font: 700 15px/1.2 var(--disp); }
+.mday.today { border-color: var(--line); background: var(--surf); }
+.mday.sel { border: 2px solid var(--pri); background: var(--surf); }
+.legend-s { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.legend-s span { display: inline-flex; align-items: center; gap: 5px; }
 
 /* المزاج والفترات */
 .tline { background: var(--surf); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }

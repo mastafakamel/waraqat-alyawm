@@ -200,6 +200,76 @@ export function itemsWord(n) {
   return `${fmtNum(n)} بنود`;
 }
 
+// ---------- ملخص النهارده والأسبوع (DESIGN.md نسخة ٢) ----------
+/**
+ * لحظة كل بند ★ (رقم الفترة): قبلها البند "بعدين" (رمادي)، ومن أولها "ناقص" (كهرماني).
+ * النوم والعادات من بعد الفجر، والشغل والفلوس من بعد المغرب، والباقي قبل النوم.
+ */
+export const STAR_DUE = { sleep: 0, habits: 0, work: 2, money: 2, screen: 3, mood: 3, post: 3, top: 3 };
+
+/** البنود الناقصة مقسومة: now = وقتها جه، later = لسه. اليوم اللي فات كله now، واليوم الجاي كله later. */
+export function starSplit(day, cur, today, hour) {
+  const miss = missingStars(day || {});
+  let n = periodIndex(hour);
+  if (cur < today) n = 99;
+  else if (cur > today) n = -1;
+  return { now: miss.filter((s) => STAR_DUE[s.k] <= n), later: miss.filter((s) => STAR_DUE[s.k] > n) };
+}
+
+/** حالة اليوم في شريط الأيام: full = الـ ٨ اتسجلوا، part = فيه تسجيل، none = مفيش (والتقرير لوحده مش تسجيل). */
+export function dayStatus(d) {
+  if (!d || !logged(d)) return 'none';
+  return starCount(d) === STAR_ITEMS.length ? 'full' : 'part';
+}
+
+/** n مفاتيح لحد endKey، من الأقدم للأحدث (الأقدم بيترسم على اليمين). */
+export function weekKeys(endKey, n = 7) {
+  return Array.from({ length: n }, (_, i) => addDays(endKey, i - n + 1));
+}
+
+/** الأرقام الأربعة بتاعة الملخص بالدقايق والساعات والجنيه، و null للي ماتسجلش (مش صفر). */
+export function dayNums(d = {}) {
+  return {
+    sleep: sleepMinutes(d.sleep, d.wake),
+    screen: has(d.screen) ? screenMin(d.screen) : null,
+    work: [1, 2, 3, 4].some((i) => has(d[`w${i}h`]) || d[`w${i}h`] === '0') ? workTotal(d) : null,
+    spend: has(d.exp) ? expTotal(d) : null,
+  };
+}
+
+/** متوسط القيم الموجودة بس: { avg, n }. الفاضي مابيدخلش المتوسط ومابيتحسبش صفر. */
+export function avgOf(xs) {
+  const v = (xs || []).filter((x) => x != null && x !== '' && Number.isFinite(+x)).map(Number);
+  return { avg: v.length ? v.reduce((a, b) => a + b, 0) / v.length : null, n: v.length };
+}
+
+/**
+ * المتوسط اللي اليوم ده بيتقارن بيه: الأيام اللي فيها قيمة من آخر ٧ قبله (من غيره هو).
+ * days = [{ key, data }]. لو أقل من min أيام: null ("لسه بدري نقارن").
+ */
+export function baselineFor(days, key, metric, min = 3) {
+  const by = new Map((days || []).map((x) => [x.key, x.data || {}]));
+  const { avg, n } = avgOf(weekKeys(addDays(key, -1)).map((k) => (by.has(k) ? dayNums(by.get(k))[metric] : null)));
+  return n >= min ? avg : null;
+}
+
+/** الفرق عن المتوسط: { dir: up | down | same, diff }. لو الفرق أقل من eps يبقى "زي متوسطك". */
+export function compareTo(v, base, eps = 0) {
+  if (v == null || base == null) return null;
+  const diff = v - base;
+  if (Math.abs(diff) < eps || diff === 0) return { dir: 'same', diff: 0 };
+  return { dir: diff > 0 ? 'up' : 'down', diff: Math.abs(diff) };
+}
+
+/** الفرق للعرض: دقايق "٢٤د" أو "١:١٠"، وساعات "٠٫٨"، وجنيه "٤٣". */
+export function fmtDiff(kind, diff) {
+  if (kind === 'min') {
+    const m = Math.round(diff);
+    return m < 60 ? `${fmtNum(m)}د` : fmtHM(m);
+  }
+  return fmtNum(kind === 'money' ? Math.round(diff) : diff);
+}
+
 // ---------- المهام ----------
 /** مهام النهارده = ميعادها النهارده أو قبله ولسه ماخلصتش، + اللي خلصت النهارده. */
 export function todayTasks(tasks, today) {

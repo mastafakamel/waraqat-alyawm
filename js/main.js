@@ -11,8 +11,9 @@ import {
 import { askPersist, getDoc } from './db.js';
 import {
   addDays, cycleTri, rateTap, readNumber, toEn, parseExpense, fmtNum, missingStars, EXP_CATS, lineTarget, mergeLine,
-  uid, newPeriod, periodOf, periodLabel, AREAS,
+  uid, newPeriod, periodOf, periodLabel, AREAS, weekKeys, dayStatus, baselineFor, starSplit,
 } from './logic.js';
+import { monthSheet, updateMonth, shiftMonth } from './views/month.js';
 import { $, $$, esc, openSheet, requestClose, isSheetOpen, sheetEl, syncFields, toast, toastErr, setHtml } from './ui.js';
 import { renderHeader, updateStatus, renderToday, renderTabs } from './views/today.js';
 import { sheetFor, guideStep, updateOutputs } from './views/sheets.js';
@@ -34,7 +35,36 @@ const ui = {
   mfFrom: null, // 'settings' لو الفورم اتفتح من الإعدادات، عشان نرجعلها بعد الحفظ
   pedit: false, // تعديل تواريخ الفترة مفتوح
   sf: { email: '' }, // الإيميل اللي اتكتب في دخول المزامنة (الباسورد مابيتحفظش)
+  month: null, // sheet الشهر مفتوح على أنهي شهر "YYYY-MM"، وحالات أيامه
+  monthStatus: {},
 };
+
+// ---------- الأيام اللي حوالين اليوم المفتوح ----------
+// شريط الأيام (آخر ٧ لحد النهارده) والمقارنة بمتوسطك (آخر ٧ قبل اليوم المفتوح) محتاجين أيام تانية من IndexedDB.
+// بتتحمّل لما اليوم المفتوح أو النهارده يتغيّروا بس، واليوم المفتوح نفسه بيتاخد من الذاكرة (فيه تعديلات لسه ماتحفظتش).
+const win = { cur: null, today: null, days: new Map() };
+async function loadWindow() {
+  const want = new Set([...weekKeys(state.today), ...weekKeys(addDays(state.cur, -1))]);
+  want.delete(state.cur);
+  const at = `${state.cur}|${state.today}`;
+  const docs = await Promise.all([...want].map(async (k) => [k, (await getDoc(`day/${k}`))?.data || null]));
+  if (`${state.cur}|${state.today}` !== at) return; // اتغيّر وإحنا بنحمّل: التحميل الجديد هيرسم
+  win.days = new Map(docs.filter(([, d]) => d));
+  render();
+}
+function winCtx() {
+  if (win.cur !== state.cur || win.today !== state.today) {
+    win.cur = state.cur;
+    win.today = state.today;
+    loadWindow();
+  }
+  const days = [...win.days].map(([key, data]) => ({ key, data }));
+  const status = {};
+  for (const [k, d] of win.days) status[k] = dayStatus(d);
+  const base = {};
+  for (const m of ['sleep', 'screen', 'work', 'spend']) base[m] = baselineFor(days, state.cur, m);
+  return { status, base, hour: new Date().getHours() };
+}
 const sx = () => ({ configured: configured(), ...syncInfo }); // حالة المزامنة لكارت الإعدادات
 const DRAFTS = ['taskin', 'ideain', 'iq', 'mamt', 'mdesc', 'linein'];
 
@@ -53,7 +83,8 @@ const TABS = {
 let shown = null; // التبويبة اللي هيكلها مرسوم دلوقتي
 
 function render() {
-  setHtml($('#top'), renderHeader(state));
+  const ctx = winCtx();
+  setHtml($('#top'), renderHeader(state, ctx));
   updateStatus($('#top'), state);
   const view = $('#view');
   const tab = TABS[state.tab];
@@ -67,7 +98,7 @@ function render() {
   } else {
     // صف العادات بيتسحب لجنب: لو الصفحة اترسمت من جديد، نرجّعه لنفس مكانه بدل ما ينط لأوله
     const keep = $$('[data-keep-scroll]', view).map((el) => [el.dataset.keepScroll, el.scrollLeft]);
-    setHtml(view, renderToday(state));
+    setHtml(view, renderToday(state, ctx));
     for (const [k, x] of keep) {
       const el = view.querySelector(`[data-keep-scroll="${k}"]`);
       if (el && el.scrollLeft !== x) el.scrollLeft = x;
@@ -88,6 +119,7 @@ function render() {
     updateSettings(sh, state, ui, sx());
     if (ui.mf) updateMetricForm(sh, ui.mf, state);
     updateAiSheet(sh, state);
+    if (ui.month) updateMonth(sh, ui.month, state, ui.monthStatus);
   }
 }
 subscribe(render);
@@ -138,8 +170,10 @@ function openNamed(id) {
 }
 
 // ---------- سؤال بسؤال ----------
+/** "سؤال بسؤال": اللي ناقص ووقته جه الأول، وبعده اللي لسه "بالليل". ولو دوست على اسم معيّن بيبدأ منه. */
 function startGuide(startKey) {
-  const miss = missingStars(state.day).map((x) => x.k);
+  const { now, later } = starSplit(state.day, state.cur, state.today, new Date().getHours());
+  const miss = [...now, ...later].map((x) => x.k);
   if (!miss.length) return;
   const at = Math.max(0, miss.indexOf(startKey));
   ui.guide = { order: [...miss.slice(at), ...miss.slice(0, at)], i: 0 };
@@ -439,9 +473,34 @@ async function makeReport(kind) {
 }
 
 // ---------- التنقل ----------
-async function go(n) {
-  await loadDay(addDays(state.cur, n)); // loadDay بيحفظ اللي مستني الأول
+/** يفتح يوم معيّن (من شريط الأيام أو الشهر أو "ارجع للنهارده"). loadDay بيحفظ اللي مستني الأول. */
+async function goTo(key) {
+  if (!key || key === state.cur) return;
+  await loadDay(key);
   render();
+  window.scrollTo(0, 0);
+}
+
+// ---------- sheet الشهر ----------
+async function loadMonthStatus(ym) {
+  const days = await allDays(); // كل الأيام المتسجلة (والمفتوح من الذاكرة)
+  if (ui.month !== ym) return;
+  ui.monthStatus = {};
+  for (const { key, data } of days) if (key.startsWith(ym)) ui.monthStatus[key] = dayStatus(data);
+  updateMonth(sheetEl(), ym, state, ui.monthStatus);
+}
+function openMonth() {
+  ui.month = state.cur.slice(0, 7);
+  ui.monthStatus = {};
+  openSheet({ ...monthSheet(), onClose: () => { ui.month = null; } });
+  updateMonth(sheetEl(), ui.month, state, ui.monthStatus);
+  loadMonthStatus(ui.month);
+}
+function moveMonth(n) {
+  ui.month = shiftMonth(ui.month, n);
+  ui.monthStatus = {};
+  updateMonth(sheetEl(), ui.month, state, ui.monthStatus);
+  loadMonthStatus(ui.month);
 }
 
 // ---------- السطر في الفترة اللي إنت فيها (خط اليوم) ----------
@@ -493,9 +552,18 @@ document.addEventListener('click', async (e) => {
 
   const id = b.dataset.id;
   switch (b.dataset.act) {
-    case 'prev': return go(-1);
-    case 'next': return go(1);
-    case 'guide': return startGuide(b.dataset.q); // من عداد ★: بيبدأ من أول بند ناقص
+    // التنقل بين الأيام: شريط الأيام، والشهر، و"ارجع للنهارده"
+    case 'day':
+      if (isSheetOpen()) requestClose(); // لو من الشهر
+      return goTo(b.dataset.key);
+    case 'today':
+      if (isSheetOpen()) requestClose();
+      refreshToday();
+      return goTo(state.today);
+    case 'month': return openMonth();
+    case 'mprev': return moveMonth(-1);
+    case 'mnext': return moveMonth(1);
+    case 'guide': return startGuide(b.dataset.q); // من "فاضل دلوقتي": من أول بند ناقص، أو من الاسم اللي دوست عليه
     case 'qmenu':
       ui.qmenu = !ui.qmenu;
       return updateDock($('#dock'), ui, state.cur !== state.today);
