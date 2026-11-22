@@ -76,6 +76,7 @@ create index if not exists docs_user_synced on public.docs (user_id, synced_at);
 
 -- كل واحد يشوف ويعدّل بياناته هو بس
 alter table public.docs enable row level security;
+drop policy if exists "own docs" on public.docs; -- عشان الـ SQL ينفع يتشغّل تاني من غير غلط
 create policy "own docs" on public.docs for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 grant select, insert, update on public.docs to authenticated;
@@ -86,7 +87,7 @@ returns void language sql security invoker set search_path = public as $$
   insert into public.docs (user_id, id, data, updated_at, synced_at)
   select auth.uid(), d->>'id', d->'data', (d->>'updated_at')::bigint, now()
   from jsonb_array_elements(p_docs) as d
-  where (d->>'id') ~ '^(day/[0-9]{4}-[0-9]{2}-[0-9]{2}|list/(tasks|ideas|metrics|periods))$'
+  where (d->>'id') ~ '^(day/[0-9]{4}-[0-9]{2}-[0-9]{2}|list/(tasks|ideas|metrics|periods|goals|settings))$'
   on conflict (user_id, id) do update
     set data = excluded.data, updated_at = excluded.updated_at, synced_at = now()
     where public.docs.updated_at < excluded.updated_at;
@@ -124,12 +125,14 @@ grant execute on function public.put_docs(jsonb) to authenticated;
 
 المزامنة لازم تكون شغالة الأول (القسم اللي فوق)، لأن الدالة بتعرفك من جلسة الدخول.
 
-### ١. مفتاح Groq
+### تقرير ١: مفتاح Groq
 1. [console.groq.com](https://console.groq.com) ← **API Keys** ← **Create API Key**. انسخه مرة واحدة واحفظه في password manager.
-   **ماتلزقوش في الشات ولا في أي ملف.** مكانه الوحيد Supabase (الخطوة ٤).
+   **ماتلزقوش في الشات ولا في أي ملف.** مكانه الوحيد Supabase (تقرير ٤).
 2. **Settings ← Data Controls**: شغّل **Zero Data Retention**.
 
-### ٢. حد التقارير (SQL Editor ← New query ← الصق ← Run)
+### تقرير ٢: حد التقارير (SQL Editor ← New query ← الصق ← Run)
+
+ده SQL **جديد**، غير بتاع جدول المزامنة اللي فوق. أول سطر فيه بيقول "تقرير الذكاء الاصطناعي". وينفع يتشغّل أكتر من مرة عادي.
 
 ```sql
 -- تقرير الذكاء الاصطناعي: عدّاد لكل مستخدم في اليوم (بتوقيت القاهرة)
@@ -160,19 +163,19 @@ revoke execute on function public.take_ai_quota() from public, anon;
 grant execute on function public.take_ai_quota() to authenticated;
 ```
 
-### ٣. الدالة
+### تقرير ٣: الدالة
 1. **Edge Functions ← Deploy a new function ← Via Editor**.
 2. الاسم بالظبط: `report`. امسح الكود اللي فيها، والصق كل اللي في [`supabase/functions/report/index.ts`](supabase/functions/report/index.ts)، ودوس **Deploy**.
 3. من صفحة الدالة: اقفل **Verify JWT** واحفظ. الدالة بتتأكد من الجلسة بنفسها (`take_ai_quota` بترفض أي حد مش داخل)، والتحقق ده لو فضل شغال ممكن يرفض طلبات المتصفح.
 
 محرر الـ dashboard مفيهوش تاريخ نسخ، فالنسخة الأصلية هي اللي في الريبو. ولو الملف اتعدّل، الصقه تاني و**Deploy**.
 
-### ٤. المفتاح في Supabase
+### تقرير ٤: المفتاح في Supabase
 **Edge Functions ← Secrets ← Add new secret**: الاسم `GROQ_API_KEY`، والقيمة مفتاح Groq ← **Save**.
 
 اختياري: `GROQ_MODEL` لو عايز موديل غير `openai/gpt-oss-120b`. Groq بيشيل موديلات من وقت للتاني، ولو ده حصل التطبيق هيقولك "الموديل ده مابقاش موجود"، فتغيّر القيمة دي بس. الموديلات المتاحة في [console.groq.com/docs/models](https://console.groq.com/docs/models).
 
-### ٥. جرّب
+### تقرير ٥: جرّب
 الطلب ده بيسأل الدالة: "هتقبل طلبات من موقعي؟" (preflight):
 
 ```powershell

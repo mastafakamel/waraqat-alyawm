@@ -22,6 +22,7 @@
   --c-deen: #23706a;   --c-deen-w: rgba(35, 112, 106, .095);
   --c-life: #a14434;   --c-life-w: rgba(161, 68, 52, .09);
   --c-rest: #6e598c;   --c-rest-w: rgba(110, 89, 140, .10);
+  --c-distract: #a14434; --c-distract-w: rgba(161, 68, 52, .095);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -43,6 +44,7 @@
     --c-deen: #6eb8ad;   --c-deen-w: rgba(110, 184, 173, .12);
     --c-life: #d48272;   --c-life-w: rgba(212, 130, 114, .12);
     --c-rest: #a899bf;   --c-rest-w: rgba(168, 153, 191, .13);
+    --c-distract: #d48272; --c-distract-w: rgba(212, 130, 114, .13);
   }
 }
 :root[data-theme="dark"] {
@@ -63,6 +65,7 @@
   --c-deen: #6eb8ad;   --c-deen-w: rgba(110, 184, 173, .12);
   --c-life: #d48272;   --c-life-w: rgba(212, 130, 114, .12);
   --c-rest: #a899bf;   --c-rest-w: rgba(168, 153, 191, .13);
+  --c-distract: #d48272; --c-distract-w: rgba(212, 130, 114, .13);
 }
 :root {
   /* المعاني (بتتحسب من الألوان اللي فوق، فبتتبع الغامق والفاتح لوحدها) */
@@ -647,6 +650,7 @@ h3.blk-h { display: block; }
 .tc-deen   { --tc: var(--c-deen);   --tc-w: var(--c-deen-w); }
 .tc-life   { --tc: var(--c-life);   --tc-w: var(--c-life-w); }
 .tc-rest   { --tc: var(--c-rest);   --tc-w: var(--c-rest-w); }
+.tc-distract { --tc: var(--c-distract); --tc-w: var(--c-distract-w); }
 
 /* ---------- توزيع وقتك (سلم الـ ٢٤ ساعة + صفوف نضيفة بدون مربعات متداخلة) ---------- */
 .tscale-wrap { display: flex; flex-direction: column; gap: 6px; }
@@ -845,6 +849,72 @@ h3.blk-h { display: block; }
 .mopt[aria-pressed="true"] { border: 1.5px solid var(--pri); background: var(--surf2); color: var(--ink); font-weight: 700; }
 .mopt .ico { width: 17px; height: 17px; }
 
+/* ---------- ترتيب المتغيرات الجديدة (الصلوات بالاسم، هدف الفترة، الإعدادات المنظّمة، التعديل) ---------- */
+.pday-btn { align-self: flex-start; min-height: 44px; margin: -6px 0 -10px; padding: 0; border: 0; background: none; font-size: 12.5px; color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+/* الصلوات الـ ٥ بالاسم */
+.pray-named { flex-direction: column; align-items: stretch; gap: 8px; }
+.pray-h { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--muted); font-weight: 500; }
+.pray-h b { font: 700 13px var(--disp); color: var(--done); }
+.pseg5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+.ps5 { min-height: 44px; padding: 0 2px; border-radius: 12px; border: 1px solid transparent; background: var(--surf2); font-size: 12.5px; font-weight: 600; color: var(--muted); transition: background-color .14s ease, color .14s ease, border-color .14s ease; white-space: nowrap; }
+.ps5.on { background: var(--done); border-color: var(--done); color: var(--on-done); font-weight: 700; }
+
+/* شريط أولوية امبارح + شريط تفاصيل التمرين */
+.nextp-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px; border-top: 1px solid var(--line); background: var(--attn-w); }
+.nextp-m { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.nextp-m small { font-size: 12px; color: var(--ink); opacity: .78; }
+.nextp-m b { font-size: 13.5px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nextp-b { flex: none; min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--line2); background: var(--surf); color: var(--ink); font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+
+.wk-strip { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; margin-top: 10px; padding: 8px 12px; border-radius: 12px; border: 1px dashed var(--line2); background: var(--bg); color: var(--muted); font-size: 12.5px; text-align: right; }
+.wk-strip span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wk-strip b { color: var(--ink); font-weight: 600; }
+.wk-strip .ic { flex: none; width: 15px; height: 15px; }
+
+/* الشاشات الجديدة: seg3 + تفاصيل التمرين + ربط الشغل + الطاقة */
+.seg3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.wk-box { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 14px; background: var(--surf); border: 1px solid var(--line); }
+.wk-bh b { font-size: 14px; }
+.hnum-blk { display: flex; flex-direction: column; gap: 7px; }
+.wk-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-radius: 14px; background: var(--surf); border: 1px solid var(--line); font-size: 13px; }
+.wk-link b { font-family: var(--disp); color: var(--attn); }
+.en-row { display: flex; flex-direction: column; gap: 5px; }
+.en-row > span { font-size: 13px; font-weight: 600; color: var(--muted); }
+
+/* الفلوس: تعديل المصروف + الدخل + ملخص ٣ أعمدة + الميزانية */
+.ex-b { flex: 1; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px 0; border: 0; background: none; text-align: right; }
+.ex .a.inc { color: var(--done); }
+.sum-tot3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.sum-tot3 div { display: flex; flex-direction: column; background: var(--bg); border-radius: 12px; padding: 8px 10px; }
+.sum-tot3 span { font-size: 12px; color: var(--muted); }
+.sum-tot3 b { font: 700 17px/1.4 var(--disp); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sum-tot3 small { font: 500 12px var(--sans); color: var(--muted); margin-inline-start: 2px; }
+.sum-tot3 .out b { color: var(--money); }
+.sum-tot3 .net-pos b { color: var(--done); }
+.sum-tot3 .net-neg b { color: var(--money); }
+.bud-box { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 12px; background: var(--bg); }
+
+/* المهام والأفكار: تعديل بلمسة + تصنيف */
+.tk-editb { border: 0; background: none; text-align: right; align-items: stretch; min-height: 48px; }
+.tk-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.tcat { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 7px; background: var(--surf2); color: var(--muted); font-size: 12px; font-weight: 600; }
+.idea-tb { display: flex; align-items: center; width: 100%; min-height: 44px; padding: 4px 0; border: 0; background: none; text-align: right; }
+
+/* هدف الفترة + الإعدادات المنظّمة (Accordion) */
+.mode-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.pg-qbtns { display: flex; gap: 6px; flex: none; }
+.sacc-list { display: flex; flex-direction: column; gap: 9px; }
+.sacc { background: var(--surf); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.sacc-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 58px; padding: 10px 14px; border: 0; background: none; text-align: right; }
+.sacc-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sacc-t b { font-size: 14.5px; font-weight: 700; color: var(--ink); }
+.sacc-t span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sacc-ic { flex: none; color: var(--muted); transition: transform .18s ease; }
+.sacc.open .sacc-ic { transform: rotate(180deg); color: var(--ink); }
+.sacc-b { padding: 4px 12px 14px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; background: var(--bg); }
+.cdot { width: 12px; height: 12px; border-radius: 50%; background: var(--tc); flex: none; }
+
 @media (prefers-reduced-motion: reduce) {
-  .dring-fg, .pm-line i, .pil-segs i, .tstack i, .hp, .ps, .tab, .wk-nav, .wd, .pil-med, .pace-fill, .m-segs i, .seg-top button, .g-act, .f-item { transition: none; }
+  .dring-fg, .pm-line i, .pil-segs i, .tstack i, .hp, .ps, .ps5, .tab, .wk-nav, .wd, .pil-med, .pace-fill, .m-segs i, .seg-top button, .g-act, .f-item, .sacc-ic { transition: none; }
 }

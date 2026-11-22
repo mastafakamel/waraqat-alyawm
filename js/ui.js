@@ -87,6 +87,10 @@ const ICO = {
   target: '<circle class="du" cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/>',
   // كأس هادي لأرشيف الإنجازات
   trophy: '<path class="du" d="M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4zM7 6H4.5a2 2 0 0 0 0 4H7m10-4h2.5a2 2 0 0 1 0 4H17M12 14v5M8.5 19h7"/>',
+  // ومضة/موجة هادية لمجال التشتيت
+  distract: '<path class="du" d="M13 3L5.5 13.5h5.8L10.5 21L18.5 10.5h-5.8L13 3z"/><path d="M13 3L5.5 13.5h5.8L10.5 21L18.5 10.5h-5.8L13 3z"/>',
+  // علامة وعي/حاجز لإزالة عادة
+  alert: '<circle class="du" cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="8.5"/><path d="M8.5 8.5l7 7"/>',
 };
 export const ico = (name, cls = '') => (ICO[name]
   ? `<svg class="ico${cls ? ` ${cls}` : ''}" viewBox="0 0 24 24" aria-hidden="true">${ICO[name]}</svg>`

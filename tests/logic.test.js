@@ -11,8 +11,10 @@ import {
   weekKeys, satWeekKeys, weekNumber, HABITS, HABIT_GROUPS, habitGroupStats,
   dayStatus, dayProgress, starSplit, dayNums, avgOf, baselineFor, compareTo, fmtDiff,
   suggestTimes, lastWith, readDuration, recentValues,
-  fmtHour, hourSpan, hoursWord, fmtHours, timeByCat, sleepHourList,
+  fmtHour, hourSpan, hoursWord, fmtHours, timeByCat, sleepHourList, sleepHoursSplit,
   goalRange, goalTimeProgress, evalGoal, goalsSummary, goalDigestLines,
+  DEFAULT_SETTINGS, normalizeSettings, periodsFor, periodHoursFor,
+  prayersState, togglePrayer, guessExpCat, incomeTotal, evalPeriodGoal, periodGoalDigestLines,
 } from '../js/logic.js';
 
 test('الأرقام العربي والإنجليزي بتتحول قبل الحفظ', () => {
@@ -98,7 +100,7 @@ test('عداد ★ من ٨', () => {
 });
 
 test('العادات والشغل والفلوس', () => {
-  assert.equal(habitsDone({ fajr: 2, wird: 2, azkm: 1, eng: 2 }), 3);
+  assert.equal(habitsDone({ wird: 2, azkm: 1, eng: 2, selfcare: 2 }), 3);
   assert.equal(workTotal({ w1p: 'أ', w1h: '٣٫٥', w2p: 'ب', w2h: '2' }), 5.5);
   const d = { exp: [{ a: 30, w: 'أوبر', c: 'مواصلات' }, { a: 75, w: 'غدا', c: 'أكل' }] };
   assert.equal(expTotal(d), 105);
@@ -209,11 +211,16 @@ test('الفلوس من أول الفترة لحد النهارده', () => {
     { key: '2026-11-21', data: { exp: [{ a: 120, c: 'مواصلات' }, { a: 20, c: 'أكل' }] } },
     { key: '2026-11-22', data: { exp: [{ a: 50, c: 'بيت' }] } }, // بعد النهارده
   ];
-  const s = moneySummary(days, '2026-11-20', '2026-11-21');
+  const s = moneySummary(days, '2026-11-20', '2026-11-21', 500);
   assert.equal(s.spent, 245);
   assert.equal(s.income, 500);
+  assert.equal(s.net, 255);
+  assert.equal(s.remaining, 255);
   assert.deepEqual(s.cats, [['مواصلات', 150], ['أكل', 95]]);
-  assert.deepEqual(moneySummary([], '2026-11-20', '2026-11-21'), { spent: 0, income: 0, cats: [] });
+  const empty = moneySummary([], '2026-11-20', '2026-11-21');
+  assert.equal(empty.spent, 0);
+  assert.equal(empty.income, 0);
+  assert.deepEqual(empty.cats, []);
 });
 
 test('خط اليوم: كل فترة فاتت ولا دلوقتي ولا لسه', () => {
@@ -237,8 +244,8 @@ test('الفترات: يوم كام من كام، والفترة الجديدة 
   assert.equal(np.to, '2026-12-08');
   assert.equal(periodLabel(p), '٢٠ – ٣٠ نوفمبر');
   assert.equal(periodLabel(np), '٢٨ نوفمبر – ٨ ديسمبر');
-  assert.deepEqual(summaryStart([p], '2026-11-25'), { from: '2026-11-20', title: 'من ٢٠ نوفمبر لحد دلوقتي' });
-  assert.deepEqual(summaryStart([], '2026-11-25'), { from: '2026-11-01', title: 'من أول الشهر لحد دلوقتي' });
+  assert.deepEqual(summaryStart([p], '2026-11-25'), { from: '2026-11-20', to: '2026-11-30', title: 'من ٢٠ نوفمبر لحد دلوقتي' });
+  assert.deepEqual(summaryStart([], '2026-11-25'), { from: '2026-11-01', to: '', title: 'من أول الشهر لحد دلوقتي' });
 });
 
 test('مقاييسي: يبان إمتى، والتجميع بالمجال، والوصف والقيمة', () => {
@@ -252,10 +259,10 @@ test('مقاييسي: يبان إمتى، والتجميع بالمجال، وا
   assert.equal(metricVisible(night, '2026-11-19', t, 9), true); // يوم فات: كله باين
   assert.equal(metricVisible(all, t, t, 9), true);
   assert.equal(metricVisible(off, t, t, 9), false);
-  const biz = { id: 'd', n: 'مكالمات', t: 'count', a: 'البيزنس', w: 'day', on: true };
+  const biz = { id: 'd', n: 'مكالمات', t: 'count', a: 'الشغل والبيزنس', w: 'day', on: true };
   const own = { id: 'e', n: 'ورد', t: 'tri', a: 'الدين', w: 'p1', on: true };
-  assert.deepEqual(groupMetrics([night, own, biz, all]).map(([a, ms]) => [a, ms.map((m) => m.id)]), [['البيزنس', ['d']], ['الصحة', ['a', 'b']], ['الدين', ['e']]]);
-  assert.deepEqual(metricAreas([own]), ['البيزنس', 'الصحة', 'الموبايل والسوشيال', 'الدين']);
+  assert.deepEqual(groupMetrics([night, own, biz, all]).map(([a, ms]) => [a, ms.map((m) => m.id)]), [['الشغل والبيزنس', ['d']], ['الصحة', ['a', 'b']], ['الدين', ['e']]]);
+  assert.deepEqual(metricAreas([own]), ['الشغل والبيزنس', 'الصحة', 'التعلم', 'شخصي', 'الدين']);
   assert.equal(metricDesc(all), 'عدّاد بالكوباية، طول اليوم');
   assert.equal(metricDesc(night), 'رقم، قبل النوم');
   assert.equal(metricDesc(off), 'رقم، طول اليوم، مقفول');
@@ -395,7 +402,8 @@ test('شريط الأيام: ٧ مفاتيح من الأقدم، وحالة كل
   assert.equal(dayStatus(FULL_DAY), 'full');
   assert.equal(dayProgress({}), 0);
   assert.equal(dayProgress({ ai: { t: 'تقرير' } }), 0);
-  assert.equal(dayProgress({ hrs: { 9: { c: 'work' } } }), 15);
+  assert.equal(dayProgress({ hrs: { 9: { c: 'learn' } } }), 15);
+  assert.equal(dayProgress({ hrs: { 9: { c: 'work' } } }), 13); // شغل من تاب الوقت بيكمّل بند الشغل (١ من ٨)
   assert.equal(dayProgress({ sleep: '00:15', mood: 4 }), 25);
   assert.equal(dayProgress(FULL_DAY), 100);
 });
@@ -508,13 +516,14 @@ test('شريط الأسبوع الثابت من السبت للجمعة، ورق
   assert.equal(weekNumber('2026-01-03'), 2);
 });
 
-test('أركان الحياة بتغطي الـ ١٣ عادة كلهم من غير تكرار ولا نقص، والنسبة صح', () => {
+test('أركان الحياة الـ ٣ بتغطي العادات الـ ٨ من غير تكرار ولا نقص، والنسبة صح', () => {
   const grouped = HABIT_GROUPS.flatMap((g) => g.keys);
   assert.equal(grouped.length, HABITS.length);
   assert.deepEqual(new Set(grouped), new Set(HABITS.map(([k]) => k)));
+  assert.equal(HABIT_GROUPS.length, 3);
   const deen = HABIT_GROUPS[0];
-  assert.deepEqual(habitGroupStats({ fajr: 2, wird: 2, azkm: 1 }, deen), { done: 2, part: 1, total: 4, pct: 63 });
-  assert.deepEqual(habitGroupStats({ fajr: 2, wird: 2, azkm: 2, azke: 2 }, deen), { done: 4, part: 0, total: 4, pct: 100 });
+  assert.deepEqual(habitGroupStats({ wird: 2, azkm: 1 }, deen), { done: 1, part: 1, total: 3, pct: 50 });
+  assert.deepEqual(habitGroupStats({ wird: 2, azkm: 2, azke: 2 }, deen), { done: 3, part: 0, total: 3, pct: 100 });
 });
 
 test('سجل الوقت: تجميع المجالات، وامتداد الساعات، وملء النوم، والدمج والذكاء الاصطناعي', () => {
@@ -655,4 +664,94 @@ test('نظام الأهداف المتكامل: النطاق الزمني، ال
   assert.match(dd, /الأهداف النشطة:/);
   const wd = weekDigest('2026-11-10', days, { goals: [gWork], tasks, metrics });
   assert.match(wd, /الأهداف النشطة:/);
+});
+
+test('ترتيب المتغيرات (الأجزاء ١–٦): الإعدادات، النوم، الصلوات بالاسم، التخمين، الدخل، وهدف الفترة', () => {
+  // ١. الإعدادات وبداية اليوم الديناميكية وتقسيم ساعات النوم بعد نص الليل
+  const cfg = normalizeSettings({ dayStart: 5, sleepTarget: 8, screenLimit: 2.5, budget: 4000 });
+  assert.equal(cfg.dayStart, 5);
+  assert.equal(periodsFor(5)[0][2], 'من ٥ الفجر لـ ١٢ الضهر');
+  assert.deepEqual(periodHoursFor(5)[0], [5, 6, 7, 8, 9, 10, 11]);
+  assert.deepEqual(periodHoursFor(5)[3], [21, 22, 23, 0, 1, 2, 3, 4]);
+  // إصلاح لخبطة ساعات النوم بعد نص الليل: الساعات قبل ٤ الفجر تروح لليلة امبارح (prev) والصباح للنهارده (today)
+  assert.deepEqual(sleepHoursSplit('23:30', '06:30', 4), { prev: [23, 0, 1, 2, 3], today: [4, 5] });
+  assert.deepEqual(sleepHoursSplit('00:30', '07:30', 4), { prev: [0, 1, 2, 3], today: [4, 5, 6] });
+  assert.deepEqual(sleepHoursSplit('05:00', '12:00', 4), { prev: [], today: [5, 6, 7, 8, 9, 10, 11] });
+  assert.deepEqual(sleepHoursSplit('23:00', '04:00', 4), { prev: [23, 0, 1, 2, 3], today: [] });
+  assert.deepEqual(sleepHoursSplit('22:00', '03:30', 4), { prev: [], today: [22, 23, 0, 1, 2, 3] });
+
+  // ٢. الصلوات الـ ٥ بالاسم والتزامن مع salah و fajr
+  let d = {};
+  const p1 = togglePrayer(d, 'fajr');
+  assert.equal(p1.salah, 1);
+  assert.equal(p1.fajr, 2);
+  assert.equal(p1.prayers.fajr, true);
+  d = { ...d, ...p1 };
+  const p2 = togglePrayer(d, 'asr');
+  assert.equal(p2.salah, 2);
+  assert.equal(p2.fajr, 2);
+  assert.equal(p2.prayers.asr, true);
+  // التوافق مع أيام قديمة فيها salah=3 بس من غير prayers
+  assert.equal(prayersState({ salah: 3 }).fajr, true);
+  assert.equal(prayersState({ salah: 3 }).asr, true);
+  assert.equal(prayersState({ salah: 3 }).isha, false);
+
+  // ٣. التخمين الذكي لتصنيف المصاريف + الدخل كبنود + إجازة وماصرفتش
+  assert.equal(guessExpCat('غدا في المطعم'), 'أكل');
+  assert.equal(guessExpCat('أوبر للمكتب'), 'مواصلات');
+  assert.equal(guessExpCat('اشتراك جيم'), 'صحة');
+  assert.equal(guessExpCat('كتاب برمجة'), 'تعلم');
+  assert.equal(guessExpCat('حاجة غير معروفة'), null);
+  assert.equal(incomeTotal({ income: 1000, inc: [{ a: 500, c: 'فريلانس' }, { a: 250, c: 'مشروع' }] }), 1750);
+  assert.equal(starCount({ workOff: true, noSpend: true }), 2);
+  // قفل بند من الإعدادات يطلعه من العدّاد
+  const cfgNoPost = normalizeSettings({ stars: { ...DEFAULT_SETTINGS.stars, post: { on: false, due: 3 } } });
+  assert.equal(missingStars({}, cfgNoPost).length, 7);
+
+  // ٤. هدف الفترة الواحد (الـ ٤ أنواع: اكتساب عادة، إزالة عادة، تخليص مشروع، هدف رقمي/سقف)
+  const pDays = [
+    { key: '2026-11-15', data: { ex: 2, screen: '2:00', hrs: { 9: { c: 'work' }, 10: { c: 'work' } }, exp: [{ a: 300, c: 'أكل' }] } },
+    { key: '2026-11-16', data: { ex: 2, screen: '4:30', hrs: { 9: { c: 'distract' } }, exp: [{ a: 200, c: 'أكل' }] } },
+    { key: '2026-11-17', data: { ex: 1, screen: '1:45', hrs: { 9: { c: 'work' } }, exp: [{ a: 150, c: 'أكل' }] } },
+  ];
+  const pBuild = { id: 'p1', name: 'الرياضة', from: '2026-11-15', to: '2026-11-25', goal: { title: 'أتمرن ٨ أيام', kind: 'build', source: 'habit:ex', target: 8, unit: 'يوم' } };
+  const evB = evalPeriodGoal(pBuild, { days: pDays, today: '2026-11-17' });
+  assert.equal(evB.cur, 2.5); // يومين تم + يوم جزئي
+  assert.equal(evB.streak, 2);
+  assert.equal(evB.pct, 31);
+
+  const pQuit = { id: 'p2', from: '2026-11-15', to: '2026-11-25', goal: { title: 'شاشة تحت ٣ س', kind: 'quit', source: 'screen', target: 8, unit: 'يوم نضيف' } };
+  const evQ = evalPeriodGoal(pQuit, { days: pDays, today: '2026-11-17' });
+  assert.equal(evQ.cur, 2); // يومين تحت السقف
+  assert.equal(evQ.slipped, 1); // يوم عدّى السقف
+
+  const pProj = { id: 'p3', from: '2026-11-15', to: '2026-11-25', goal: { title: 'إطلاق النسخة', kind: 'project', source: 'steps', steps: [{ id: '1', t: 'خطوة ١', done: true }, { id: '2', t: 'خطوة ٢', done: false }] } };
+  const evP = evalPeriodGoal(pProj, { days: pDays, today: '2026-11-17' });
+  assert.equal(evP.cur, 1);
+  assert.equal(evP.target, 2);
+  assert.equal(evP.pct, 50);
+  assert.equal(evP.nextStep, 'خطوة ٢');
+
+  const pCap = { id: 'p4', from: '2026-11-15', to: '2026-11-25', goal: { title: 'سقف مصاريف', kind: 'target', source: 'spend', dir: 'max', target: 2000, unit: 'ج' } };
+  const evC = evalPeriodGoal(pCap, { days: pDays, today: '2026-11-17' });
+  assert.equal(evC.cur, 650);
+  assert.equal(evC.isCap, true);
+  assert.equal(evC.status, 'done');
+
+  // ٥. النسخة الاحتياطية والدمج لـ list/settings وتقرير الذكاء الاصطناعي المحدّث
+  const bk = parseBackup(JSON.stringify({ app: 'waraqat-alyawm', docs: [{ id: 'list/settings', data: { sleepTarget: 8 }, updatedAt: 50 }] }));
+  assert.equal(bk.length, 1);
+  const mg = mergeDoc('list/settings', { updatedAt: 10, data: { sleepTarget: 7.5, workTarget: 7 } }, { updatedAt: 20, data: { sleepTarget: 8 } });
+  assert.deepEqual(mg.data, { sleepTarget: 8, workTarget: 7 });
+
+  const dig = dayDigest('2026-11-17', {
+    sleep: '23:30', wake: '07:00', sleepq: 'fresh', nap: '20',
+    ext: 'مقاومة صدر', exm: '45', exn: '٤×١٢', stress: 'mild', moodTag: 'مركّز', nextp: 'تقفيل الميزة',
+  }, { periods: [pBuild], days: pDays, settings: cfg });
+  assert.match(dig, /أهدافه اليومية: نوم 8 ساعة/);
+  assert.match(dig, /الجودة فايق، قيلولة 20 دقيقة/);
+  assert.match(dig, /تفاصيل التمرين: النوع: مقاومة صدر، 45 دقيقة، أرقام: 4×12/);
+  assert.match(dig, /أولوية بكرة: تقفيل الميزة/);
+  assert.match(dig, /هدف الفترة الحالية/);
+  assert.equal(periodGoalDigestLines([pBuild], { days: pDays, today: '2026-11-17' }).length, 1);
 });

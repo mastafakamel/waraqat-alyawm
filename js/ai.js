@@ -14,7 +14,7 @@ export const AI_FIELD = { day: 'ai', week: 'aiw' };
 export async function buildDigest(kind, key = state.cur) {
   await flush();
   const days = await allDays();
-  const opts = { tasks: state.tasks, metrics: state.metrics, goals: state.goals };
+  const opts = { tasks: state.tasks, metrics: state.metrics, goals: state.goals, periods: state.periods, settings: state.settings };
   if (kind === 'week') return weekDigest(key, days, opts);
   const data = days.find((d) => d.key === key)?.data || {};
   const prevKey = addDays(key, -1);

@@ -2,9 +2,9 @@
 // والكتابة في IndexedDB بتحصل بعد 600ms من آخر تعديل (ومفيش زرار حفظ).
 
 import { getDoc, putDoc, allDocs, isMemoryOnly } from './db.js';
-import { dayKeyAt, uid } from './logic.js';
+import { dayKeyAt, uid, normalizeSettings } from './logic.js';
 
-// "النهارده" = اليوم المنطقي (بيبدأ ٤ الفجر)، مش تاريخ الساعة
+// "النهارده" = اليوم المنطقي (بيبدأ من ساعة بداية اليوم في الإعدادات، افتراضياً ٤ الفجر)
 export const state = {
   today: dayKeyAt(),
   cur: dayKeyAt(), // اليوم المفتوح
@@ -12,8 +12,9 @@ export const state = {
   tasks: [],
   ideas: [],
   metrics: [], // مقاييسي: { id, n, t, u, a, w, on, at }
-  periods: [], // الفترات: { id, from, to }
-  goals: [], // الأهداف: { id, t, p, f, m, src, hz, from, to, start?, target, unit, cur?, steps?, done?, dAt?, note?, at }
+  periods: [], // الفترات: { id, name?, from, to, goal?, note? }
+  goals: [], // الأهداف
+  settings: normalizeSettings(), // الإعدادات القابلة للتخصيص (list/settings)
   tab: 'day',
   status: 'loading', // loading | saving | saved | memory
   sync: 'off', // off | signedout | busy | ok | offline | error | capped (sync.js)
@@ -78,42 +79,65 @@ export async function loadDay(key) {
   emit();
 }
 
+function applyField(obj, k, v) {
+  if (v === '' || v === null || v === undefined || (Array.isArray(v) && !v.length)) delete obj[k];
+  else obj[k] = v;
+}
+
 /** يغيّر مفتاح في اليوم المفتوح. القيمة الفاضية بتتمسح عشان المستند يفضل نضيف. */
 export function setK(k, v) {
-  if (v === '' || v === null || v === undefined || (Array.isArray(v) && !v.length)) delete state.day[k];
-  else state.day[k] = v;
+  applyField(state.day, k, v);
   mark(`day/${state.cur}`, state.day);
   emit();
 }
 
-/** يعدّل في يوم معيّن حتى لو مش هو المفتوح (المصروف والسطر بيروحوا للنهارده دايماً — المرحلة ٢). */
+/** يغيّر أكتر من مفتاح في اليوم المفتوح في مرة واحدة (زي الصلوات الـ ٥ مع salah و fajr). */
+export function setMany(patch) {
+  for (const [k, v] of Object.entries(patch)) applyField(state.day, k, v);
+  mark(`day/${state.cur}`, state.day);
+  emit();
+}
+
+/** يعدّل في يوم معيّن حتى لو مش هو المفتوح (المصروف والسطر وملء النوم لليلة امبارح). */
 export async function setKOn(key, k, v) {
   if (key === state.cur) return setK(k, v);
   await flush();
   const doc = await getDoc(`day/${key}`);
   const data = doc?.data || {};
-  if (v === '' || v == null) delete data[k];
-  else data[k] = v;
+  applyField(data, k, v);
   mark(`day/${key}`, data);
   return flush();
 }
 
-// ---------- القوايم ----------
+// ---------- القوايم والإعدادات ----------
 export async function loadLists() {
   const names = ['tasks', 'ideas', 'metrics', 'periods', 'goals'];
-  const docs = await Promise.all(names.map((n) => getDoc(`list/${n}`)));
+  const [setDoc, ...docs] = await Promise.all([getDoc('list/settings'), ...names.map((n) => getDoc(`list/${n}`))]);
+  state.settings = normalizeSettings(setDoc?.data);
   names.forEach((n, i) => { state[n] = docs[i]?.data?.items || []; });
+  state.today = dayKeyAt(new Date(), state.settings.dayStart);
 }
 export function saveList(name) {
   mark(`list/${name}`, { items: state[name] });
+  emit();
+}
+export function patchSettings(patch) {
+  state.settings = normalizeSettings({ ...state.settings, ...patch });
+  state.today = dayKeyAt(new Date(), state.settings.dayStart);
+  mark('list/settings', state.settings);
   emit();
 }
 export function addIdea(t, c = 'تاني') {
   state.ideas.push({ id: uid(), t, c, pin: false, at: Date.now() });
   saveList('ideas');
 }
-export function addTask(t, { pri = false, due = state.today, goalId = '' } = {}) {
-  state.tasks.push({ id: uid(), t, pri, due, ...(goalId ? { goalId } : {}), done: false, at: Date.now() });
+export function addTask(t, { pri = false, due = state.today, goalId = '', cat = '' } = {}) {
+  state.tasks.push({
+    id: uid(), t, pri, due,
+    ...(goalId ? { goalId } : {}),
+    ...(cat ? { cat } : {}),
+    done: false, at: Date.now(),
+  });
   saveList('tasks');
 }
 
@@ -125,13 +149,13 @@ export function setMetric(id, v) {
   setK('m', Object.keys(m).length ? m : '');
 }
 
-/** يضيف عنصر لقايمة (metrics أو periods) ويحفظ. */
+/** يضيف عنصر لقايمة (metrics أو periods أو goals) ويحفظ. */
 export function addItem(name, item) {
   state[name].push(item);
   saveList(name);
 }
 
-/** يعدّل عنصر في قايمة (tasks أو ideas). المفاتيح اللي قيمتها undefined بتتشال. */
+/** يعدّل عنصر في قايمة (tasks أو ideas أو periods أو metrics أو goals). */
 export function patchItem(name, id, patch) {
   const it = state[name].find((x) => String(x.id) === String(id));
   if (!it) return;
@@ -144,7 +168,7 @@ export function patchItem(name, id, patch) {
 
 /** يمسح عنصر ويرجّعه هو ومكانه، عشان زرار "رجّع" يحطه في نفس المكان. */
 export function removeItem(name, id) {
-  const i = state[name].findIndex((x) => String(x.id) === String(id)); // String: الأفكار القديمة ممكن يكون الـ id بتاعها رقم
+  const i = state[name].findIndex((x) => String(x.id) === String(id));
   if (i < 0) return null;
   const [item] = state[name].splice(i, 1);
   saveList(name);
@@ -156,7 +180,7 @@ export function restoreItem(name, { item, i }) {
   saveList(name);
 }
 
-/** كل الأيام المتسجلة [{ key, data }]. اليوم المفتوح بييجي من الذاكرة، لأن ممكن يكون فيه تعديل لسه ماتحفظش. */
+/** كل الأيام المتسجلة [{ key, data }]. اليوم المفتوح بييجي من الذاكرة. */
 export async function allDays() {
   const docs = await allDocs('day/');
   const out = docs.filter((d) => d.id !== `day/${state.cur}`).map((d) => ({ key: d.id.slice(4), data: d.data || {} }));
@@ -164,7 +188,7 @@ export async function allDays() {
   return out;
 }
 
-/** بيانات يوم معيّن، حتى لو مش هو المفتوح (المصروف والسطر بيروحوا للنهارده دايماً). */
+/** بيانات يوم معيّن، حتى لو مش هو المفتوح. */
 export async function getDayData(key) {
   if (key === state.cur) return state.day;
   await flush();
@@ -172,9 +196,9 @@ export async function getDayData(key) {
   return doc?.data || {};
 }
 
-/** لو اليوم اتغيّر وإحنا فاتحين التطبيق (عدّت ٤ الفجر). */
+/** لو اليوم اتغيّر وإحنا فاتحين التطبيق (عدّت ساعة بداية اليوم). */
 export function refreshToday() {
-  const t = dayKeyAt();
+  const t = dayKeyAt(new Date(), state.settings.dayStart);
   if (t !== state.today) {
     state.today = t;
     emit();

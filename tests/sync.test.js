@@ -121,3 +121,22 @@ test('حد الاستخدام في اليوم بيوقف المزامنة', asyn
   assert.equal(state.sync, 'capped');
   assert.equal(server.calls.length, before); // ولا طلب راح للسيرفر
 });
+
+test('الأهداف اللي put_docs القديم رماها بتترفع مرة واحدة بس بعد التحديث', async () => {
+  await putDoc({ id: 'local/quota', data: { day: '', n: 0 }, updatedAt: 1, dirty: 0 });
+  await putDoc({ id: 'local/resync-v1', data: null, updatedAt: 1, dirty: 0 }); // جهاز لسه ماعملهاش
+  // الجهاز فاكر إنها اترفعت (dirty = 0)، بس السيرفر القديم ماحفظهاش
+  await putDoc({ id: 'list/goals', data: { items: [{ id: 'g1', n: 'هدف الفترة' }] }, updatedAt: 5, dirty: 0 });
+  server.docs.delete('list/goals');
+
+  await syncNow();
+  assert.equal(state.sync, 'ok');
+  assert.deepEqual(server.docs.get('list/goals').data, { items: [{ id: 'g1', n: 'هدف الفترة' }] });
+  assert.equal((await getDoc('list/goals')).dirty, 0);
+
+  // المزامنة اللي بعدها مابترفعهاش تاني
+  const puts = () => server.calls.filter((c) => c.endsWith('/put_docs')).length;
+  const before = puts();
+  await syncNow();
+  assert.equal(puts(), before);
+});

@@ -40,6 +40,18 @@ async function setMeta(name, data) {
   await putDoc({ id: `local/${name}`, data, updatedAt: Date.now(), dirty: 0 });
 }
 
+// put_docs القديم على السيرفر ماكانش بيقبل list/goals ولا list/settings. كان بيتجاهلهم من غير ما يقول،
+// والجهاز فاكر إنهم اترفعوا. فمرة واحدة بس بعد تحديث الـ SQL، بنعلّمهم إنهم لسه ماترفعوش.
+const RESYNC_LISTS = ['list/goals', 'list/settings'];
+async function resyncOnce() {
+  if (await meta('resync-v1')) return;
+  for (const id of RESYNC_LISTS) {
+    const d = await getDoc(id);
+    if (d && !d.dirty) await putDoc({ ...d, dirty: 1 });
+  }
+  await setMeta('resync-v1', { at: Date.now() });
+}
+
 function err(msg, extra) {
   return Object.assign(new Error(msg), extra);
 }
@@ -189,6 +201,7 @@ export async function syncNow() {
     set('busy');
     try {
       await flush();
+      await resyncOnce();
       await push();
       const changed = await pull();
       // لو جه جديد يخص اللي مفتوح دلوقتي، نعيد تحميله

@@ -1,49 +1,205 @@
 // logic.js — حسابات ورقة اليوم. دوال من غير واجهة ومن غير تخزين، عشان تتختبر لوحدها (tests/logic.test.js).
 
-export const HABITS = [
-  ['fajr', 'الفجر'], ['wird', 'الورد'], ['azkm', 'أذكار الصبح'], ['azke', 'أذكار المسا'],
-  ['ex', 'تمرين'], ['walk', 'مشي'], ['meals', 'أكل منتظم'], ['nojunk', 'بلا جانك'],
-  ['eng', 'إنجليزي'], ['read', 'قراءة'], ['tech', 'تعلم تقني'], ['said', 'قلت اللي حسيته'],
-  ['wed', 'الفرح/الشقة'],
-];
-/** تقسيم العادات الـ ١٣ على جوانب الحياة الأربعة (عرض بس، ومفاتيح البيانات نفسها). */
-export const HABIT_GROUPS = [
-  { id: 'deen', name: 'الدين والروح', icon: 'star', keys: ['fajr', 'wird', 'azkm', 'azke'], withSalah: true },
-  { id: 'health', name: 'الصحة والجسم', icon: 'heart', keys: ['ex', 'walk', 'meals', 'nojunk'] },
-  { id: 'growth', name: 'التعلم والتطوير', icon: 'book', keys: ['eng', 'read', 'tech'] },
-  { id: 'life', name: 'العلاقات والحياة', icon: 'home', keys: ['said', 'wed'] },
-];
-export const PERIODS = [
-  ['p1', 'بعد الفجر', 'من ٤ الفجر لـ ١٢ الضهر'],
-  ['p2', 'بعد الضهر', 'من ١٢ لـ ٥ العصر'],
-  ['p3', 'بعد المغرب', 'من ٥ لـ ٩ بالليل'],
-  ['p4', 'قبل النوم', 'بعد ٩ بالليل'],
-];
-/** ساعات اليوم المنطقي (من ٤ الفجر لـ ٣ الفجر) متوزعة على الفترات الأربعة. */
-export const PERIOD_HOURS = [
-  [4, 5, 6, 7, 8, 9, 10, 11],
-  [12, 13, 14, 15, 16],
-  [17, 18, 19, 20],
-  [21, 22, 23, 0, 1, 2, 3],
-];
-export const DAY_HOURS = PERIOD_HOURS.flat();
-/** مجالات سجل الوقت (تاب «الوقت»). القيمة في اليوم: day.hrs = { "9": { c: "work", t?: "ملاحظة" } } */
-export const TIME_CATS = [
-  { id: 'sleep', name: 'نوم', icon: 'moon' },
-  { id: 'work', name: 'شغل', icon: 'brief' },
-  { id: 'learn', name: 'تعلم', icon: 'book' },
-  { id: 'move', name: 'مواصلات', icon: 'move' },
-  { id: 'health', name: 'صحة', icon: 'heart' },
-  { id: 'deen', name: 'دين', icon: 'star' },
-  { id: 'life', name: 'علاقات', icon: 'home' },
-  { id: 'rest', name: 'راحة', icon: 'rest' },
-];
-export const EXP_CATS = ['أكل', 'مواصلات', 'بيت', 'شخصي', 'شغل', 'فرح'];
-export const IDEA_CATS = ['مشروع', 'شغل', 'شخصي', 'تعلم', 'تاني'];
-
-// ---------- الأرقام ----------
 const AR = '٠١٢٣٤٥٦٧٨٩';
 const FA = '۰۱۲۳۴۵۶۷۸۹';
+
+export const PRAYERS = [
+  ['fajr', 'فجر'],
+  ['dhuhr', 'ضهر'],
+  ['asr', 'عصر'],
+  ['maghrib', 'مغرب'],
+  ['isha', 'عشاء'],
+];
+
+export const SLEEP_QUAL = [
+  ['fresh', 'فايق'],
+  ['ok', 'عادي'],
+  ['tired', 'مكسّر'],
+];
+export const NAP_OPTS = [
+  ['0', 'مفيش'],
+  ['20', '٢٠د'],
+  ['45', '٤٥د'],
+  ['60', 'ساعة+'],
+];
+export const MOOD_TAGS = ['هادي', 'مركّز', 'متحمس', 'مضغوط', 'مشتت'];
+export const STRESS_OPTS = [
+  ['none', 'لا'],
+  ['mild', 'خفيف'],
+  ['high', 'عالي'],
+];
+export const POST_REASONS = ['تعب', 'تشتيت', 'مفيش وقت', 'مش واضح أبدأ منين', 'مماطلة'];
+export const TASK_CATS = ['شغل', 'تعلم', 'صحة', 'دين', 'شخصي'];
+export const INC_CATS = ['راتب', 'فريلانس', 'مشروع', 'هدية', 'تاني'];
+export const TIME_CAT_COLORS = ['sleep', 'work', 'learn', 'move', 'health', 'deen', 'rest', 'distract'];
+
+export const PERIOD_GOAL_KINDS = [
+  ['build', 'اكتساب عادة', 'check'],
+  ['quit', 'إزالة عادة', 'alert'],
+  ['project', 'تخليص مشروع', 'tasks'],
+  ['target', 'هدف رقمي / عام', 'target'],
+];
+
+const DEFAULT_HABIT_LIST = [
+  { k: 'wird', n: 'الورد', g: 'deen', on: true, numK: 'wirdp', numU: 'صفحة', chips: [2, 5, 10, 20] },
+  { k: 'azkm', n: 'أذكار الصبح', g: 'deen', on: true },
+  { k: 'azke', n: 'أذكار المسا', g: 'deen', on: true },
+  { k: 'ex', n: 'تمارين', g: 'health', on: true, workout: true, numK: 'exm', numU: 'دقيقة', chips: [15, 30, 45, 60] },
+  { k: 'selfcare', n: 'حفاظ على النفس', g: 'health', on: true },
+  { k: 'eng', n: 'إنجليزي', g: 'growth', on: true, numK: 'engm', numU: 'دقيقة', chips: [15, 30, 45, 60] },
+  { k: 'read', n: 'قراءة', g: 'growth', on: true, numK: 'readp', numU: 'صفحة', chips: [5, 10, 20, 30] },
+  { k: 'tech', n: 'تعلم تقني', g: 'growth', on: true, numK: 'techm', numU: 'دقيقة', chips: [30, 45, 60, 90] },
+];
+
+const DEFAULT_HABIT_GROUP_LIST = [
+  { id: 'deen', name: 'الدين والروح', icon: 'star', withSalah: true },
+  { id: 'health', name: 'الصحة والجسم', icon: 'heart' },
+  { id: 'growth', name: 'التعلم والتطوير', icon: 'book' },
+];
+
+const DEFAULT_TIME_CAT_LIST = [
+  { id: 'sleep', name: 'نوم', icon: 'moon', color: 'sleep', on: true },
+  { id: 'work', name: 'شغل', icon: 'brief', color: 'work', on: true },
+  { id: 'learn', name: 'تعلم', icon: 'book', color: 'learn', on: true },
+  { id: 'move', name: 'مواصلات', icon: 'move', color: 'move', on: true },
+  { id: 'health', name: 'صحة', icon: 'heart', color: 'health', on: true },
+  { id: 'deen', name: 'دين', icon: 'star', color: 'deen', on: true },
+  { id: 'rest', name: 'راحة', icon: 'rest', color: 'rest', on: true },
+  { id: 'distract', name: 'تشتيت', icon: 'distract', color: 'distract', on: true },
+];
+
+const LEGACY_TIME_CATS = [
+  { id: 'life', name: 'علاقات', icon: 'home', color: 'life', on: false },
+];
+
+const LEGACY_HABIT_LABELS = {
+  fajr: 'الفجر', walk: 'مشي', meals: 'أكل منتظم', nojunk: 'بلا جانك', said: 'قلت اللي حسيته', wed: 'الفرح/الشقة',
+};
+
+export const EXP_CATS = ['أكل', 'مواصلات', 'بيت', 'شخصي', 'شغل', 'صحة', 'تعلم', 'اشتراكات'];
+export const IDEA_CATS = ['مشروع', 'شغل', 'شخصي', 'تعلم', 'تاني'];
+
+export const STAR_DUE = { sleep: 0, habits: 0, work: 2, money: 2, screen: 3, mood: 3, post: 3, top: 3 };
+
+/** الإعدادات الافتراضية لكل المتغيرات القابلة للتخصيص (تتحفظ في list/settings). */
+export const DEFAULT_SETTINGS = {
+  dayStart: 4,
+  sleepTarget: 7.5,
+  sleepBed: '23:30',
+  sleepWake: '06:30',
+  autoFillSleep: true,
+  workTarget: 7,
+  deepTarget: 3,
+  screenLimit: 3,
+  budget: 0,
+  projects: [],
+  habits: DEFAULT_HABIT_LIST,
+  habitGroups: DEFAULT_HABIT_GROUP_LIST,
+  timeCats: DEFAULT_TIME_CAT_LIST,
+  expCats: EXP_CATS,
+  ideaCats: IDEA_CATS,
+  stars: Object.fromEntries(Object.entries(STAR_DUE).map(([k, due]) => [k, { on: true, due }])),
+};
+
+/** يطبّع الإعدادات ويملا أي قيمة ناقصة من الافتراضي بأمان. */
+export function normalizeSettings(raw) {
+  const s = raw && typeof raw === 'object' ? raw : {};
+  const dayStart = [3, 4, 5].includes(+s.dayStart) ? +s.dayStart : DEFAULT_SETTINGS.dayStart;
+  const stars = {};
+  for (const [k, def] of Object.entries(DEFAULT_SETTINGS.stars)) {
+    const cur = s.stars?.[k];
+    stars[k] = {
+      on: cur?.on !== undefined ? !!cur.on : def.on,
+      due: [0, 1, 2, 3].includes(+cur?.due) ? +cur.due : def.due,
+    };
+  }
+  const habits = Array.isArray(s.habits) && s.habits.length ? s.habits : DEFAULT_HABIT_LIST;
+  const habitGroups = Array.isArray(s.habitGroups) && s.habitGroups.length ? s.habitGroups : DEFAULT_HABIT_GROUP_LIST;
+  const timeCats = Array.isArray(s.timeCats) && s.timeCats.length ? s.timeCats : DEFAULT_TIME_CAT_LIST;
+  const expCats = Array.isArray(s.expCats) && s.expCats.length ? s.expCats : EXP_CATS;
+  const ideaCats = Array.isArray(s.ideaCats) && s.ideaCats.length ? s.ideaCats : IDEA_CATS;
+  const projects = Array.isArray(s.projects) ? s.projects.filter((x) => typeof x === 'string' && x.trim()) : [];
+  return {
+    dayStart,
+    sleepTarget: +s.sleepTarget > 0 ? +s.sleepTarget : DEFAULT_SETTINGS.sleepTarget,
+    sleepBed: typeof s.sleepBed === 'string' && /^\d{2}:\d{2}$/.test(s.sleepBed) ? s.sleepBed : DEFAULT_SETTINGS.sleepBed,
+    sleepWake: typeof s.sleepWake === 'string' && /^\d{2}:\d{2}$/.test(s.sleepWake) ? s.sleepWake : DEFAULT_SETTINGS.sleepWake,
+    autoFillSleep: s.autoFillSleep !== undefined ? !!s.autoFillSleep : DEFAULT_SETTINGS.autoFillSleep,
+    workTarget: +s.workTarget > 0 ? +s.workTarget : DEFAULT_SETTINGS.workTarget,
+    deepTarget: +s.deepTarget > 0 ? +s.deepTarget : DEFAULT_SETTINGS.deepTarget,
+    screenLimit: +s.screenLimit > 0 ? +s.screenLimit : DEFAULT_SETTINGS.screenLimit,
+    budget: +s.budget >= 0 ? +s.budget : 0,
+    projects,
+    habits,
+    habitGroups,
+    timeCats,
+    expCats,
+    ideaCats,
+    stars,
+  };
+}
+
+export const HABITS = DEFAULT_HABIT_LIST.map((h) => [h.k, h.n]);
+export const HABIT_GROUPS = DEFAULT_HABIT_GROUP_LIST.map((g) => ({
+  ...g,
+  keys: DEFAULT_HABIT_LIST.filter((h) => h.g === g.id).map((h) => h.k),
+}));
+export const TIME_CATS = DEFAULT_TIME_CAT_LIST;
+
+export function activeHabits(settings) {
+  return normalizeSettings(settings).habits.filter((h) => h.on !== false);
+}
+export function activeHabitGroups(settings) {
+  const cfg = normalizeSettings(settings);
+  const hs = cfg.habits.filter((h) => h.on !== false);
+  return cfg.habitGroups
+    .map((g) => ({
+      ...g,
+      items: hs.filter((h) => h.g === g.id),
+      keys: hs.filter((h) => h.g === g.id).map((h) => h.k),
+    }))
+    .filter((g) => g.keys.length || g.withSalah);
+}
+export function allHabitLabel(k, settings) {
+  const found = normalizeSettings(settings).habits.find((h) => h.k === k);
+  return found?.n || LEGACY_HABIT_LABELS[k] || k;
+}
+export function activeTimeCats(settings) {
+  return normalizeSettings(settings).timeCats.filter((c) => c.on !== false);
+}
+export function allTimeCatMap(settings) {
+  const m = new Map();
+  for (const c of LEGACY_TIME_CATS) m.set(c.id, c);
+  for (const c of DEFAULT_TIME_CAT_LIST) m.set(c.id, c);
+  for (const c of normalizeSettings(settings).timeCats) m.set(c.id, { color: c.id, ...c });
+  return m;
+}
+
+/** الفترات الأربعة حسب ساعة بداية اليوم (٣ أو ٤ أو ٥ الفجر). */
+export function periodsFor(dayStart = 4) {
+  const ds = [3, 4, 5].includes(+dayStart) ? +dayStart : 4;
+  return [
+    ['p1', 'بعد الفجر', `من ${arDigits(ds)} الفجر لـ ١٢ الضهر`],
+    ['p2', 'بعد الضهر', 'من ١٢ لـ ٥ العصر'],
+    ['p3', 'بعد المغرب', 'من ٥ لـ ٩ بالليل'],
+    ['p4', 'قبل النوم', 'بعد ٩ بالليل'],
+  ];
+}
+export function periodHoursFor(dayStart = 4) {
+  const ds = [3, 4, 5].includes(+dayStart) ? +dayStart : 4;
+  const p1 = Array.from({ length: 12 - ds }, (_, i) => ds + i);
+  const p4Late = Array.from({ length: ds }, (_, i) => i);
+  return [p1, [12, 13, 14, 15, 16], [17, 18, 19, 20], [21, 22, 23, ...p4Late]];
+}
+export function dayHoursFor(dayStart = 4) {
+  return periodHoursFor(dayStart).flat();
+}
+
+export const PERIODS = periodsFor(4);
+export const PERIOD_HOURS = periodHoursFor(4);
+export const DAY_HOURS = PERIOD_HOURS.flat();
+
+// ---------- الأرقام ----------
 
 /** أي أرقام عربي أو فارسي → إنجليزي، والفاصلة العشرية العربي → نقطة. */
 export function toEn(s) {
@@ -79,7 +235,7 @@ export function readNumber(s) {
 export function keyOf(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-/** اليوم بيبدأ ٤ الفجر: من ١٢ لـ ٤ لسه "قبل النوم" بتاع امبارح (قرار ٢١ نوفمبر). */
+/** اليوم بيبدأ ٤ الفجر افتراضياً (قابل للتغيير من الإعدادات: ٣ أو ٤ أو ٥). */
 export const DAY_START = 4;
 /** مفتاح اليوم المنطقي لوقت معيّن (Date أو timestamp). الساعة ١:٤٠ يوم ٢١ ← '…-20'. */
 export function dayKeyAt(when = new Date(), startHour = DAY_START) {
@@ -100,22 +256,20 @@ export function dayRel(key, today) {
   return key < today ? 'يوم فات' : 'يوم جاي';
 }
 
-/** الفترة حسب الساعة: ٤–١٢ بعد الفجر، ١٢–٥ بعد الضهر، ٥–٩ بعد المغرب، وغير كده قبل النوم. */
-export function periodIndex(hour) {
-  if (hour >= 4 && hour < 12) return 0;
+/** الفترة حسب الساعة وبداية اليوم: ds–١٢ بعد الفجر، ١٢–٥ بعد الضهر، ٥–٩ بعد المغرب، وغير كده قبل النوم. */
+export function periodIndex(hour, dayStart = DAY_START) {
+  const ds = [3, 4, 5].includes(+dayStart) ? +dayStart : DAY_START;
+  if (hour >= ds && hour < 12) return 0;
   if (hour >= 12 && hour < 17) return 1;
   if (hour >= 17 && hour < 21) return 2;
   return 3;
 }
 
-/**
- * الفترة i في اليوم المفتوح: 'past' فاتت، 'now' إنت فيها دلوقتي، 'future' لسه.
- * اليوم اللي فات كل فتراته فاتت، واليوم الجاي كلها لسه. وبعد ١٢ بالليل لحد ٤ الفجر لسه "قبل النوم" (زي lineTarget).
- */
-export function periodPhase(i, cur, today, hour) {
+/** الفترة i في اليوم المفتوح: 'past' فاتت، 'now' إنت فيها دلوقتي، 'future' لسه. */
+export function periodPhase(i, cur, today, hour, dayStart = DAY_START) {
   if (cur < today) return 'past';
   if (cur > today) return 'future';
-  const n = periodIndex(hour);
+  const n = periodIndex(hour, dayStart);
   if (i === n) return 'now';
   return i < n ? 'past' : 'future';
 }
@@ -143,40 +297,77 @@ export function fmt12(s) {
   return arDigits(`${h}:${String(m % 60).padStart(2, '0')}`);
 }
 
-// ---------- التقييمات والعادات ----------
+// ---------- التقييمات والعادات والصلوات ----------
 /** العادة: فاضية ← تم ← جزئي ← فاضية. القيم: 0 لا، 1 جزئي، 2 تم. */
 export const cycleTri = (v) => [2, 0, 1][v || 0];
-/** العدد من ٥ (الصلوات): الدوس على رقم بيختار لحد الرقم ده، وعلى نفس الرقم تاني بيقلّل واحد. */
+/** العدد من ٥: الدوس على رقم بيختار لحد الرقم ده، وعلى نفس الرقم تاني بيقلّل واحد. */
 export const rateTap = (cur, v) => ((cur || 0) === v ? v - 1 : v);
 /** التقييم ١–٥ (المزاج والطاقة): المختار رقم واحد، ونفس الرقم تاني بيمسحه (''). نفس القيم في البيانات. */
 export const rateSet = (cur, v) => (+cur === v ? '' : v);
+
+/** حالة الصلوات الـ ٥ بالاسم من اليوم، مع التوافق الكامل مع بيانات salah/fajr القديمة. */
+export function prayersState(day = {}) {
+  if (day?.prayers && typeof day.prayers === 'object') {
+    return Object.fromEntries(PRAYERS.map(([k]) => [k, !!day.prayers[k]]));
+  }
+  const out = Object.fromEntries(PRAYERS.map(([k]) => [k, false]));
+  const n = Math.max(0, Math.min(5, +day?.salah || 0));
+  if (n > 0) {
+    for (let i = 0; i < n; i += 1) out[PRAYERS[i][0]] = true;
+  } else if (day?.fajr === 2) {
+    out.fajr = true;
+  }
+  return out;
+}
+
+/** يبدّل صلاة واحدة بالاسم ويرجّع القيم المتزامنة لـ prayers و salah و fajr. */
+export function togglePrayer(day = {}, key) {
+  const next = prayersState(day);
+  if (!(key in next)) return null;
+  next[key] = !next[key];
+  const salah = PRAYERS.filter(([k]) => next[k]).length;
+  const fajr = next.fajr ? 2 : 0;
+  return {
+    prayers: salah ? next : '',
+    salah: salah || '',
+    fajr: fajr || '',
+  };
+}
 
 export function has(v) {
   if (v === undefined || v === null) return false;
   if (typeof v === 'string') return v.trim() !== '';
   if (Array.isArray(v)) return v.length > 0;
+  if (typeof v === 'object') return Object.values(v).some(Boolean);
   return v !== 0;
 }
-export function habitsDone(day) {
-  return HABITS.filter(([k]) => day[k] === 2).length;
+export function habitsDone(day, settings) {
+  const hs = activeHabits(settings);
+  return hs.filter((h) => day?.[h.k] === 2).length;
 }
 
 // ---------- الشغل والفلوس ----------
 export function workRows(day) {
   return [1, 2, 3, 4]
-    .map((i) => ({ p: (day[`w${i}p`] || '').trim(), h: +toEn(day[`w${i}h`]) || 0 }))
+    .map((i) => ({ p: (day?.[`w${i}p`] || '').trim(), h: +toEn(day?.[`w${i}h`]) || 0 }))
     .filter((r) => r.p || r.h);
 }
 export function workTotal(day) {
   return workRows(day).reduce((a, r) => a + r.h, 0);
 }
 export function expTotal(day) {
-  return (day.exp || []).reduce((a, e) => a + (+e.a || 0), 0);
+  return (day?.exp || []).reduce((a, e) => a + (+e.a || 0), 0);
+}
+/** إجمالي الدخل في اليوم: يجمع البنود الجديدة (day.inc) + الخانة القديمة (day.income) للتوافق. */
+export function incomeTotal(day = {}) {
+  const items = (day?.inc || []).reduce((a, e) => a + (+e.a || 0), 0);
+  const leg = +toEn(day?.income) || 0;
+  return items + leg;
 }
 /** [['أكل', 75], ['مواصلات', 30]] مترتبة من الأكبر للأصغر. */
 export function expByCat(day) {
   const by = {};
-  for (const e of day.exp || []) by[e.c] = (by[e.c] || 0) + (+e.a || 0);
+  for (const e of day?.exp || []) by[e.c] = (by[e.c] || 0) + (+e.a || 0);
   return Object.entries(by).sort((a, b) => b[1] - a[1]);
 }
 
@@ -198,6 +389,28 @@ export function parseExpense(text) {
   return { a, w };
 }
 
+const EXP_GUESS_RULES = [
+  ['أكل', ['غدا', 'فطار', 'عشا', 'اكل', 'قهوه', 'شاي', 'كافيه', 'سوبرماركت', 'مطعم', 'ساندوتش', 'عصير', 'ميه', 'خبز', 'عيش', 'فاكهه', 'خضار', 'لحمه', 'فراخ', 'سمك', 'بيتزا', 'شاورما', 'كشري', 'فول', 'طعميه', 'حلويات', 'شوكولاته']],
+  ['مواصلات', ['اوبر', 'كريم', 'ديدي', 'اندرايف', 'مترو', 'مواصلات', 'بنزين', 'تاكسي', 'ميكروباص', 'اتوبيس', 'قطر', 'ركنه', 'جراج', 'كارته', 'طريق', 'توصيل', 'مشوار']],
+  ['بيت', ['ايجار', 'كهربا', 'غاز', 'مياه', 'نت', 'انترنت', 'بواب', 'صيانه', 'بيت', 'شقه', 'نضافه', 'منظفات', 'اثاث']],
+  ['صحة', ['جيم', 'دكتور', 'صيدليه', 'دوا', 'علاج', 'تحليل', 'كشف', 'فيتامين', 'مكمل', 'بروتين', 'اسنان', 'مستشفي', 'صحه']],
+  ['تعلم', ['كورس', 'كتاب', 'كتب', 'تعلم', 'دوره', 'محاضره', 'ورشه', 'انجليزي', 'دراسه', 'امتحان', 'شهاده']],
+  ['اشتراكات', ['اشتراك', 'باقه', 'شحن', 'رصيد', 'نتفلكس', 'سبوتيفاي', 'يوتيوب', 'كلاود', 'chatgpt', 'claude', 'cursor', 'spotify', 'netflix', 'icloud']],
+  ['شغل', ['شغل', 'عميل', 'دومين', 'سيرفر', 'استضافه', 'اعلان', 'تسويق', 'مكتب', 'ادوات', 'بزنس']],
+  ['شخصي', ['حلاق', 'لبس', 'هدوم', 'جزمه', 'عطر', 'برفان', 'هديه', 'خروج', 'سينما', 'موبايل', 'اكسسوار']],
+];
+
+/** تخمين ذكي لتصنيف المصروف من الوصف؛ يرجّع اسم التصنيف لو موجود في قايمة التصنيفات الحالية، وإلا null. */
+export function guessExpCat(text, cats = EXP_CATS) {
+  const n = normAr(text);
+  if (!n) return null;
+  for (const [cat, words] of EXP_GUESS_RULES) {
+    if (!cats.includes(cat)) continue;
+    if (words.some((w) => n.includes(w))) return cat;
+  }
+  return null;
+}
+
 // ---------- البنود الأساسية ★ ----------
 export const STAR_ITEMS = [
   { k: 'sleep', t: 'النوم', q: 'نمت إمتى وصحيت إمتى؟', done: (d) => has(d.sleep) || has(d.wake) },
@@ -205,21 +418,36 @@ export const STAR_ITEMS = [
   { k: 'mood', t: 'المزاج', q: 'مزاجك النهارده من ٥؟', done: (d) => has(d.mood) },
   {
     k: 'habits', t: 'العادات', q: 'عملت إيه من العادات النهارده؟',
-    done: (d) => [...HABITS.map((h) => h[0]), 'salah'].some((k) => has(d[k])),
+    done: (d, cfg) => [...activeHabits(cfg).map((h) => h.k), 'fajr', 'salah', 'prayers'].some((k) => has(d[k])),
   },
-  { k: 'work', t: 'الشغل', q: 'اشتغلت على إيه وكام ساعة؟', done: (d) => [1, 2, 3, 4].some((i) => has(d[`w${i}h`])) },
-  { k: 'money', t: 'الفلوس', q: 'صرفت إيه النهارده؟', done: (d) => has(d.exp) || has(d.income) },
+  {
+    k: 'work', t: 'الشغل', q: 'اشتغلت على إيه وكام ساعة؟',
+    done: (d, cfg) => !!d.workOff || [1, 2, 3, 4].some((i) => has(d[`w${i}h`])) || (timeByCat(d, cfg).by.work > 0),
+  },
+  {
+    k: 'money', t: 'الفلوس', q: 'صرفت إيه النهارده؟',
+    done: (d) => !!d.noSpend || has(d.exp) || incomeTotal(d) > 0,
+  },
   { k: 'post', t: 'قرار وتأجيل', q: 'أجّلت إيه النهارده؟', done: (d) => has(d.post) },
   { k: 'top', t: 'أهم حاجة', q: 'إيه أهم حاجة حصلت النهارده؟', done: (d) => has(d.top) },
 ];
-export function starState(day) {
-  return STAR_ITEMS.map((s) => ({ ...s, ok: !!s.done(day) }));
+
+export function starItemsFor(settings) {
+  const cfg = normalizeSettings(settings);
+  return STAR_ITEMS
+    .filter((s) => cfg.stars[s.k]?.on !== false)
+    .map((s) => ({ ...s, due: cfg.stars[s.k]?.due ?? STAR_DUE[s.k] }));
 }
-export function starCount(day) {
-  return starState(day).filter((s) => s.ok).length;
+
+export function starState(day, settings) {
+  const cfg = normalizeSettings(settings);
+  return starItemsFor(cfg).map((s) => ({ ...s, ok: !!s.done(day || {}, cfg) }));
 }
-export function missingStars(day) {
-  return starState(day).filter((s) => !s.ok);
+export function starCount(day, settings) {
+  return starState(day, settings).filter((s) => s.ok).length;
+}
+export function missingStars(day, settings) {
+  return starState(day, settings).filter((s) => !s.ok);
 }
 /** ١ → "بند واحد" ، ٢ → "بندين" ، ٥ → "٥ بنود" */
 export function itemsWord(n) {
@@ -228,33 +456,32 @@ export function itemsWord(n) {
   return `${fmtNum(n)} بنود`;
 }
 
-// ---------- ملخص النهارده والأسبوع (DESIGN.md نسخة ٢) ----------
-/**
- * لحظة كل بند ★ (رقم الفترة): قبلها البند "بعدين" (رمادي)، ومن أولها "ناقص" (كهرماني).
- * النوم والعادات من بعد الفجر، والشغل والفلوس من بعد المغرب، والباقي قبل النوم.
- */
-export const STAR_DUE = { sleep: 0, habits: 0, work: 2, money: 2, screen: 3, mood: 3, post: 3, top: 3 };
-
+// ---------- ملخص النهارده والأسبوع ----------
 /** البنود الناقصة مقسومة: now = وقتها جه، later = لسه. اليوم اللي فات كله now، واليوم الجاي كله later. */
-export function starSplit(day, cur, today, hour) {
-  const miss = missingStars(day || {});
-  let n = periodIndex(hour);
+export function starSplit(day, cur, today, hour, settings) {
+  const cfg = normalizeSettings(settings);
+  const miss = missingStars(day || {}, cfg);
+  let n = periodIndex(hour, cfg.dayStart);
   if (cur < today) n = 99;
   else if (cur > today) n = -1;
-  return { now: miss.filter((s) => STAR_DUE[s.k] <= n), later: miss.filter((s) => STAR_DUE[s.k] > n) };
+  return { now: miss.filter((s) => s.due <= n), later: miss.filter((s) => s.due > n) };
 }
 
-/** حالة اليوم في شريط الأيام: full = الـ ٨ اتسجلوا، part = فيه تسجيل، none = مفيش (والتقرير لوحده مش تسجيل). */
-export function dayStatus(d) {
+/** حالة اليوم في شريط الأيام: full = البنود المفعّلة كلها اتسجلت، part = فيه تسجيل، none = مفيش. */
+export function dayStatus(d, settings) {
   if (!d || !logged(d)) return 'none';
-  return starCount(d) === STAR_ITEMS.length ? 'full' : 'part';
+  const total = starItemsFor(settings).length;
+  if (!total) return 'full';
+  return starCount(d, settings) === total ? 'full' : 'part';
 }
 
 /** نسبة إنجاز اليوم للحلقة الصغيرة حوالين كل يوم في شريط الأسبوع (٠ لـ ١٠٠). */
-export function dayProgress(d) {
+export function dayProgress(d, settings) {
   if (!d || !logged(d)) return 0;
-  const sc = starCount(d);
-  return sc ? Math.round((sc / STAR_ITEMS.length) * 100) : 15;
+  const total = starItemsFor(settings).length;
+  if (!total) return 100;
+  const sc = starCount(d, settings);
+  return sc ? Math.round((sc / total) * 100) : 15;
 }
 
 /** n مفاتيح لحد endKey، من الأقدم للأحدث (الأقدم بيترسم على اليمين). */
@@ -291,19 +518,18 @@ export function habitGroupStats(day = {}, group) {
 }
 
 // ---------- سجل الوقت ساعة بساعة (day.hrs) ----------
-const TIME_CAT_MAP = new Map(TIME_CATS.map((c) => [c.id, c]));
-
 /** ٩ ← "٩ ص" ، ١٧ ← "٥ م" ، ٠ ← "١٢ ص" */
 export function fmtHour(h) {
   const n = ((+h % 24) + 24) % 24;
   return `${fmtNum(n % 12 || 12)} ${n < 12 ? 'ص' : 'م'}`;
 }
 
-/** عدد ساعات ورا بعض جوّه نفس اليوم المنطقي (من ٤ ص لـ ٣ ص) من غير ما يلفّ لبكرة. */
-export function hourSpan(startHour, count = 1) {
-  const i = DAY_HOURS.indexOf(((+startHour % 24) + 24) % 24);
+/** عدد ساعات ورا بعض جوّه نفس اليوم المنطقي من غير ما يلفّ لبكرة. */
+export function hourSpan(startHour, count = 1, dayStart = DAY_START) {
+  const hours = dayHoursFor(dayStart);
+  const i = hours.indexOf(((+startHour % 24) + 24) % 24);
   if (i < 0) return [];
-  return DAY_HOURS.slice(i, i + Math.max(1, +count || 1));
+  return hours.slice(i, i + Math.max(1, +count || 1));
 }
 
 /** ١ ← "ساعة" ، ٢ ← "ساعتين" ، ٥ ← "ساعات" */
@@ -320,28 +546,35 @@ export function fmtHours(n) {
   return `${fmtNum(n)} ${hoursWord(n)}`;
 }
 
-/** تجميع ساعات اليوم حسب المجال: { total, by, rows: [{ id, name, icon, hours }] } مترتبة من الأكبر للأصغر. */
-export function timeByCat(day = {}) {
+/** تجميع ساعات اليوم حسب المجال: { total, by, rows: [{ id, name, icon, color, hours }] } مترتبة من الأكبر للأصغر. */
+export function timeByCat(day = {}, settings) {
+  const cfg = normalizeSettings(settings);
+  const catMap = allTimeCatMap(cfg);
+  const hours = dayHoursFor(cfg.dayStart);
   const hrs = day?.hrs;
   const by = {};
   let total = 0;
   if (hrs && typeof hrs === 'object') {
-    for (const h of DAY_HOURS) {
+    for (const h of hours) {
       const c = hrs[String(h)]?.c;
-      if (c && TIME_CAT_MAP.has(c)) {
+      if (c && catMap.has(c)) {
         by[c] = (by[c] || 0) + 1;
         total += 1;
       }
     }
   }
-  const rows = TIME_CATS
-    .filter((cat) => by[cat.id])
-    .map((cat) => ({ ...cat, hours: by[cat.id] }))
-    .sort((a, b) => b.hours - a.hours);
+  const order = [...cfg.timeCats.map((c) => c.id), ...LEGACY_TIME_CATS.map((c) => c.id)];
+  const idx = (id) => {
+    const i = order.indexOf(id);
+    return i < 0 ? 999 : i;
+  };
+  const rows = Object.keys(by)
+    .map((id) => ({ ...catMap.get(id), hours: by[id] }))
+    .sort((a, b) => b.hours - a.hours || idx(a.id) - idx(b.id));
   return { total, by, rows };
 }
 
-/** الساعات اللي اتنام فيها من sleep و wake عشان زرار "ملء النوم" في تاب الوقت. */
+/** الساعات الخام اللي اتنام فيها من sleep و wake. */
 export function sleepHourList(sleep, wake) {
   const s = mins(sleep);
   const dur = sleepMinutes(sleep, wake);
@@ -349,6 +582,22 @@ export function sleepHourList(sleep, wake) {
   const start = Math.floor((s + 29) / 60) % 24;
   const count = Math.max(1, Math.min(16, Math.round(dur / 60)));
   return Array.from({ length: count }, (_, i) => (start + i) % 24);
+}
+
+/**
+ * تقسيم ساعات النوم صح حسب بداية اليوم المنطقي (dayStart):
+ * - prev: الساعات اللي قبل dayStart (ليلة امبارح — تتسجل في آخر يوم امبارح، مش آخر النهارده!).
+ * - today: الساعات اللي من أول dayStart وطالع (صباح النهارده، أو لو النوم كله جوّه نفس اليوم المنطقي).
+ */
+export function sleepHoursSplit(sleep, wake, dayStart = DAY_START) {
+  const ds = [3, 4, 5].includes(+dayStart) ? +dayStart : DAY_START;
+  const raw = sleepHourList(sleep, wake);
+  if (!raw.length) return { today: [], prev: [] };
+  const cut = raw.findIndex((h, i) => i > 0 && h === ds);
+  if (cut > 0) return { prev: raw.slice(0, cut), today: raw.slice(cut) };
+  const w = mins(wake);
+  if (w === ds * 60 && raw[0] !== ds) return { prev: raw, today: [] };
+  return { prev: [], today: raw };
 }
 
 /** الأرقام الأربعة بتاعة الملخص بالدقايق والساعات والجنيه، و null للي ماتسجلش (مش صفر). */
@@ -394,14 +643,10 @@ export function fmtDiff(kind, diff) {
   return fmtNum(kind === 'money' ? Math.round(diff) : diff);
 }
 
-// ---------- نظام الإدخال: اقتراحات من أيامك اللي فاتت (DESIGN.md: الإدخال) ----------
+// ---------- نظام الإدخال: اقتراحات من أيامك اللي فاتت ----------
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
-/**
- * ٥ أوقات (HH:MM) كل ربع ساعة حوالين وسيط آخر ٧ أيام قبل cur، للـ chips.
- * الوقت بيلف بعد ١٢ بالليل، فكل قيمة بتتقرّب للأولى (١١:٣٠ و١٢:٤٥ = ساعة وربع فرق، مش ١١ ساعة).
- * لو مفيش تاريخ: حوالين fallback.
- */
+/** ٥ أوقات (HH:MM) كل ربع ساعة حوالين وسيط آخر ٧ أيام قبل cur، للـ chips. */
 export function suggestTimes(days, key, cur, fallback) {
   const by = new Map((days || []).map((x) => [x.key, x.data || {}]));
   const vals = weekKeys(addDays(cur, -1)).map((k) => mins(by.get(k)?.[key])).filter((v) => v != null);
@@ -423,10 +668,7 @@ export function lastWith(days, cur, keys) {
   return null;
 }
 
-/**
- * مدة الشاشة اللي بتتكتب بكيبورد أرقام → "H:MM" (نفس شكل screen القديم).
- * "٤٢٠" = ٤:٢٠، و"٥" = ٥ ساعات، و"٤٥" = ٤٥ دقيقة (أكبر من ٢٤)، و"٢٫٥" = ٢:٣٠، و"٤:٢٠" زي ما هي. غير كده: ''.
- */
+/** مدة الشاشة اللي بتتكتب بكيبورد أرقام → "H:MM". */
 export function readDuration(s) {
   const t = toEn(s).trim();
   let m = null;
@@ -461,9 +703,9 @@ export function recentValues(days, keys, cur, n = 3, skip = []) {
 
 // ---------- المهام ----------
 /** مهام النهارده = ميعادها النهارده أو قبله ولسه ماخلصتش، + اللي خلصت النهارده. */
-export function todayTasks(tasks, today) {
+export function todayTasks(tasks, today, dayStart = DAY_START) {
   return (tasks || []).filter(
-    (t) => (t.due && t.due <= today && !t.done) || (t.done && t.dAt && dayKeyAt(t.dAt) === today),
+    (t) => (t.due && t.due <= today && !t.done) || (t.done && t.dAt && dayKeyAt(t.dAt, dayStart) === today),
   );
 }
 
@@ -472,10 +714,7 @@ export function isOverdue(t, today) {
   return !t.done && !!t.due && t.due < today;
 }
 
-/**
- * تبويبة المهام: النهارده (ميعادها النهارده أو قبله ولسه ماخلصتش)، وبعدين (باقي اللي ماخلصتش)،
- * وخلصت (آخر ٣٠، الأحدث فوق). جوه النهارده وبعدين: المهم الأول، وبعدين الأقدم.
- */
+/** تبويبة المهام: النهارده، وبعدين، وخلصت (آخر ٣٠). */
 export function groupTasks(tasks, today) {
   const byPri = (a, b) => (b.pri ? 1 : 0) - (a.pri ? 1 : 0) || (a.at || 0) - (b.at || 0);
   const open = (tasks || []).filter((t) => !t.done);
@@ -496,7 +735,7 @@ export function sortIdeas(ideas) {
 export function normAr(s) {
   return toEn(s)
     .toLowerCase()
-    .replace(/[ً-ْـ]/g, '') // التشكيل والمدّ (ـ)
+    .replace(/[ً-ْـ]/g, '')
     .replace(/[أإآ]/g, 'ا')
     .replace(/ة/g, 'ه')
     .replace(/ى/g, 'ي')
@@ -517,14 +756,12 @@ export function shortDate(v) {
   return `${fmtNum(d.getDate())} ${MONTHS[d.getMonth()]}`;
 }
 
-// ---------- الفلوس على مدى فترة ----------
-/** أول فترة تسجيل. في المرحلة ٤ الفترات هتتحفظ في list/periods وتتعدّل من الإعدادات. */
 /** "٢٠ نوفمبر" */
 export function longDate(key) {
   return new Date(`${key}T12:00:00`).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long' });
 }
 
-// ---------- الفترات (list/periods) ----------
+// ---------- الفترات وهدف الفترة الواحد (list/periods) ----------
 /** الفترة اللي فيها اليوم ده، أو null. */
 export function periodOf(periods, key) {
   return (periods || []).find((p) => p.from <= key && key <= p.to) || null;
@@ -535,9 +772,9 @@ export function periodDay(p, key) {
   const days = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 864e5);
   return { n: days(p.from, key) + 1, of: days(p.from, p.to) + 1 };
 }
-/** فترة جديدة من يوم معيّن، ١١ يوم زي الأولى. */
-export function newPeriod(from, len = 11) {
-  return { id: uid(), from, to: addDays(from, len - 1) };
+/** فترة جديدة من يوم معيّن، افتراضي ١١ يوم (أو أي مدة تختارها، ومعاها اسم وهدف اختياري). */
+export function newPeriod(from, len = 11, extra = {}) {
+  return { id: uid(), from, to: addDays(from, Math.max(1, len) - 1), ...extra };
 }
 /** "٢٠ – ٣٠ نوفمبر" ، "٢٨ نوفمبر – ٨ ديسمبر" */
 export function periodLabel(p) {
@@ -548,15 +785,253 @@ export function periodLabel(p) {
 /** بداية ملخص الفلوس: أول الفترة اللي فيها النهارده، ولو مفيش فترة: أول الشهر. */
 export function summaryStart(periods, today) {
   const p = periodOf(periods, today);
-  return p ? { from: p.from, title: `من ${longDate(p.from)} لحد دلوقتي` } : { from: `${today.slice(0, 8)}01`, title: 'من أول الشهر لحد دلوقتي' };
+  return p ? { from: p.from, title: `من ${longDate(p.from)} لحد دلوقتي`, to: p.to } : { from: `${today.slice(0, 8)}01`, title: 'من أول الشهر لحد دلوقتي', to: '' };
+}
+
+/**
+ * تقييم هدف الفترة الواحد (اكتساب عادة / إزالة عادة / تخليص مشروع / هدف رقمي عام).
+ * period.goal = { title, kind, source, target, unit?, dir?, steps?, log?, val? }
+ */
+export function evalPeriodGoal(period, { days = [], metrics = [], today = dayKeyAt(), settings } = {}) {
+  const g = period?.goal;
+  if (!period || !g || !g.title) return null;
+  const cfg = normalizeSettings(settings);
+  const tp = goalTimeProgress(period, today);
+  const ended = today > period.to;
+  const inRange = (days || []).filter((x) => x.key >= period.from && x.key <= period.to);
+  const byKey = new Map(inRange.map((x) => [x.key, x.data || {}]));
+
+  const kind = g.kind || 'build';
+  const kindMeta = PERIOD_GOAL_KINDS.find(([k]) => k === kind) || PERIOD_GOAL_KINDS[0];
+  const src = g.source || (kind === 'project' ? 'steps' : 'manual');
+  const dir = g.dir === 'max' ? 'max' : 'min';
+
+  let cur = 0;
+  let target = Math.max(1, +g.target || tp.daysTotal);
+  let unit = g.unit || '';
+  let pct = 0;
+  let streak = 0;
+  let slipped = 0;
+  let sourceLabel = 'تسجيل يدوي';
+  let steps = null;
+  let nextStep = '';
+  const todayVal = g.log?.[today];
+
+  // مساعدة لحساب أطول سلسلة متواصلة جوه الفترة
+  const calcStreak = (passFn) => {
+    let best = 0;
+    let run = 0;
+    for (let i = 0; i < tp.daysTotal; i += 1) {
+      const k = addDays(period.from, i);
+      if (k > today && !ended) break;
+      if (passFn(k, byKey.get(k) || {})) {
+        run += 1;
+        if (run > best) best = run;
+      } else {
+        run = 0;
+      }
+    }
+    return best;
+  };
+
+  if (kind === 'build') {
+    unit = unit || 'يوم';
+    if (src === 'manual') {
+      sourceLabel = 'تسجيل يومي بدوسة';
+      const pass = (k) => (g.log?.[k] || 0) >= 1;
+      for (let i = 0; i < tp.daysTotal; i += 1) if (pass(addDays(period.from, i))) cur += 1;
+      streak = calcStreak(pass);
+    } else if (src === 'sleep') {
+      sourceLabel = `تلقائي: نوم ≥ ${fmtNum(cfg.sleepTarget)} س`;
+      const pass = (_k, d) => {
+        const sm = sleepMinutes(d.sleep, d.wake);
+        return sm != null && sm >= cfg.sleepTarget * 60;
+      };
+      cur = inRange.filter(({ key, data }) => pass(key, data)).length;
+      streak = calcStreak(pass);
+    } else if (src === 'salah') {
+      sourceLabel = 'تلقائي: الصلوات ٥/٥';
+      const pass = (_k, d) => (+d.salah || 0) >= 5;
+      cur = inRange.filter(({ key, data }) => pass(key, data)).length;
+      streak = calcStreak(pass);
+    } else if (src.startsWith('habit:')) {
+      const hk = src.slice(6);
+      sourceLabel = `تلقائي: عادة «${allHabitLabel(hk, cfg)}»`;
+      cur = r1(inRange.reduce((a, { data }) => a + (data[hk] === 2 ? 1 : data[hk] === 1 ? 0.5 : 0), 0));
+      streak = calcStreak((_k, d) => d[hk] === 2);
+    } else if (src.startsWith('metric:')) {
+      const mid = src.slice(7);
+      const met = (metrics || []).find((m) => String(m.id) === String(mid));
+      sourceLabel = met ? `تلقائي: مقياس «${met.n}»` : 'تلقائي من مقاييسي';
+      const pass = (_k, d) => {
+        const v = d.m?.[mid];
+        if (!has(v)) return false;
+        return met?.t === 'tri' ? +v === 2 : true;
+      };
+      cur = inRange.filter(({ key, data }) => pass(key, data)).length;
+      streak = calcStreak(pass);
+    }
+    pct = Math.min(100, Math.max(0, Math.round((cur / target) * 100)));
+  } else if (kind === 'quit') {
+    unit = unit || 'يوم نضيف';
+    if (src === 'manual') {
+      sourceLabel = 'متابعة يومية (نضيف / وقعت)';
+      const pass = (k) => g.log?.[k] === 1;
+      for (let i = 0; i < tp.daysTotal; i += 1) {
+        const v = g.log?.[addDays(period.from, i)];
+        if (v === 1) cur += 1;
+        else if (v === 0) slipped += 1;
+      }
+      streak = calcStreak(pass);
+    } else if (src === 'screen') {
+      sourceLabel = `تلقائي: شاشة ≤ ${fmtNum(cfg.screenLimit)} س`;
+      const pass = (_k, d) => {
+        const sm = has(d.screen) ? screenMin(d.screen) : null;
+        return sm != null && sm <= cfg.screenLimit * 60;
+      };
+      cur = inRange.filter(({ key, data }) => pass(key, data)).length;
+      slipped = inRange.filter(({ data }) => {
+        const sm = has(data.screen) ? screenMin(data.screen) : null;
+        return sm != null && sm > cfg.screenLimit * 60;
+      }).length;
+      streak = calcStreak(pass);
+    } else if (src === 'distract') {
+      sourceLabel = 'تلقائي: صفر ساعات تشتيت';
+      const pass = (_k, d) => {
+        const tb = timeByCat(d, cfg);
+        return tb.total > 0 && !(tb.by.distract > 0);
+      };
+      cur = inRange.filter(({ key, data }) => pass(key, data)).length;
+      slipped = inRange.filter(({ data }) => (timeByCat(data, cfg).by.distract || 0) > 0).length;
+      streak = calcStreak(pass);
+    }
+    pct = Math.min(100, Math.max(0, Math.round((cur / target) * 100)));
+  } else if (kind === 'project') {
+    if (src === 'steps') {
+      steps = Array.isArray(g.steps) ? g.steps : [];
+      cur = steps.filter((x) => x.done).length;
+      target = steps.length;
+      unit = 'خطوة';
+      pct = target ? Math.round((cur / target) * 100) : 0;
+      nextStep = steps.find((x) => !x.done)?.t || '';
+      sourceLabel = 'خطوات المشروع';
+    } else if (src === 'work') {
+      sourceLabel = 'تلقائي: ساعات الشغل';
+      unit = unit || 'ساعة';
+      cur = r1(inRange.reduce((a, { data }) => a + Math.max(workTotal(data), timeByCat(data, cfg).by.work || 0), 0));
+      pct = Math.min(100, Math.max(0, Math.round((cur / target) * 100)));
+    } else if (src.startsWith('proj:')) {
+      const pName = src.slice(5);
+      const want = normAr(pName);
+      sourceLabel = `تلقائي: مشروع «${pName}»`;
+      unit = unit || 'ساعة';
+      cur = r1(inRange.reduce((a, { data }) => a + workRows(data).filter((w) => want && normAr(w.p) === want).reduce((x, w) => x + w.h, 0), 0));
+      pct = Math.min(100, Math.max(0, Math.round((cur / target) * 100)));
+    } else {
+      sourceLabel = 'تحديث يدوي';
+      cur = Math.max(0, r1(+g.val || 0));
+      pct = Math.min(100, Math.max(0, Math.round((cur / target) * 100)));
+    }
+  } else {
+    // target (هدف رقمي / عام)
+    if (src === 'spend') {
+      sourceLabel = 'تلقائي: مصاريف الفترة';
+      unit = unit || 'ج';
+      cur = r1(inRange.reduce((a, { data }) => a + expTotal(data), 0));
+    } else if (src === 'income') {
+      sourceLabel = 'تلقائي: دخل الفترة';
+      unit = unit || 'ج';
+      cur = r1(inRange.reduce((a, { data }) => a + incomeTotal(data), 0));
+    } else if (src === 'work') {
+      sourceLabel = 'تلقائي: ساعات الشغل';
+      unit = unit || 'ساعة';
+      cur = r1(inRange.reduce((a, { data }) => a + Math.max(workTotal(data), timeByCat(data, cfg).by.work || 0), 0));
+    } else if (src.startsWith('metric:')) {
+      const mid = src.slice(7);
+      const met = (metrics || []).find((m) => String(m.id) === String(mid));
+      sourceLabel = met ? `تلقائي: مقياس «${met.n}»` : 'تلقائي من مقاييسي';
+      unit = unit || met?.u || '';
+      cur = r1(inRange.reduce((a, { data }) => {
+        const v = data.m?.[mid];
+        if (!has(v)) return a;
+        if (met?.t === 'tri') return a + (+v === 2 ? 1 : +v === 1 ? 0.5 : 0);
+        return a + (numOf(v) || 0);
+      }, 0));
+    } else {
+      sourceLabel = 'تحديث يدوي';
+      cur = Math.max(0, r1(+g.val || 0));
+    }
+    pct = Math.min(100, Math.max(0, Math.round((cur / target) * 100)));
+  }
+
+  const isCap = kind === 'target' && dir === 'max';
+  let succeeded = false;
+  let isBehind = false;
+  let status = 'done';
+  let statusText = '';
+  let paceText = '';
+
+  if (isCap) {
+    const over = cur > target;
+    succeeded = !over && ended;
+    isBehind = over || (!ended && tp.timePct > 0 && pct > tp.timePct + 8);
+    status = isBehind ? 'attn' : 'done';
+    if (over) {
+      statusText = 'عدّيت السقف';
+      paceText = `زيادة ${fmtNum(cur - target)} ${unit}`.trim();
+    } else if (ended) {
+      statusText = 'نجحت الفترة ✓';
+      paceText = `تحت السقف بـ ${fmtNum(target - cur)} ${unit}`.trim();
+    } else if (isBehind) {
+      statusText = 'محتاج تركيز';
+      paceText = `فاضل ${fmtNum(target - cur)} ${unit} · ${fmtDays(tp.daysLeft)}`.trim();
+    } else {
+      statusText = 'على الطريق';
+      paceText = `تحت السقف · فاضل ${fmtNum(target - cur)} ${unit}`.trim();
+    }
+  } else {
+    succeeded = target > 0 && cur >= target;
+    isBehind = !succeeded && (ended || (tp.timePct > 0 && pct + 8 < tp.timePct));
+    status = isBehind ? 'attn' : 'done';
+    if (succeeded) {
+      statusText = ended ? 'نجحت الفترة ✓' : 'حققت الهدف ✓';
+      paceText = streak >= 2 ? `أطول سلسلة ${fmtDays(streak)}` : 'الهدف اتحقق بالكامل';
+    } else if (ended) {
+      statusText = `وصلت ${fmtNum(pct)}٪`;
+      paceText = `انتهت الفترة (${fmtNum(cur)} من ${fmtNum(target)} ${unit})`.trim();
+    } else if (isBehind) {
+      statusText = 'محتاج تركيز';
+      paceText = tp.daysLeft > 0 ? `فاضل ${fmtNum(Math.max(0, target - cur))} ${unit} · ${fmtDays(tp.daysLeft)}`.trim() : 'آخر يوم في الفترة';
+    } else {
+      statusText = 'على الطريق';
+      paceText = streak >= 2 && (kind === 'build' || kind === 'quit')
+        ? `سلسلة ${fmtDays(streak)} · فاضل ${fmtDays(tp.daysLeft)}`
+        : tp.daysLeft > 0 ? `فاضل ${fmtDays(tp.daysLeft)} في الفترة` : 'آخر يوم في الفترة';
+    }
+  }
+
+  return {
+    title: g.title, kind, kindLabel: kindMeta[1], kindIcon: kindMeta[2], source: src, sourceLabel,
+    cur, target, unit, pct, streak, slipped, isCap, succeeded, ended, status, isBehind,
+    statusText, paceText, steps, nextStep, todayVal,
+    daysTotal: tp.daysTotal, daysPassed: tp.daysPassed, daysLeft: tp.daysLeft, timePct: tp.timePct,
+  };
+}
+
+export function periodGoalDigestLines(periods, ctx) {
+  const cur = periodOf(periods, ctx?.today || dayKeyAt());
+  if (!cur?.goal) return [];
+  const ev = evalPeriodGoal(cur, ctx);
+  if (!ev) return [];
+  return [
+    `هدف الفترة الحالية (${cur.name ? `${clip(cur.name, 40)}، ` : ''}${cur.from} لـ ${cur.to}): ${clip(ev.title, 80)} [${ev.kindLabel}] — ${ev.pct}% (${ev.cur}/${ev.target}${ev.unit ? ` ${ev.unit}` : ''}، فاضل ${ev.daysLeft} يوم، ${ev.statusText})`,
+  ];
 }
 
 // ---------- مقاييسي (list/metrics) ----------
-// { id, n: الاسم, t: النوع, u: الوحدة, a: المجال, w: يبان إمتى, on: ظاهر, at }
-// والقيم في اليوم: day.m = { <id>: قيمة }
 export const METRIC_TYPES = [['tri', 'تم / جزئي'], ['count', 'عدّاد'], ['num', 'رقم'], ['time', 'وقت'], ['text', 'كلام']];
 export const METRIC_WHEN = [['day', 'طول اليوم'], ...PERIODS.map(([k, l]) => [k, l])];
-export const AREAS = ['البيزنس', 'الصحة', 'الموبايل والسوشيال'];
+export const AREAS = ['الشغل والبيزنس', 'الصحة', 'التعلم', 'شخصي'];
 
 /** المجالات: الأساسية، وبعدها أي مجال جديد اتعمل في المقاييس. */
 export function metricAreas(metrics) {
@@ -566,11 +1041,11 @@ export function metricAreas(metrics) {
 }
 
 /** المقياس يبان في اليوم ده؟ لو مقفول لأ. ولو ليه فترة، بيبان من أول ما الفترة دي تيجي (والأيام اللي فاتت كله باين). */
-export function metricVisible(m, cur, today, hour) {
+export function metricVisible(m, cur, today, hour, dayStart = DAY_START) {
   if (!m.on) return false;
   if (!m.w || m.w === 'day') return true;
   const i = PERIODS.findIndex(([k]) => k === m.w);
-  return i < 0 || periodPhase(i, cur, today, hour) !== 'future';
+  return i < 0 || periodPhase(i, cur, today, hour, dayStart) !== 'future';
 }
 
 /** [[المجال، [مقاييس]]] بترتيب المجالات. */
@@ -593,7 +1068,7 @@ export function metricDesc(m) {
   return `${t}${unit}، ${w}${m.on ? '' : '، مقفول'}`;
 }
 
-/** قيمة المقياس للعرض، و'' لو ماتسجلش (الواجهة بتكتب "—"، مش صفر ولا "لسه"). tri بيرجّع الكلمة (جزئي، تم). */
+/** قيمة المقياس للعرض، و'' لو ماتسجلش. */
 export function metricValue(m, v) {
   if (m.t === 'tri') return ['', 'جزئي', 'تم'][+v || 0];
   if (v === undefined || v === null || v === '') return '';
@@ -603,11 +1078,8 @@ export function metricValue(m, v) {
   return String(v);
 }
 
-/**
- * days = [{ key: 'YYYY-MM-DD', data }] → إجمالي المصروف والدخل من from لحد to،
- * والتصنيفات مترتبة من الأكبر للأصغر.
- */
-export function moneySummary(days, from, to) {
+/** إجمالي المصروف والدخل والصافي والمتوسط اليومي والميزانية من from لحد to. */
+export function moneySummary(days, from, to, budget = 0) {
   let spent = 0;
   let income = 0;
   const by = {};
@@ -618,27 +1090,32 @@ export function moneySummary(days, from, to) {
       spent += a;
       by[e.c] = (by[e.c] || 0) + a;
     }
-    income += +toEn(data.income) || 0;
+    income += incomeTotal(data);
   }
-  return { spent, income, cats: Object.entries(by).sort((a, b) => b[1] - a[1]) };
+  const daysElapsed = Math.max(1, daysBetween(from, to) + 1);
+  const avgPerDay = Math.round(spent / daysElapsed);
+  const net = income - spent;
+  const cap = +budget > 0 ? +budget : 0;
+  const remaining = cap ? cap - spent : 0;
+  const budgetPct = cap ? Math.min(100, Math.round((spent / cap) * 100)) : 0;
+  return {
+    spent, income, net, avgPerDay, daysElapsed, budget: cap, remaining, budgetPct,
+    cats: Object.entries(by).sort((a, b) => b[1] - a[1]),
+  };
 }
 
 // ---------- النسخة الاحتياطية والمزامنة ----------
 export const BACKUP_APP = 'waraqat-alyawm';
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-/**
- * الاستيراد بيدمج ومابيمسحش حاجة. local وincoming: { data, updatedAt } (أو null).
- * - القوايم (list/…): كل العناصر من الاتنين بالـ id. ولو نفس العنصر في الاتنين، بتاع المستند الأحدث هو اللي بيكسب.
- * - الأيام: كل المفاتيح من الاتنين. ولو نفس المفتاح في الاتنين، الأحدث هو اللي بيكسب. ونفس الكلام جوه m (قيم المقاييس).
- * بيرجّع { data, changed }، أو null لو الملف مفيهوش بيانات للمستند ده.
- */
 export function mergeDoc(id, local, incoming) {
   if (!incoming?.data || typeof incoming.data !== 'object') return null;
   if (!local?.data) return { data: incoming.data, changed: true };
   const newer = (incoming.updatedAt || 0) > (local.updatedAt || 0);
   let data;
-  if (id.startsWith('list/')) {
+  if (id === 'list/settings') {
+    data = newer ? { ...local.data, ...incoming.data } : { ...incoming.data, ...local.data };
+  } else if (id.startsWith('list/')) {
     const items = [...(local.data.items || [])];
     for (const it of incoming.data.items || []) {
       const i = items.findIndex((x) => String(x.id) === String(it.id));
@@ -668,19 +1145,16 @@ export function parseBackup(text) {
     throw new Error('الملف ده مش JSON');
   }
   if (!j || j.app !== BACKUP_APP || !Array.isArray(j.docs)) throw new Error('الملف ده مش نسخة من ورقة اليوم');
-  const ok = (d) => d && typeof d.id === 'string' && /^(day\/\d{4}-\d{2}-\d{2}|list\/(tasks|ideas|metrics|periods|goals))$/.test(d.id) && d.data && typeof d.data === 'object';
+  const ok = (d) => d && typeof d.id === 'string' && /^(day\/\d{4}-\d{2}-\d{2}|list\/(tasks|ideas|metrics|periods|goals|settings))$/.test(d.id) && d.data && typeof d.data === 'object';
   return j.docs.filter(ok);
 }
 
-/** المزامنة: آخر تعديل بيكسب على مستوى المستند كله. ناخد اللي على السيرفر لو مش عندنا أو أحدث. */
+/** المزامنة: آخر تعديل بيكسب على مستوى المستند كله. */
 export function takeRemote(local, remote) {
   return !local || (+remote.updated_at || 0) > (+local.updatedAt || 0);
 }
 
-/**
- * حد للاستخدام في الكود عشان الخطة المجانية: عدد طلبات المزامنة في اليوم.
- * meta = { day, n }. بيرجّع { ok, meta } والـ meta الجديدة اللي تتحفظ.
- */
+/** حد للاستخدام في الكود عشان الخطة المجانية: عدد طلبات المزامنة في اليوم. */
 export function useQuota(meta, today, cap) {
   const m = meta?.day === today ? { ...meta } : { day: today, n: 0 };
   if (m.n >= cap) return { ok: false, meta: m };
@@ -693,9 +1167,9 @@ export function mergeLine(old, line) {
   return has(old) ? `${old} · ${line}` : line;
 }
 
-/** السطر بيروح لخانة "عملت إيه" بتاعة الفترة اللي إنت فيها: الساعة ١٩ → { key: 'p3t', label: 'بعد المغرب' }. */
-export function lineTarget(hour) {
-  const [k, label] = PERIODS[periodIndex(hour)];
+/** السطر بيروح لخانة "عملت إيه" بتاعة الفترة اللي إنت فيها. */
+export function lineTarget(hour, dayStart = DAY_START) {
+  const [k, label] = periodsFor(dayStart)[periodIndex(hour, dayStart)];
   return { key: `${k}t`, label };
 }
 
@@ -705,9 +1179,6 @@ export function uid() {
 }
 
 // ---------- تقرير الذكاء الاصطناعي: ملخص البيانات ----------
-// الملخص نص عادي بيتبعت للموديل. بأرقام إنجليزي عشان الموديل يقراها صح، ومن غير اسم ولا إيميل.
-// الخانات الفاضية مابتتكتبش، والكلام الطويل بيتقص، عشان الطلب يفضل صغير.
-
 const clip = (s, n = 200) => {
   const t = String(s ?? '').replace(/\s+/g, ' ').trim();
   return t.length > n ? `${t.slice(0, n)}…` : t;
@@ -720,25 +1191,22 @@ const numOf = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 const weekday = (key) => new Date(`${key}T12:00:00`).toLocaleDateString('ar-EG', { weekday: 'long' });
-/** الخانات اللي التقرير نفسه بيكتبها في اليوم، ومش جزء من اللي إنت سجلته. */
 const AI_KEYS = ['ai', 'aiw'];
 const logged = (d) => Object.keys(d || {}).some((k) => !AI_KEYS.includes(k));
-/** "5:30" أو "5" (ساعات) → دقايق. */
 const screenMin = (v) => mins(v) ?? (numOf(v) != null ? numOf(v) * 60 : null);
 
 export const HABIT_NUMS = [
-  ['wirdp', 'الورد', 'صفحة'], ['exm', 'تمرين', 'دقيقة'], ['engm', 'إنجليزي', 'دقيقة'], ['readp', 'قراءة', 'صفحة'],
-  ['techm', 'تعلم تقني', 'دقيقة'], ['caf', 'قهوة/شاي', 'كوباية'], ['relm', 'وقت من غير موبايل', 'دقيقة'],
+  ['wirdp', 'الورد', 'صفحة'], ['exm', 'تمارين', 'دقيقة'], ['engm', 'إنجليزي', 'دقيقة'], ['readp', 'قراءة', 'صفحة'],
+  ['techm', 'تعلم تقني', 'دقيقة'], ['caf', 'قهوة/شاي', 'كوباية'], ['relm', 'وقت بدون موبايل', 'دقيقة'],
 ];
 
 // ---------- نظام الأهداف المتكامل (list/goals) ----------
-// { id, t, p, f, m, src, hz, from, to, start?, target, unit, cur?, steps?, done?, dAt?, note?, at }
 export const GOAL_PILLARS = [
   { id: 'work',   name: 'الشغل والمال',     icon: 'brief' },
   { id: 'health', name: 'الصحة والجسم',     icon: 'heart' },
   { id: 'growth', name: 'التعلم والتطوير',   icon: 'book' },
   { id: 'deen',   name: 'الدين والروح',      icon: 'star' },
-  { id: 'life',   name: 'العلاقات والحياة', icon: 'home' },
+  { id: 'life',   name: 'شخصي وحياة',       icon: 'home' },
 ];
 export const GOAL_MODES = [
   ['habit',  'عادة يومية',   'check'],
@@ -755,7 +1223,6 @@ export const GOAL_HORIZONS = [
 ];
 
 const GOAL_PILLAR_MAP = new Map(GOAL_PILLARS.map((x) => [x.id, x]));
-const HABIT_LABEL_MAP = new Map(HABITS);
 const HABIT_NUM_MAP = new Map(HABIT_NUMS.map(([k, l, u]) => [k, { l, u }]));
 
 /** نطاق التواريخ الفعلي للهدف حسب الإطار الزمني المختار. */
@@ -804,18 +1271,19 @@ export function goalTimeProgress(g, today) {
 }
 
 /** وصف بشري مختصر لمصدر قياس الهدف. */
-export function goalSourceLabel(g, metrics = []) {
+export function goalSourceLabel(g, metrics = [], settings) {
   const s = g.src || {};
+  const tMap = allTimeCatMap(settings);
   if (g.m === 'habit') {
     if (s.kind === 'salah') return 'تلقائي من الصلوات في وقتها';
     if (s.kind === 'sum') return `تلقائي من أرقام «${HABIT_NUM_MAP.get(s.k)?.l || s.k || ''}»`;
-    return `تلقائي من عادة «${HABIT_LABEL_MAP.get(s.k) || s.k || ''}»`;
+    return `تلقائي من عادة «${allHabitLabel(s.k, settings)}»`;
   }
   if (g.m === 'time') {
     if (s.kind === 'deep') return 'تلقائي من التركيز العميق';
     if (s.kind === 'proj') return `تلقائي من مشروع «${s.proj || ''}»`;
     if (s.kind === 'work' || s.c === 'work') return 'تلقائي من الوقت والشغل';
-    return `تلقائي من تاب الوقت (${TIME_CAT_MAP.get(s.c)?.name || 'وقت'})`;
+    return `تلقائي من تاب الوقت (${tMap.get(s.c)?.name || 'وقت'})`;
   }
   if (g.m === 'metric') {
     if (s.kind === 'income') return 'تلقائي من دخل الفلوس';
@@ -827,15 +1295,12 @@ export function goalSourceLabel(g, metrics = []) {
   return 'عدّاد يدوي سريع';
 }
 
-/**
- * حساب التقدم والإيقاع الكامل لهدف واحد ضد بيانات الأيام والمهام والمقاييس.
- * بيرجّع: { cur, target, unit, pct, timePct, daysLeft, overdue, isCap, status, isBehind, paceText, sourceLabel, horizonText, pillar, segs?, nextText?, linked }
- */
-export function evalGoal(g, { days = [], tasks = [], metrics = [], today = dayKeyAt() } = {}) {
+export function evalGoal(g, { days = [], tasks = [], metrics = [], today = dayKeyAt(), settings } = {}) {
+  const cfg = normalizeSettings(settings);
   const pillar = GOAL_PILLAR_MAP.get(g.p) || GOAL_PILLARS[0];
   const tp = goalTimeProgress(g, today);
   const horizonText = g.from && g.to ? periodLabel({ from: g.from, to: g.to }) : '';
-  const sourceLabel = goalSourceLabel(g, metrics);
+  const sourceLabel = goalSourceLabel(g, metrics, cfg);
   const linked = (tasks || []).filter((t) => String(t.goalId || '') === String(g.id));
   const inRange = (days || []).filter((x) => (!g.from || x.key >= g.from) && (!g.to || x.key <= g.to));
 
@@ -870,7 +1335,7 @@ export function evalGoal(g, { days = [], tasks = [], metrics = [], today = dayKe
     } else {
       const cat = s.kind === 'work' ? 'work' : (s.c || 'work');
       cur = r1(inRange.reduce((a, { data }) => {
-        const hrsCat = timeByCat(data).by[cat] || 0;
+        const hrsCat = timeByCat(data, cfg).by[cat] || 0;
         return a + (cat === 'work' ? Math.max(workTotal(data), hrsCat) : hrsCat);
       }, 0));
     }
@@ -878,7 +1343,7 @@ export function evalGoal(g, { days = [], tasks = [], metrics = [], today = dayKe
     pct = Math.min(100, Math.max(0, Math.round((cur / target) * 100)));
   } else if (g.m === 'metric') {
     if (s.kind === 'income') {
-      cur = r1(inRange.reduce((a, { data }) => a + (numOf(data.income) || 0), 0));
+      cur = r1(inRange.reduce((a, { data }) => a + incomeTotal(data), 0));
       unit = unit || 'ج';
       pct = Math.min(100, Math.max(0, Math.round((cur / target) * 100)));
     } else if (s.kind === 'exp_cap') {
@@ -1009,7 +1474,7 @@ export function goalsSummary(goals, ctx) {
   return { active, archived, focus, evals, avgPct, onTrack, needPush, linkedHabits };
 }
 
-/** سطور مختصرة لأهدافك النشطة عشان تتبعت لتقرير الذكاء الاصطناعي (أرقام إنجليزي). */
+/** سطور مختصرة لأهدافك النشطة عشان تتبعت لتقرير الذكاء الاصطناعي. */
 export function goalDigestLines(goals, ctx) {
   const active = (goals || []).filter((g) => !g.done);
   if (!active.length) return [];
@@ -1032,7 +1497,9 @@ function metricText(m, v) {
 }
 
 /** سطر واحد مختصر لليوم: للتقرير الأسبوعي، وللمقارنة بامبارح في التقرير اليومي. */
-export function dayLine(key, d = {}) {
+export function dayLine(key, d = {}, settings) {
+  const cfg = normalizeSettings(settings);
+  const hs = activeHabits(cfg);
   const p = [];
   const sm = sleepMinutes(d.sleep, d.wake);
   if (sm != null) p.push(`نوم ${hmEn(sm)}`);
@@ -1040,37 +1507,57 @@ export function dayLine(key, d = {}) {
   if (has(d.mood)) p.push(`مزاج ${d.mood}/5`);
   const es = PERIODS.map(([k]) => +d[`${k}e`] || 0).filter(Boolean);
   if (es.length) p.push(`طاقة ${r1(es.reduce((a, b) => a + b, 0) / es.length)}/5`);
-  if (HABITS.some(([k]) => has(d[k]))) p.push(`عادات ${habitsDone(d)}/${HABITS.length}`);
+  if (hs.some((h) => has(d[h.k]))) p.push(`عادات ${habitsDone(d, cfg)}/${hs.length}`);
   if (has(d.salah)) p.push(`صلوات ${d.salah}/5`);
   const w = workTotal(d);
   if (w) p.push(`شغل ${r1(w)} ساعة`);
+  else if (d.workOff) p.push('شغل: إجازة');
   if (has(d.deep)) p.push(`تركيز عميق ${toEn(d.deep)} ساعة`);
   const e = expTotal(d);
   if (e) p.push(`صرف ${r1(e)} ج`);
+  else if (d.noSpend) p.push('صرف 0 ج');
   if (has(d.top)) p.push(`أهم حاجة: ${clip(d.top, 120)}`);
   return `${key} (${weekday(key)}): ${p.length ? p.join('، ') : 'مفيش تسجيل'}`;
 }
 
-/**
- * ملخص يوم كامل للتقرير اليومي: كل اللي اتسجل، وإيه اللي ناقص، وامبارح للمقارنة.
- * opts: { prev: { key, data } | null, tasks, metrics }
- */
-export function dayDigest(key, d = {}, { prev = null, tasks = [], metrics = [], goals = [], days = null } = {}) {
+/** ملخص يوم كامل للتقرير اليومي. */
+export function dayDigest(key, d = {}, { prev = null, tasks = [], metrics = [], goals = [], periods = [], days = null, settings = null } = {}) {
+  const cfg = normalizeSettings(settings);
+  const hs = activeHabits(cfg);
+  const tMap = allTimeCatMap(cfg);
+  const pers = periodsFor(cfg.dayStart);
+  const hours = dayHoursFor(cfg.dayStart);
   const L = [`اليوم: ${weekday(key)} ${key}`];
+
+  // أهداف المستخدم الشخصية عشان التحليل يقارن بيها
+  const targets = [`نوم ${cfg.sleepTarget} ساعة`, `شغل ${cfg.workTarget} ساعة`, `تركيز ${cfg.deepTarget} ساعة`, `سقف الشاشة ${cfg.screenLimit} ساعة`];
+  if (cfg.budget > 0) targets.push(`ميزانية ${cfg.budget} جنيه`);
+  L.push(`أهدافه اليومية: ${targets.join('، ')}`);
 
   const sleep = [];
   if (has(d.sleep)) sleep.push(`نام ${toEn(d.sleep)}`);
   if (has(d.wake)) sleep.push(`صحي ${toEn(d.wake)}`);
   const sm = sleepMinutes(d.sleep, d.wake);
   if (sm != null) sleep.push(`المدة ${hmEn(sm)}`);
+  const sq = SLEEP_QUAL.find(([k]) => k === d.sleepq)?.[1];
+  if (sq) sleep.push(`الجودة ${sq}`);
+  if (has(d.nap) && +toEn(d.nap) > 0) sleep.push(`قيلولة ${toEn(d.nap)} دقيقة`);
   if (sleep.length) L.push(`النوم: ${sleep.join('، ')}`);
+
   const phone = [];
   if (has(d.screen)) phone.push(`Screen time ${toEn(d.screen)}`);
   if (has(d.lastuse)) phone.push(`آخر استخدام ${toEn(d.lastuse)}`);
+  if (has(d.relm)) phone.push(`وقت بدون موبايل ${toEn(d.relm)} دقيقة`);
   if (phone.length) L.push(`الموبايل: ${phone.join('، ')}`);
-  if (has(d.mood)) L.push(`المزاج: ${d.mood} من 5`);
 
-  const per = PERIODS.map(([k, l]) => {
+  if (has(d.mood) || has(d.moodTag)) {
+    const mp = [];
+    if (has(d.mood)) mp.push(`${d.mood} من 5`);
+    if (has(d.moodTag)) mp.push(clip(d.moodTag, 40));
+    L.push(`المزاج: ${mp.join('، ')}`);
+  }
+
+  const per = pers.map(([k, l]) => {
     const p = [];
     if (has(d[`${k}e`])) p.push(`طاقة ${d[`${k}e`]} من 5`);
     const h = numOf(d[`${k}h`]);
@@ -1079,32 +1566,56 @@ export function dayDigest(key, d = {}, { prev = null, tasks = [], metrics = [], 
     return p.length ? `- ${l}: ${p.join('، ')}` : '';
   }).filter(Boolean);
   if (per.length) L.push('الفترات:', ...per);
-  const tb = timeByCat(d);
+
+  const tb = timeByCat(d, cfg);
   if (tb.total) {
     L.push(`توزيع الوقت (${tb.total} ساعة): ${tb.rows.map((r) => `${r.name} ${r.hours} ساعة`).join('، ')}`);
-    const notes = DAY_HOURS
+    const notes = hours
       .map((h) => [h, d.hrs?.[String(h)]])
       .filter(([, x]) => x && has(x.t))
-      .map(([h, x]) => `${h}:00 ${TIME_CAT_MAP.get(x.c)?.name || ''} (${clip(x.t, 40)})`);
+      .map(([h, x]) => `${h}:00 ${tMap.get(x.c)?.name || ''} (${clip(x.t, 40)})`);
     if (notes.length) L.push(`- تفاصيل الساعات: ${clip(notes.join('، '), 320)}`);
   }
   if (has(d.up)) L.push(`رفع طاقته: ${clip(d.up)}`);
   if (has(d.down)) L.push(`وطّى طاقته: ${clip(d.down)}`);
   if (has(d.unpl)) L.push(`مهام طلعت من غير تخطيط: ${toEn(d.unpl)}`);
 
-  if (HABITS.some(([k]) => has(d[k]))) {
-    const pick = (v) => HABITS.filter(([k]) => (+d[k] || 0) === v).map(([, l]) => l);
-    L.push(`العادات: ${habitsDone(d)} من ${HABITS.length} تم`);
+  // العادات المفعّلة + أي عادة قديمة متسجلة في اليوم ده
+  const legacyLogged = Object.keys(LEGACY_HABIT_LABELS).filter((k) => has(d[k]) && !hs.some((h) => h.k === k));
+  const allShown = [...hs.map((h) => [h.k, h.n]), ...legacyLogged.map((k) => [k, LEGACY_HABIT_LABELS[k]])];
+  if (allShown.some(([k]) => has(d[k]))) {
+    const pick = (v) => allShown.filter(([k]) => (+d[k] || 0) === v).map(([, l]) => l);
+    L.push(`العادات: ${allShown.filter(([k]) => d[k] === 2).length} من ${allShown.length} تم`);
     if (pick(2).length) L.push(`- تم: ${pick(2).join('، ')}`);
     if (pick(1).length) L.push(`- جزئي: ${pick(1).join('، ')}`);
     if (pick(0).length) L.push(`- ماتعملتش: ${pick(0).join('، ')}`);
   }
-  if (has(d.salah)) L.push(`الصلوات في وقتها: ${d.salah} من 5`);
-  const nums = HABIT_NUMS.filter(([k]) => has(d[k])).map(([k, l, u]) => `${l} ${toEn(d[k])} ${u}`);
+  if (has(d.salah) || has(d.prayers)) {
+    const ps = prayersState(d);
+    const doneP = PRAYERS.filter(([k]) => ps[k]).map(([, l]) => l);
+    const cnt = has(d.prayers) ? doneP.length : +d.salah || 0;
+    L.push(`الصلوات في وقتها: ${cnt} من 5${has(d.prayers) && doneP.length ? ` (${doneP.join('، ')})` : ''}`);
+  }
+  const wkParts = [];
+  if (has(d.ext)) wkParts.push(`النوع: ${clip(d.ext, 80)}`);
+  if (has(d.exm)) wkParts.push(`${toEn(d.exm)} دقيقة`);
+  if (has(d.exn)) wkParts.push(`أرقام: ${clip(toEn(d.exn), 80)}`);
+  if (wkParts.length) L.push(`تفاصيل التمرين: ${wkParts.join('، ')}`);
+
+  const nums = HABIT_NUMS.filter(([k]) => k !== 'exm' && k !== 'relm' && has(d[k])).map(([k, l, u]) => `${l} ${toEn(d[k])} ${u}`);
+  // أرقام العادات المخصصة
+  for (const h of hs) {
+    if (h.numK && !HABIT_NUMS.some(([k]) => k === h.numK) && has(d[h.numK])) {
+      nums.push(`${h.n} ${toEn(d[h.numK])}${h.numU ? ` ${h.numU}` : ''}`);
+    }
+  }
   if (has(d.cafl)) nums.push(`آخر كوباية ${toEn(d.cafl)}`);
   if (nums.length) L.push(`تفاصيل العادات: ${nums.join('، ')}`);
-  if (has(d.relw)) L.push(`الوقت من غير موبايل كان مع: ${clip(d.relw, 80)}`);
-  if (has(d.tens)) L.push(`توتر: ${clip(d.tens)}`);
+
+  const stLbl = STRESS_OPTS.find(([k]) => k === d.stress)?.[1];
+  if (stLbl || has(d.tens)) {
+    L.push(`توتر: ${[stLbl, has(d.tens) ? clip(d.tens) : ''].filter(Boolean).join(' — ')}`);
+  }
   if (has(d.tired)) L.push(`إرهاق غير معتاد: ${['', 'جزئي', 'آه'][+d.tired || 0]}`);
   if (has(d.learnt)) L.push(`اتعلم: ${clip(d.learnt)}`);
 
@@ -1114,25 +1625,34 @@ export function dayDigest(key, d = {}, { prev = null, tasks = [], metrics = [], 
   if (work.length) {
     L.push(`الشغل: ${r1(work.reduce((a, w) => a + w.h, 0))} ساعة`);
     for (const w of work) L.push(`- ${w.p || 'من غير اسم'}: ${w.h} ساعة${w.o ? `، الناتج: ${w.o}` : ''}`);
+  } else if (d.workOff) {
+    L.push('الشغل: إجازة النهارده');
   }
   if (has(d.deep)) L.push(`تركيز عميق متواصل: ${toEn(d.deep)} ساعة`);
 
   if (has(d.exp)) {
     L.push(`الفلوس: صرف ${r1(expTotal(d))} جنيه (${expByCat(d).map(([c, v]) => `${c} ${r1(v)}`).join('، ')})`);
     L.push(`- البنود: ${clip(d.exp.map((e) => `${r1(+e.a || 0)} ${e.w || e.c}`).join('، '), 300)}`);
+  } else if (d.noSpend) {
+    L.push('الفلوس: ماصرفش النهارده');
   }
-  if (has(d.income)) L.push(`دخل: ${toEn(d.income)} جنيه`);
+  const inc = incomeTotal(d);
+  if (inc > 0) {
+    const incDetail = (d.inc || []).map((x) => `${r1(+x.a || 0)} ${x.w || x.c || ''}`.trim()).join('، ');
+    L.push(`دخل: ${r1(inc)} جنيه${incDetail ? ` (${clip(incDetail, 160)})` : ''}`);
+  }
 
   const how = [{ fast: 'بسرعة', slow: 'بعد تفكير' }[d.decs], { full: 'بمعلومات كاملة', part: 'بمعلومات ناقصة' }[d.deci]].filter(Boolean);
   if (has(d.dec)) L.push(`قرار: ${clip(d.dec)}${how.length ? ` (${how.join('، ')})` : ''}`);
   else if (how.length) L.push(`أخد قرار ${how.join('، ')}`);
   if (has(d.post)) L.push(`أجّل: ${clip(d.post)}${has(d.postw) ? `، وليه: ${clip(d.postw)}` : ''}`);
   if (has(d.top)) L.push(`أهم حاجة حصلت: ${clip(d.top, 400)}`);
+  if (has(d.nextp)) L.push(`أولوية بكرة: ${clip(d.nextp, 160)}`);
 
   const ms = (metrics || []).filter((m) => d.m && has(d.m[m.id])).map((m) => `${m.n}: ${metricText(m, d.m[m.id])}`);
   if (ms.length) L.push(`مقاييسي: ${ms.join('، ')}`);
 
-  const doneT = (tasks || []).filter((t) => t.done && t.dAt && dayKeyAt(t.dAt) === key);
+  const doneT = (tasks || []).filter((t) => t.done && t.dAt && dayKeyAt(t.dAt, cfg.dayStart) === key);
   const openT = (tasks || []).filter((t) => !t.done && t.due && t.due <= key);
   const late = openT.filter((t) => t.due < key).length;
   if (doneT.length || openT.length) {
@@ -1141,27 +1661,32 @@ export function dayDigest(key, d = {}, { prev = null, tasks = [], metrics = [], 
   }
 
   const gDays = days || [{ key, data: d }, ...(prev ? [prev] : [])];
-  const gLines = goalDigestLines(goals, { days: gDays, tasks, metrics, today: key });
+  const pLines = periodGoalDigestLines(periods, { days: gDays, metrics, today: key, settings: cfg });
+  if (pLines.length) L.push(...pLines);
+  const gLines = goalDigestLines(goals, { days: gDays, tasks, metrics, today: key, settings: cfg });
   if (gLines.length) L.push(...gLines);
 
-  const miss = missingStars(d).map((s) => s.t);
+  const miss = missingStars(d, cfg).map((s) => s.t);
   if (miss.length) L.push(`مش متسجل: ${miss.join('، ')}`);
-  if (prev && logged(prev.data)) L.push(`للمقارنة، امبارح: ${dayLine(prev.key, prev.data)}`);
+  if (prev && logged(prev.data)) L.push(`للمقارنة، امبارح: ${dayLine(prev.key, prev.data, cfg)}`);
   return L.join('\n');
 }
 
-/**
- * ملخص آخر ٧ أيام (لحد endKey) للتقرير الأسبوعي: سطر لكل يوم، ومتوسطات، والعادات، والفلوس، والمهام.
- * days = [{ key, data }]
- */
-export function weekDigest(endKey, days, { tasks = [], metrics = [], goals = [] } = {}) {
+/** ملخص آخر ٧ أيام (لحد endKey) للتقرير الأسبوعي. */
+export function weekDigest(endKey, days, { tasks = [], metrics = [], goals = [], periods = [], settings = null } = {}) {
+  const cfg = normalizeSettings(settings);
+  const hs = activeHabits(cfg);
+  const tMap = allTimeCatMap(cfg);
+  const pers = periodsFor(cfg.dayStart);
   const from = addDays(endKey, -6);
   const by = new Map((days || []).map((x) => [x.key, x.data || {}]));
   const week = Array.from({ length: 7 }, (_, i) => addDays(from, i)).map((k) => [k, by.get(k) || {}]);
   const on = week.filter(([, d]) => logged(d));
   const avg = (xs) => (xs.length ? r1(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
-  const L = [`الأسبوع: من ${from} لـ ${endKey}، اتسجل فيه ${on.length} من 7 أيام`, 'كل يوم:'];
-  for (const [k, d] of week) L.push(`- ${dayLine(k, d)}`);
+  const L = [`الأسبوع: من ${from} لـ ${endKey}، اتسجل فيه ${on.length} من 7 أيام`];
+  L.push(`أهدافه اليومية: نوم ${cfg.sleepTarget} ساعة، شغل ${cfg.workTarget} ساعة، تركيز ${cfg.deepTarget} ساعة، سقف الشاشة ${cfg.screenLimit} ساعة${cfg.budget > 0 ? `، ميزانية ${cfg.budget} جنيه` : ''}`);
+  L.push('كل يوم:');
+  for (const [k, d] of week) L.push(`- ${dayLine(k, d, cfg)}`);
 
   const ds = on.map(([, d]) => d);
   const pick = (f) => ds.map(f).filter((v) => v != null);
@@ -1176,24 +1701,28 @@ export function weekDigest(endKey, days, { tasks = [], metrics = [], goals = [] 
   if (sa != null) av.push(`صلوات في وقتها ${sa}/5`);
   if (av.length) L.push(`المتوسطات (للأيام اللي اتسجلت): ${av.join('، ')}`);
 
-  const pe = PERIODS.map(([k, l]) => [l, avg(pick((d) => (has(d[`${k}e`]) ? +d[`${k}e`] : null)))]).filter(([, v]) => v != null);
+  const pe = pers.map(([k, l]) => [l, avg(pick((d) => (has(d[`${k}e`]) ? +d[`${k}e`] : null)))]).filter(([, v]) => v != null);
   if (pe.length) L.push(`متوسط الطاقة في كل فترة: ${pe.map(([l, v]) => `${l} ${v}/5`).join('، ')}`);
 
   const wtBy = {};
   let wtTotal = 0;
   for (const d of ds) {
-    const tb = timeByCat(d);
+    const tb = timeByCat(d, cfg);
     wtTotal += tb.total;
     for (const r of tb.rows) wtBy[r.id] = (wtBy[r.id] || 0) + r.hours;
   }
   if (wtTotal) {
-    const wtRows = TIME_CATS.filter((c) => wtBy[c.id]).map((c) => [c.name, wtBy[c.id]]).sort((a, b) => b[1] - a[1]);
+    const wtRows = Object.entries(wtBy).map(([id, h]) => [tMap.get(id)?.name || id, h]).sort((a, b) => b[1] - a[1]);
     L.push(`توزيع الوقت في الأسبوع (${wtTotal} ساعة): ${wtRows.map(([n, h]) => `${n} ${h} ساعة`).join('، ')}`);
   }
 
-  const habitDays = ds.filter((d) => HABITS.some(([k]) => has(d[k])));
+  const allHabitKeys = [...hs.map((h) => [h.k, h.n])];
+  for (const [k, l] of Object.entries(LEGACY_HABIT_LABELS)) {
+    if (!allHabitKeys.some(([x]) => x === k) && ds.some((d) => has(d[k]))) allHabitKeys.push([k, l]);
+  }
+  const habitDays = ds.filter((d) => allHabitKeys.some(([k]) => has(d[k])));
   if (habitDays.length) {
-    const cnt = HABITS.map(([k, l]) => [l, habitDays.filter((d) => d[k] === 2).length]).sort((a, b) => b[1] - a[1]);
+    const cnt = allHabitKeys.map(([k, l]) => [l, habitDays.filter((d) => d[k] === 2).length]).sort((a, b) => b[1] - a[1]);
     L.push(`العادات (عدد أيام التمام من ${habitDays.length}): ${cnt.map(([l, n]) => `${l} ${n}`).join('، ')}`);
   }
 
@@ -1206,12 +1735,12 @@ export function weekDigest(endKey, days, { tasks = [], metrics = [], goals = [] 
     L.push(`الشغل: ${r1(wk)} ساعة${deep ? `، منهم تركيز عميق ${r1(deep)}` : ''}${top.length ? ` (${top.map(([p, h]) => `${clip(p, 40)} ${r1(h)}`).join('، ')})` : ''}`);
   }
 
-  const money = moneySummary(on.map(([key, data]) => ({ key, data })), from, endKey);
+  const money = moneySummary(on.map(([key, data]) => ({ key, data })), from, endKey, cfg.budget);
   if (money.spent || money.income) {
-    L.push(`الفلوس: صرف ${r1(money.spent)} جنيه${money.cats.length ? ` (${money.cats.map(([c, v]) => `${c} ${r1(v)}`).join('، ')})` : ''}، ودخل ${r1(money.income)}`);
+    L.push(`الفلوس: صرف ${r1(money.spent)} جنيه${money.cats.length ? ` (${money.cats.map(([c, v]) => `${c} ${r1(v)}`).join('، ')})` : ''}، ودخل ${r1(money.income)}، والصافي ${r1(money.net)}`);
   }
 
-  const doneW = (tasks || []).filter((t) => t.done && t.dAt && dayKeyAt(t.dAt) >= from && dayKeyAt(t.dAt) <= endKey).length;
+  const doneW = (tasks || []).filter((t) => t.done && t.dAt && dayKeyAt(t.dAt, cfg.dayStart) >= from && dayKeyAt(t.dAt, cfg.dayStart) <= endKey).length;
   const lateNow = (tasks || []).filter((t) => !t.done && t.due && t.due < endKey).length;
   const later = (tasks || []).filter((t) => !t.done && !t.due).length;
   if (doneW || lateNow || later) L.push(`المهام: خلّص ${doneW} في الأسبوع، و${lateNow} متأخرة دلوقتي، و${later} مستنية من غير ميعاد`);
@@ -1226,25 +1755,26 @@ export function weekDigest(endKey, days, { tasks = [], metrics = [], goals = [] 
     } else L.push(`مقياس ${m.n}: ${vs.slice(-3).map((v) => metricText(m, v)).join('، ')}`);
   }
 
-  const posts = ds.filter((d) => has(d.post)).map((d) => clip(d.post, 80));
+  const posts = ds.filter((d) => has(d.post)).map((d) => `${clip(d.post, 60)}${has(d.postw) ? ` (${clip(d.postw, 40)})` : ''}`);
   if (posts.length) L.push(`أجّل خلال الأسبوع: ${posts.join('، ')}`);
   const decs = ds.filter((d) => d.decs || d.deci);
   if (decs.length) {
     const c = (k, v) => decs.filter((d) => d[k] === v).length;
     L.push(`القرارات: ${c('decs', 'fast')} بسرعة و${c('decs', 'slow')} بعد تفكير، و${c('deci', 'part')} بمعلومات ناقصة`);
   }
-  const gLines = goalDigestLines(goals, { days, tasks, metrics, today: endKey });
+  const pLines = periodGoalDigestLines(periods, { days, metrics, today: endKey, settings: cfg });
+  if (pLines.length) L.push(...pLines);
+  const gLines = goalDigestLines(goals, { days, tasks, metrics, today: endKey, settings: cfg });
   if (gLines.length) L.push(...gLines);
 
+  const highStress = ds.filter((d) => d.stress === 'high').length;
+  if (highStress) L.push(`أيام فيها توتر عالي: ${highStress}`);
   const tired = ds.filter((d) => has(d.tired)).length;
   if (tired) L.push(`أيام فيها إرهاق غير معتاد: ${tired}`);
   return L.join('\n');
 }
 
-/**
- * نص التقرير → أجزاء للعرض: { h: عنوان } و { ul: [بنود] } و { p: فقرة }.
- * العنوان = سطر قصير آخره ":". والبند = سطر أوله "-" أو "•". وأي ** أو # من الموديل بتتشال.
- */
+/** نص التقرير → أجزاء للعرض: { h: عنوان } و { ul: [بنود] } و { p: فقرة }. */
 export function reportBlocks(text) {
   const out = [];
   for (const raw of String(text ?? '').split(/\r?\n/)) {

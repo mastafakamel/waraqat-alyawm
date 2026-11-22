@@ -1,7 +1,8 @@
 // views/goals.js — نظام الأهداف المتكامل (تاب «الخطة» مع المهام + كارت التركيز في اليوم + تفاصيل الهدف + فورم جديد/تعديل).
 
 import {
-  HABITS, HABIT_NUMS, TIME_CATS, EXP_CATS, GOAL_PILLARS, GOAL_MODES, GOAL_HORIZONS,
+  HABIT_NUMS, GOAL_PILLARS, GOAL_MODES, GOAL_HORIZONS,
+  activeHabits, activeTimeCats, allHabitLabel,
   fmtNum, fmtDays, todayTasks, isOverdue, shortDate,
 } from '../logic.js';
 import { esc, ic, ico, P, setHtml } from '../ui.js';
@@ -24,7 +25,7 @@ const MODE_DESC = {
 /** مفتاح التبديل فوق تبويبة «الخطة»: الأهداف | المهام */
 export function planSwitch(s, ui) {
   const activeG = s.goals.filter((g) => !g.done).length;
-  const openT = todayTasks(s.tasks, s.today).filter((t) => !t.done).length;
+  const openT = todayTasks(s.tasks, s.today, s.settings?.dayStart).filter((t) => !t.done).length;
   const isGoals = ui.planSub !== 'tasks';
   return `<div class="plan-top">
       <div class="seg-top" role="tablist" aria-label="أقسام الخطة">
@@ -60,7 +61,7 @@ function quickActionHtml(g, ev, s) {
     if (src.kind === 'days' && src.k) {
       const v = +s.day[src.k] || 0;
       const done = v === 2;
-      const label = HABITS.find(([k]) => k === src.k)?.[1] || 'العادة';
+      const label = allHabitLabel(src.k, s.settings) || 'العادة';
       return `<button type="button" class="g-act${done ? ' done' : ' attn'}" data-act="ghabit" data-k="${esc(src.k)}">${done ? `${ic(P.check)}اتعملت النهارده` : `علّم ${esc(label)}`}</button>`;
     }
     if (src.kind === 'salah') {
@@ -388,7 +389,7 @@ export function updateGoalForm(sh, f, s) {
         <button class="pk" type="button" data-act="gfhkind" data-v="salah" data-keep aria-pressed="${hKind === 'salah'}">الصلوات في وقتها</button>
       </div></div>`;
     if (hKind === 'days') {
-      srcHtml += `<div><span class="lbl">اختار العادة</span><div class="picks">${HABITS.map(([k, l]) => `<button class="pk" type="button" data-act="gfsrc" data-k="k" data-v="${k}" data-keep aria-pressed="${f.src.k === k}">${l}</button>`).join('')}</div></div>`;
+      srcHtml += `<div><span class="lbl">اختار العادة</span><div class="picks">${activeHabits(s.settings).map((h) => `<button class="pk" type="button" data-act="gfsrc" data-k="k" data-v="${esc(h.k)}" data-keep aria-pressed="${f.src.k === h.k}">${esc(h.n)}</button>`).join('')}</div></div>`;
     } else if (hKind === 'sum') {
       srcHtml += `<div><span class="lbl">اختار الرقم</span><div class="picks">${HABIT_NUMS.map(([k, l]) => `<button class="pk" type="button" data-act="gfsrc" data-k="k" data-v="${k}" data-keep aria-pressed="${f.src.k === k}">${l}</button>`).join('')}</div></div>`;
     }
@@ -401,7 +402,7 @@ export function updateGoalForm(sh, f, s) {
       </div></div>`;
     if (tKind === 'cat' || tKind === 'work') {
       const curC = tKind === 'work' ? 'work' : (f.src.c || 'work');
-      srcHtml += `<div><span class="lbl">المجال</span><div class="picks">${TIME_CATS.map((c) => `<button class="pk" type="button" data-act="gfsrc" data-k="c" data-v="${c.id}" data-keep aria-pressed="${curC === c.id}">${c.name}</button>`).join('')}</div></div>`;
+      srcHtml += `<div><span class="lbl">المجال</span><div class="picks">${activeTimeCats(s.settings).map((c) => `<button class="pk" type="button" data-act="gfsrc" data-k="c" data-v="${esc(c.id)}" data-keep aria-pressed="${curC === c.id}">${esc(c.name)}</button>`).join('')}</div></div>`;
     } else if (tKind === 'proj') {
       srcHtml += `<label class="f"><span class="lbl">اسم المشروع (نفس الاسم في الشغل)</span><input class="fld" data-role="gfproj" autocomplete="off" placeholder="مثلاً: ورقة اليوم" value="${esc(f.src.proj || '')}"></label>`;
     }
@@ -418,7 +419,7 @@ export function updateGoalForm(sh, f, s) {
     } else if (mKind === 'exp_cap') {
       srcHtml += `<div><span class="lbl">تصنيف المصاريف</span><div class="picks">
           <button class="pk" type="button" data-act="gfsrc" data-k="cat" data-v="" data-keep aria-pressed="${!f.src.cat}">كل المصاريف</button>
-          ${EXP_CATS.map((c) => `<button class="pk" type="button" data-act="gfsrc" data-k="cat" data-v="${c}" data-keep aria-pressed="${f.src.cat === c}">${c}</button>`).join('')}
+          ${(s.settings.expCats || []).map((c) => `<button class="pk" type="button" data-act="gfsrc" data-k="cat" data-v="${esc(c)}" data-keep aria-pressed="${f.src.cat === c}">${esc(c)}</button>`).join('')}
         </div></div>`;
     }
   } else if (f.m === 'steps' && !f.id) {
