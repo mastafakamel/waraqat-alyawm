@@ -14,6 +14,7 @@ import {
 } from '../logic.js';
 import { esc, ic, ico, P, setHtml } from '../ui.js';
 import { timeStackBar } from './time.js';
+import { focusGoalsToday } from './goals.js';
 import { metricsSection } from './metrics.js';
 import { aiSection } from './ai.js';
 
@@ -251,7 +252,7 @@ function timeSummary(tb) {
 }
 
 // ---------- أركان حياتك (لغة ألوان موحّدة: محايد/شامبين → زمردي عند التمام) ----------
-function pillarsSection(s, miss) {
+function pillarsSection(s, miss, linkedHabits) {
   const n = habitsDone(s.day);
   const head = miss.has('habits') ? '<span class="ask">ناقص</span>' : `<span>${fmtNum(n)} من ١٣ تم</span>`;
 
@@ -277,7 +278,8 @@ function pillarsSection(s, miss) {
         ${segs}
         <div class="habits2">${g.keys.map((k) => {
           const l = HABIT_NAME.get(k) || k;
-          return `<button class="hp" type="button" data-tri="${k}" data-label="${l}"><i></i><span>${l}</span></button>`;
+          const dot = linkedHabits?.has(k) ? '<span class="hp-gdot" aria-hidden="true"></span>' : '';
+          return `<button class="hp" type="button" data-tri="${k}" data-label="${l}"><i></i><span>${l}</span>${dot}</button>`;
         }).join('')}</div>
         ${g.withSalah ? salahRow() : ''}
       </section>`;
@@ -315,13 +317,19 @@ function tasksToday(s) {
   const all = todayTasks(s.tasks, s.today);
   const done = all.filter((t) => t.done).length;
   const open = groupTasks(s.tasks, s.today).today.slice(0, 3);
+  const gMap = new Map((s.goals || []).map((g) => [String(g.id), g]));
   const head = `<div class="sec"><b>مهام النهارده</b>${all.length ? `<span>${fmtNum(done)} من ${fmtNum(all.length)} خلصت</span>` : ''}</div>`;
-  const rows = open.map((t) => `<div class="tk${t.pri ? ' pri' : ''}">
+  const rows = open.map((t) => {
+    const g = t.goalId ? gMap.get(String(t.goalId)) : null;
+    return `<div class="tk${t.pri ? ' pri' : ''}">
       <button class="tk-c" type="button" data-act="tdone" data-id="${esc(t.id)}" aria-pressed="false" aria-label="علّم إنها خلصت: ${esc(t.t)}"><i></i></button>
-      <div class="tk-m"><span class="tk-t">${t.pri ? '<span class="flag" aria-label="مهم">⚑</span>' : ''}${esc(t.t)}</span>${isOverdue(t, s.today) ? `<span class="tk-s">${ic(P.clock)}متأخرة من ${shortDate(t.due)}</span>` : ''}</div></div>`).join('');
+      <div class="tk-m"><span class="tk-t">${t.pri ? '<span class="flag" aria-label="مهم">⚑</span>' : ''}${esc(t.t)}</span>
+        ${g ? `<span class="g-tag">${ico('target')}<span>${esc(g.t)}</span></span>` : ''}
+        ${isOverdue(t, s.today) ? `<span class="tk-s">${ic(P.clock)}متأخرة من ${shortDate(t.due)}</span>` : ''}</div></div>`;
+  }).join('');
   const body = rows || `<p class="empty-s">${all.length ? 'خلّصت مهام النهارده كلها.' : 'مفيش مهام للنهارده.'}</p>`;
   return `${head}<section class="list">${body}
-    <button class="lnk" type="button" data-act="tab" data-tab="tasks">كل المهام${ic(P.chev)}</button></section>`;
+    <button class="lnk" type="button" data-act="gtasks">كل المهام${ic(P.chev)}</button></section>`;
 }
 
 export function renderToday(s, ctx = {}) {
@@ -330,8 +338,9 @@ export function renderToday(s, ctx = {}) {
   const miss = new Set(split.now.map((x) => x.k));
   const tb = timeByCat(s.day);
   return `${summary(s, split, ctx, tb)}
+    ${focusGoalsToday(s, ctx.gsum)}
     ${timeSummary(tb)}
-    ${pillarsSection(s, miss)}
+    ${pillarsSection(s, miss, ctx.gsum?.linkedHabits)}
     ${endOfDay(s, miss)}
     ${aiSection(s)}
     ${tasksToday(s)}
@@ -343,7 +352,7 @@ export function renderTabs(s) {
   const tabs = [
     ['day', 'اليوم', 'sun', 0],
     ['time', 'الوقت', 'clock', 0],
-    ['tasks', 'مهام', 'tasks', open],
+    ['tasks', 'الخطة', 'target', open],
     ['ideas', 'أفكار', 'ideas', 0],
     ['money', 'فلوس', 'wallet', 0],
   ];

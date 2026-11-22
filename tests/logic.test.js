@@ -12,6 +12,7 @@ import {
   dayStatus, dayProgress, starSplit, dayNums, avgOf, baselineFor, compareTo, fmtDiff,
   suggestTimes, lastWith, readDuration, recentValues,
   fmtHour, hourSpan, hoursWord, fmtHours, timeByCat, sleepHourList,
+  goalRange, goalTimeProgress, evalGoal, goalsSummary, goalDigestLines,
 } from '../js/logic.js';
 
 test('الأرقام العربي والإنجليزي بتتحول قبل الحفظ', () => {
@@ -558,4 +559,100 @@ test('سجل الوقت: تجميع المجالات، وامتداد الساع
   assert.match(dig, /ورقة اليوم/);
   const wdig = weekDigest('2026-11-21', [{ key: '2026-11-20', data: d }]);
   assert.match(wdig, /توزيع الوقت في الأسبوع \(5 ساعة\): شغل 3 ساعة، تعلم 1 ساعة، مواصلات 1 ساعة/);
+});
+
+test('نظام الأهداف المتكامل: النطاق الزمني، الـ ٥ طرق قياس، محرك الإيقاع، النسخ الاحتياطي والذكاء الاصطناعي', () => {
+  const periods = [{ id: 'p1', from: '2026-11-15', to: '2026-11-25' }];
+  assert.deepEqual(goalRange('period', '2026-11-20', periods), { from: '2026-11-15', to: '2026-11-25' });
+  assert.deepEqual(goalRange('week', '2026-11-20', periods), { from: '2026-11-14', to: '2026-11-20' });
+  assert.deepEqual(goalRange('month', '2026-11-20', periods), { from: '2026-11-01', to: '2026-11-30' });
+  assert.deepEqual(goalRange('month', '2026-02-10', periods), { from: '2026-02-01', to: '2026-02-28' });
+
+  const tp = goalTimeProgress({ from: '2026-11-01', to: '2026-11-20' }, '2026-11-10');
+  assert.equal(tp.timePct, 50);
+  assert.equal(tp.daysLeft, 10);
+
+  const days = [
+    { key: '2026-11-05', data: { ex: 2, wirdp: '10', w1p: 'ورقة اليوم', w1h: '4', hrs: { 9: { c: 'work' }, 10: { c: 'work' }, 15: { c: 'learn' } }, m: { w: 82, calls: 5 }, exp: [{ a: 400, c: 'أكل' }, { a: 100, c: 'مواصلات' }], income: '5000' } },
+    { key: '2026-11-10', data: { ex: 1, wirdp: '15', deep: '3', hrs: { 9: { c: 'work' }, 10: { c: 'work' }, 11: { c: 'work' } }, m: { w: 80.5, calls: 7 }, exp: [{ a: 250, c: 'أكل' }] } },
+    { key: '2026-11-25', data: { ex: 2, exp: [{ a: 900, c: 'أكل' }] } }, // برّه نطاق 1..20
+  ];
+  const metrics = [
+    { id: 'w', n: 'الوزن', t: 'num', u: 'كجم', on: true },
+    { id: 'calls', n: 'مكالمات', t: 'count', u: 'مكالمة', on: true },
+  ];
+  const tasks = [
+    { id: 't1', t: 'خطوة ١', done: true, goalId: 'gSteps' },
+    { id: 't2', t: 'خطوة ٢', done: false, goalId: 'gSteps' },
+  ];
+  const ctx = { days, tasks, metrics, today: '2026-11-10' };
+
+  // ١. عادة (أيام + رقم عادة)
+  const gHabit = { id: 'g1', t: 'تمرين', p: 'health', f: true, m: 'habit', src: { kind: 'days', k: 'ex' }, from: '2026-11-01', to: '2026-11-20', target: 10, unit: 'يوم' };
+  const evH = evalGoal(gHabit, ctx);
+  assert.equal(evH.cur, 1.5); // يوم تم (1) + يوم جزئي (0.5)
+  assert.equal(evH.pct, 15);
+  assert.equal(evH.isBehind, true);
+  assert.equal(evH.status, 'attn');
+  assert.doesNotMatch(evH.paceText, /يوم\/يوم/); // مايقولش "يوم/يوم" أبداً
+
+  const gWird = { id: 'g1b', t: 'صفحات ورد', p: 'deen', f: false, m: 'habit', src: { kind: 'sum', k: 'wirdp' }, from: '2026-11-01', to: '2026-11-20', target: 50, unit: 'صفحة' };
+  assert.equal(evalGoal(gWird, ctx).cur, 25);
+
+  // ٢. وقت وشغل (مايجمعش نفس اليوم مرتين، ياخد الأكبر بين الشغل والوقت)
+  const gWork = { id: 'g2', t: 'شغل', p: 'work', f: true, m: 'time', src: { kind: 'work', c: 'work' }, from: '2026-11-01', to: '2026-11-20', target: 10, unit: 'ساعة' };
+  const evW = evalGoal(gWork, ctx);
+  assert.equal(evW.cur, 7); // 4 (max(4,2)) + 3 (max(0,3))
+  assert.equal(evW.pct, 70);
+  assert.equal(evW.isBehind, false);
+  assert.equal(evW.status, 'done');
+
+  // ٣. مقياس وصول لقيمة (نزول وزن 84 → 78، وآخر قراية 80.5 = 58%) + مجموع مقياس + سقف مصاريف
+  const gWeight = { id: 'g3', t: 'الوزن', p: 'health', m: 'metric', src: { kind: 'target', id: 'w' }, from: '2026-11-01', to: '2026-11-20', start: 84, target: 78, unit: 'كجم' };
+  const evWt = evalGoal(gWeight, ctx);
+  assert.equal(evWt.cur, 80.5);
+  assert.equal(evWt.pct, 58);
+  assert.equal(evWt.isBehind, false);
+
+  const gCalls = { id: 'g3b', t: 'مكالمات', p: 'work', m: 'metric', src: { kind: 'sum', id: 'calls' }, from: '2026-11-01', to: '2026-11-20', target: 20, unit: 'مكالمة' };
+  assert.equal(evalGoal(gCalls, ctx).cur, 12);
+
+  const gCap = { id: 'g3c', t: 'سقف أكل', p: 'work', m: 'metric', src: { kind: 'exp_cap', cat: 'أكل' }, from: '2026-11-01', to: '2026-11-20', target: 2000, unit: 'ج' };
+  const evCap = evalGoal(gCap, ctx);
+  assert.equal(evCap.cur, 650); // 400 + 250 بس (برّه النطاق مااتحسبش، والمواصلات مااتحسبتش)
+  assert.equal(evCap.isCap, true);
+  assert.equal(evCap.isBehind, false); // 33% < 50% وقت = تحت السقف
+
+  // ٤. مراحل + مهام مربوطة
+  const gSteps = { id: 'gSteps', t: 'إطلاق', p: 'growth', f: true, m: 'steps', from: '2026-11-01', to: '2026-11-20', steps: [{ id: 's1', t: 'تصميم', done: true }, { id: 's2', t: 'كود', done: false }] };
+  const evS = evalGoal(gSteps, ctx);
+  assert.equal(evS.cur, 2); // 1 milestone + 1 linked task
+  assert.equal(evS.target, 4);
+  assert.equal(evS.pct, 50);
+  assert.equal(evS.nextText, 'خطوة ٢');
+
+  // ٥. يدوي + أرشفة + تجميع + باك أب + ذكاء اصطناعي
+  const gMan = { id: 'g5', t: 'كتب', p: 'growth', m: 'manual', cur: 6, target: 10, unit: 'كتاب', from: '2026-11-01', to: '2026-11-20' };
+  const gArch = { id: 'gDone', t: 'مكتمل', p: 'deen', m: 'manual', cur: 5, target: 5, done: true, dAt: 100 };
+  const allG = [gHabit, gWork, gWeight, gCap, gSteps, gMan, gArch];
+  const sum = goalsSummary(allG, ctx);
+  assert.equal(sum.active.length, 6);
+  assert.equal(sum.archived.length, 1);
+  assert.equal(sum.focus.length, 3);
+  assert.equal(sum.linkedHabits.has('ex'), true);
+
+  // parseBackup يقبل list/goals و mergeDoc يدمجها
+  const bk = parseBackup(JSON.stringify({ app: 'waraqat-alyawm', docs: [{ id: 'list/goals', data: { items: [gWork] }, updatedAt: 50 }] }));
+  assert.equal(bk.length, 1);
+  const mg = mergeDoc('list/goals', { updatedAt: 10, data: { items: [gHabit] } }, { updatedAt: 20, data: { items: [gWork] } });
+  assert.equal(mg.data.items.length, 2);
+
+  // دمج الأهداف في تقرير الذكاء الاصطناعي اليومي والأسبوعي
+  const gl = goalDigestLines([gWork, gHabit, gArch], ctx);
+  assert.equal(gl.length, 3); // العنوان + الهدفين النشطين بس (المؤرشف لأ)
+  assert.match(gl[1], /شغل \[تركيز\]: 70%/);
+  const dd = dayDigest('2026-11-10', days[1].data, { goals: [gWork], days, tasks, metrics });
+  assert.match(dd, /الأهداف النشطة:/);
+  const wd = weekDigest('2026-11-10', days, { goals: [gWork], tasks, metrics });
+  assert.match(wd, /الأهداف النشطة:/);
 });

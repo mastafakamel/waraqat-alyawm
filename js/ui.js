@@ -35,6 +35,7 @@ export const P = {
   rest: 'M5 8h11v6a5 5 0 0 1-10 0V8zM16 9h2a2 2 0 0 1 0 4h-2M5 19h13',
   edit: 'M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z',
   eraser: 'M19 6L9 16l-4-4L15 2zM4 20h16',
+  arrowUpLeft: 'M17 17L7 7M7 17V7h10',
 };
 /**
  * بيغيّر محتوى العنصر بس لو اتغيّر فعلاً. لو العنصر اترسم من جديد وإنت لسه حاطط صباعك على زرار جواه،
@@ -82,6 +83,10 @@ const ICO = {
   tasks: '<rect class="du" x="4" y="4" width="16" height="16" rx="4.5"/><rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="M8.6 12.2l2.3 2.3 4.6-4.8" stroke-width="1.9"/>',
   // لمبة إلهام أنيقة لتاب الأفكار
   ideas: '<path class="du" d="M12 3.2a6 6 0 0 0-3.8 10.6c.7.6 1.1 1.4 1.2 2.2h5.2c.1-.8.5-1.6 1.2-2.2A6 6 0 0 0 12 3.2z"/><path d="M12 3.2a6 6 0 0 0-3.8 10.6c.7.6 1.1 1.4 1.2 2.2h5.2c.1-.8.5-1.6 1.2-2.2A6 6 0 0 0 12 3.2zM9.8 19h4.4M10.6 21.3h2.8"/>',
+  // هدف دقيق بحلقات متحدة المركز لتاب الخطة والأهداف
+  target: '<circle class="du" cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/>',
+  // كأس هادي لأرشيف الإنجازات
+  trophy: '<path class="du" d="M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4zM7 6H4.5a2 2 0 0 0 0 4H7m10-4h2.5a2 2 0 0 1 0 4H17M12 14v5M8.5 19h7"/>',
 };
 export const ico = (name, cls = '') => (ICO[name]
   ? `<svg class="ico${cls ? ` ${cls}` : ''}" viewBox="0 0 24 24" aria-hidden="true">${ICO[name]}</svg>`

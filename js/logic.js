@@ -668,7 +668,7 @@ export function parseBackup(text) {
     throw new Error('الملف ده مش JSON');
   }
   if (!j || j.app !== BACKUP_APP || !Array.isArray(j.docs)) throw new Error('الملف ده مش نسخة من ورقة اليوم');
-  const ok = (d) => d && typeof d.id === 'string' && /^(day\/\d{4}-\d{2}-\d{2}|list\/(tasks|ideas|metrics|periods))$/.test(d.id) && d.data && typeof d.data === 'object';
+  const ok = (d) => d && typeof d.id === 'string' && /^(day\/\d{4}-\d{2}-\d{2}|list\/(tasks|ideas|metrics|periods|goals))$/.test(d.id) && d.data && typeof d.data === 'object';
   return j.docs.filter(ok);
 }
 
@@ -726,10 +726,304 @@ const logged = (d) => Object.keys(d || {}).some((k) => !AI_KEYS.includes(k));
 /** "5:30" أو "5" (ساعات) → دقايق. */
 const screenMin = (v) => mins(v) ?? (numOf(v) != null ? numOf(v) * 60 : null);
 
-const HABIT_NUMS = [
+export const HABIT_NUMS = [
   ['wirdp', 'الورد', 'صفحة'], ['exm', 'تمرين', 'دقيقة'], ['engm', 'إنجليزي', 'دقيقة'], ['readp', 'قراءة', 'صفحة'],
   ['techm', 'تعلم تقني', 'دقيقة'], ['caf', 'قهوة/شاي', 'كوباية'], ['relm', 'وقت من غير موبايل', 'دقيقة'],
 ];
+
+// ---------- نظام الأهداف المتكامل (list/goals) ----------
+// { id, t, p, f, m, src, hz, from, to, start?, target, unit, cur?, steps?, done?, dAt?, note?, at }
+export const GOAL_PILLARS = [
+  { id: 'work',   name: 'الشغل والمال',     icon: 'brief' },
+  { id: 'health', name: 'الصحة والجسم',     icon: 'heart' },
+  { id: 'growth', name: 'التعلم والتطوير',   icon: 'book' },
+  { id: 'deen',   name: 'الدين والروح',      icon: 'star' },
+  { id: 'life',   name: 'العلاقات والحياة', icon: 'home' },
+];
+export const GOAL_MODES = [
+  ['habit',  'عادة يومية',   'check'],
+  ['time',   'وقت / شغل',    'clock'],
+  ['metric', 'مقياس / فلوس', 'wallet'],
+  ['steps',  'مراحل ومهام',  'tasks'],
+  ['manual', 'عدّاد يدوي',   'target'],
+];
+export const GOAL_HORIZONS = [
+  ['period', 'الفترة الحالية'],
+  ['week',   'الأسبوع ده'],
+  ['month',  'الشهر ده'],
+  ['custom', 'تاريخ محدد'],
+];
+
+const GOAL_PILLAR_MAP = new Map(GOAL_PILLARS.map((x) => [x.id, x]));
+const HABIT_LABEL_MAP = new Map(HABITS);
+const HABIT_NUM_MAP = new Map(HABIT_NUMS.map(([k, l, u]) => [k, { l, u }]));
+
+/** نطاق التواريخ الفعلي للهدف حسب الإطار الزمني المختار. */
+export function goalRange(hz, today, periods = [], customFrom = '', customTo = '') {
+  if (hz === 'period') {
+    const p = periodOf(periods, today);
+    return p ? { from: p.from, to: p.to } : { from: today, to: addDays(today, 10) };
+  }
+  if (hz === 'week') {
+    const wk = satWeekKeys(today);
+    return { from: wk[0], to: wk[6] };
+  }
+  if (hz === 'month') {
+    const [y, m] = today.split('-').map(Number);
+    const last = new Date(y, m, 0).getDate();
+    return { from: `${today.slice(0, 8)}01`, to: `${today.slice(0, 8)}${String(last).padStart(2, '0')}` };
+  }
+  const f = customFrom || today;
+  const t = customTo && customTo >= f ? customTo : addDays(f, 29);
+  return { from: f, to: t };
+}
+
+function daysBetween(a, b) {
+  return Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 864e5);
+}
+
+/** "يوم واحد" / "يومين" / "٤ أيام" / "١٥ يوم" */
+export function fmtDays(n) {
+  const x = Math.max(0, Math.round(n));
+  if (x === 0) return 'النهارده';
+  if (x === 1) return 'يوم واحد';
+  if (x === 2) return 'يومين';
+  return `${fmtNum(x)} ${x <= 10 ? 'أيام' : 'يوم'}`;
+}
+
+/** نسبة الوقت اللي عدّى من الهدف عشان نقارن بيها التقدم الفعلي (Pace Engine). */
+export function goalTimeProgress(g, today) {
+  if (!g?.from || !g?.to) return { timePct: 0, daysTotal: 1, daysPassed: 0, daysLeft: 0, overdue: false };
+  const daysTotal = Math.max(1, daysBetween(g.from, g.to) + 1);
+  if (today < g.from) return { timePct: 0, daysTotal, daysPassed: 0, daysLeft: daysTotal, overdue: false };
+  if (today > g.to) return { timePct: 100, daysTotal, daysPassed: daysTotal, daysLeft: 0, overdue: !g.done };
+  const daysPassed = Math.max(1, daysBetween(g.from, today) + 1);
+  const daysLeft = Math.max(0, daysBetween(today, g.to));
+  const timePct = Math.min(100, Math.round((daysPassed / daysTotal) * 100));
+  return { timePct, daysTotal, daysPassed, daysLeft, overdue: false };
+}
+
+/** وصف بشري مختصر لمصدر قياس الهدف. */
+export function goalSourceLabel(g, metrics = []) {
+  const s = g.src || {};
+  if (g.m === 'habit') {
+    if (s.kind === 'salah') return 'تلقائي من الصلوات في وقتها';
+    if (s.kind === 'sum') return `تلقائي من أرقام «${HABIT_NUM_MAP.get(s.k)?.l || s.k || ''}»`;
+    return `تلقائي من عادة «${HABIT_LABEL_MAP.get(s.k) || s.k || ''}»`;
+  }
+  if (g.m === 'time') {
+    if (s.kind === 'deep') return 'تلقائي من التركيز العميق';
+    if (s.kind === 'proj') return `تلقائي من مشروع «${s.proj || ''}»`;
+    if (s.kind === 'work' || s.c === 'work') return 'تلقائي من الوقت والشغل';
+    return `تلقائي من تاب الوقت (${TIME_CAT_MAP.get(s.c)?.name || 'وقت'})`;
+  }
+  if (g.m === 'metric') {
+    if (s.kind === 'income') return 'تلقائي من دخل الفلوس';
+    if (s.kind === 'exp_cap') return s.cat ? `تلقائي من مصاريف «${s.cat}»` : 'تلقائي من إجمالي المصاريف';
+    const met = (metrics || []).find((x) => String(x.id) === String(s.id));
+    return met ? `تلقائي من مقياس «${met.n}»` : 'تلقائي من مقاييسي';
+  }
+  if (g.m === 'steps') return 'مراحل + مهام مربوطة';
+  return 'عدّاد يدوي سريع';
+}
+
+/**
+ * حساب التقدم والإيقاع الكامل لهدف واحد ضد بيانات الأيام والمهام والمقاييس.
+ * بيرجّع: { cur, target, unit, pct, timePct, daysLeft, overdue, isCap, status, isBehind, paceText, sourceLabel, horizonText, pillar, segs?, nextText?, linked }
+ */
+export function evalGoal(g, { days = [], tasks = [], metrics = [], today = dayKeyAt() } = {}) {
+  const pillar = GOAL_PILLAR_MAP.get(g.p) || GOAL_PILLARS[0];
+  const tp = goalTimeProgress(g, today);
+  const horizonText = g.from && g.to ? periodLabel({ from: g.from, to: g.to }) : '';
+  const sourceLabel = goalSourceLabel(g, metrics);
+  const linked = (tasks || []).filter((t) => String(t.goalId || '') === String(g.id));
+  const inRange = (days || []).filter((x) => (!g.from || x.key >= g.from) && (!g.to || x.key <= g.to));
+
+  const s = g.src || {};
+  let cur = 0;
+  let target = Math.max(1, +g.target || 1);
+  let unit = g.unit || '';
+  let pct = 0;
+  let isCap = false;
+  let isTargetMetric = false;
+  let segs = null;
+  let nextText = '';
+
+  if (g.m === 'habit') {
+    if (s.kind === 'salah') {
+      cur = inRange.reduce((a, { data }) => a + (+data.salah || 0), 0);
+      unit = unit || 'صلاة';
+    } else if (s.kind === 'sum') {
+      cur = r1(inRange.reduce((a, { data }) => a + (numOf(data[s.k]) || 0), 0));
+      unit = unit || HABIT_NUM_MAP.get(s.k)?.u || '';
+    } else {
+      cur = r1(inRange.reduce((a, { data }) => a + (data[s.k] === 2 ? 1 : data[s.k] === 1 ? 0.5 : 0), 0));
+      unit = unit || 'يوم';
+    }
+    pct = Math.min(100, Math.max(0, Math.round((cur / target) * 100)));
+  } else if (g.m === 'time') {
+    if (s.kind === 'deep') {
+      cur = r1(inRange.reduce((a, { data }) => a + (numOf(data.deep) || 0), 0));
+    } else if (s.kind === 'proj') {
+      const want = normAr(s.proj || '');
+      cur = r1(inRange.reduce((a, { data }) => a + workRows(data).filter((w) => want && normAr(w.p) === want).reduce((x, w) => x + w.h, 0), 0));
+    } else {
+      const cat = s.kind === 'work' ? 'work' : (s.c || 'work');
+      cur = r1(inRange.reduce((a, { data }) => {
+        const hrsCat = timeByCat(data).by[cat] || 0;
+        return a + (cat === 'work' ? Math.max(workTotal(data), hrsCat) : hrsCat);
+      }, 0));
+    }
+    unit = unit || 'ساعة';
+    pct = Math.min(100, Math.max(0, Math.round((cur / target) * 100)));
+  } else if (g.m === 'metric') {
+    if (s.kind === 'income') {
+      cur = r1(inRange.reduce((a, { data }) => a + (numOf(data.income) || 0), 0));
+      unit = unit || 'ج';
+      pct = Math.min(100, Math.max(0, Math.round((cur / target) * 100)));
+    } else if (s.kind === 'exp_cap') {
+      isCap = true;
+      cur = r1(inRange.reduce((a, { data }) => {
+        if (!s.cat) return a + expTotal(data);
+        return a + (data.exp || []).filter((e) => e.c === s.cat).reduce((x, e) => x + (+e.a || 0), 0);
+      }, 0));
+      unit = unit || 'ج';
+      pct = Math.min(100, Math.max(0, Math.round((cur / target) * 100)));
+    } else if (s.kind === 'target') {
+      isTargetMetric = true;
+      const sorted = (days || []).filter((x) => (!g.to || x.key <= g.to) && x.data?.m && has(x.data.m[s.id])).sort((a, b) => a.key.localeCompare(b.key));
+      const last = sorted.at(-1);
+      cur = last ? numOf(last.data.m[s.id]) : null;
+      const start = numOf(g.start) ?? cur ?? 0;
+      target = numOf(g.target) ?? 0;
+      const met = (metrics || []).find((x) => String(x.id) === String(s.id));
+      unit = unit || met?.u || '';
+      if (cur == null) pct = 0;
+      else if (target === start) pct = cur === target ? 100 : 0;
+      else pct = Math.min(100, Math.max(0, Math.round(((cur - start) / (target - start)) * 100)));
+    } else {
+      const met = (metrics || []).find((x) => String(x.id) === String(s.id));
+      cur = r1(inRange.reduce((a, { data }) => {
+        const v = data.m?.[s.id];
+        if (!has(v)) return a;
+        if (met?.t === 'tri') return a + (+v === 2 ? 1 : +v === 1 ? 0.5 : 0);
+        return a + (numOf(v) || 0);
+      }, 0));
+      unit = unit || met?.u || (met?.t === 'tri' ? 'يوم' : '');
+      pct = Math.min(100, Math.max(0, Math.round((cur / target) * 100)));
+    }
+  } else if (g.m === 'steps') {
+    const steps = Array.isArray(g.steps) ? g.steps : [];
+    const total = steps.length + linked.length;
+    const doneCnt = steps.filter((x) => x.done).length + linked.filter((t) => t.done).length;
+    cur = doneCnt;
+    target = total;
+    unit = 'خطوة';
+    pct = total ? Math.round((doneCnt / total) * 100) : 0;
+    segs = [...steps.map((x) => !!x.done), ...linked.map((t) => !!t.done)];
+    const nextTask = linked.find((t) => !t.done);
+    const nextStep = steps.find((x) => !x.done);
+    nextText = nextTask ? nextTask.t : nextStep ? nextStep.t : total ? 'كل الخطوات خلصت' : 'ضيف أول خطوة أو مهمة';
+  } else {
+    cur = Math.max(0, r1(+g.cur || 0));
+    pct = Math.min(100, Math.max(0, Math.round((cur / target) * 100)));
+  }
+
+  let status = 'done';
+  let isBehind = false;
+  let paceText = '';
+
+  if (g.done) {
+    pct = 100;
+    status = 'done';
+    isBehind = false;
+    paceText = 'مكتمل ✓';
+  } else if (isCap) {
+    const over = cur > target;
+    const overPace = over || (tp.timePct > 0 && pct > tp.timePct + 5);
+    status = overPace ? 'attn' : 'done';
+    isBehind = overPace;
+    if (over) paceText = `عدّيت السقف بـ ${fmtNum(cur - target)} ${unit}`;
+    else if (overPace) paceText = `صرف أسرع من المعدّل · فاضل ${fmtNum(target - cur)} ${unit}`;
+    else paceText = `تحت السقف · فاضل ${fmtNum(target - cur)} ${unit}`;
+  } else if (pct >= 100) {
+    status = 'done';
+    isBehind = false;
+    paceText = 'جاهز للأرشفة ✓';
+  } else if (isTargetMetric && cur == null) {
+    isBehind = tp.timePct > 15;
+    status = isBehind ? 'attn' : 'done';
+    paceText = 'سجّل أول قراية في مقاييسي';
+  } else {
+    isBehind = tp.timePct > 0 && pct + 5 < tp.timePct;
+    status = isBehind ? 'attn' : 'done';
+    if (tp.overdue) {
+      paceText = g.m === 'steps' ? `عدّى الميعاد · فاضل ${fmtNum(Math.max(0, target - cur))}` : `عدّى الميعاد · فاضل ${fmtNum(Math.max(0, target - cur))} ${unit}`.trim();
+    } else if (!isBehind) {
+      if (pct - tp.timePct >= 8 && tp.timePct > 0) {
+        if (g.m !== 'steps' && !isTargetMetric) {
+          const ahead = Math.max(1, Math.round(cur - (target * tp.timePct) / 100));
+          paceText = `سابق المعدّل بـ ${fmtNum(ahead)} ${unit}`.trim();
+        } else {
+          paceText = 'سابق المعدّل';
+        }
+      } else {
+        paceText = tp.daysLeft > 0 ? `على المسار · فاضل ${fmtDays(tp.daysLeft)}` : 'على المسار تماماً';
+      }
+    } else if (isBehind && unit === 'يوم') {
+      const behind = Math.max(1, Math.round((target * tp.timePct) / 100 - cur));
+      paceText = tp.daysLeft > 0 && (target - cur) > tp.daysLeft
+        ? `متأخر ${fmtDays(behind)} · فاضل ${fmtDays(tp.daysLeft)}`
+        : `متأخر ${fmtDays(behind)} · محتاج دفعة`;
+    } else if (g.m !== 'steps' && !isTargetMetric && tp.daysLeft > 0) {
+      const rem = Math.max(0, target - cur);
+      const perDay = r1(rem / tp.daysLeft);
+      const shortU = unit === 'ساعة' ? 'س' : unit;
+      paceText = perDay > 0 ? `محتاج ${fmtNum(perDay)} ${shortU}/يوم عشان تلحق` : 'محتاج دفعة';
+    } else {
+      paceText = tp.daysLeft > 0 ? `محتاج دفعة · فاضل ${fmtDays(tp.daysLeft)}` : 'محتاج دفعة';
+    }
+  }
+
+  return {
+    cur, target, unit, pct, ...tp, isCap, isTargetMetric, status, isBehind,
+    paceText, sourceLabel, horizonText, pillar, segs, nextText, linked,
+  };
+}
+
+/** تقييم كل الأهداف مرة واحدة للشاشات وبطاقة الملخص. */
+export function goalsSummary(goals, ctx) {
+  const list = goals || [];
+  const active = list.filter((g) => !g.done);
+  const archived = list.filter((g) => g.done).sort((a, b) => (b.dAt || 0) - (a.dAt || 0));
+  const evals = new Map();
+  for (const g of list) evals.set(g.id, evalGoal(g, ctx));
+
+  const actEvals = active.map((g) => evals.get(g.id));
+  const avgPct = actEvals.length ? Math.round(actEvals.reduce((a, x) => a + x.pct, 0) / actEvals.length) : 0;
+  const onTrack = actEvals.filter((x) => !x.isBehind).length;
+  const needPush = actEvals.filter((x) => x.isBehind).length;
+  const pinned = active.filter((g) => g.f);
+  const focus = (pinned.length ? pinned : active.slice(0, 2)).slice(0, 3);
+  const linkedHabits = new Set(active.filter((g) => g.m === 'habit' && g.src?.kind !== 'salah' && g.src?.k).map((g) => g.src.k));
+  return { active, archived, focus, evals, avgPct, onTrack, needPush, linkedHabits };
+}
+
+/** سطور مختصرة لأهدافك النشطة عشان تتبعت لتقرير الذكاء الاصطناعي (أرقام إنجليزي). */
+export function goalDigestLines(goals, ctx) {
+  const active = (goals || []).filter((g) => !g.done);
+  if (!active.length) return [];
+  const lines = ['الأهداف النشطة:'];
+  for (const g of active.slice(0, 8)) {
+    const ev = evalGoal(g, ctx);
+    const val = ev.isTargetMetric
+      ? `${ev.cur ?? '—'} من أصل ${g.start ?? 0} → ${ev.target} ${ev.unit}`.trim()
+      : `${ev.cur}/${ev.target}${ev.unit ? ` ${ev.unit}` : ''}`;
+    const stateWord = ev.pct >= 100 && !ev.isCap ? 'مكتمل' : ev.isBehind ? 'محتاج دفعة' : 'على المسار';
+    lines.push(`- ${clip(g.t, 80)}${g.f ? ' [تركيز]' : ''}: ${ev.pct}% (${val}، عدّى ${ev.timePct}% من الوقت، ${stateWord})`);
+  }
+  return lines;
+}
 
 function metricText(m, v) {
   if (m.t === 'tri') return ['لسه', 'جزئي', 'تم'][+v || 0];
@@ -761,7 +1055,7 @@ export function dayLine(key, d = {}) {
  * ملخص يوم كامل للتقرير اليومي: كل اللي اتسجل، وإيه اللي ناقص، وامبارح للمقارنة.
  * opts: { prev: { key, data } | null, tasks, metrics }
  */
-export function dayDigest(key, d = {}, { prev = null, tasks = [], metrics = [] } = {}) {
+export function dayDigest(key, d = {}, { prev = null, tasks = [], metrics = [], goals = [], days = null } = {}) {
   const L = [`اليوم: ${weekday(key)} ${key}`];
 
   const sleep = [];
@@ -846,6 +1140,10 @@ export function dayDigest(key, d = {}, { prev = null, tasks = [], metrics = [] }
     L.push(`المهام: خلّص ${doneT.length}${names ? ` (${names})` : ''}، ولسه مفتوح ${openT.length}${late ? ` منهم ${late} متأخرة` : ''}`);
   }
 
+  const gDays = days || [{ key, data: d }, ...(prev ? [prev] : [])];
+  const gLines = goalDigestLines(goals, { days: gDays, tasks, metrics, today: key });
+  if (gLines.length) L.push(...gLines);
+
   const miss = missingStars(d).map((s) => s.t);
   if (miss.length) L.push(`مش متسجل: ${miss.join('، ')}`);
   if (prev && logged(prev.data)) L.push(`للمقارنة، امبارح: ${dayLine(prev.key, prev.data)}`);
@@ -856,7 +1154,7 @@ export function dayDigest(key, d = {}, { prev = null, tasks = [], metrics = [] }
  * ملخص آخر ٧ أيام (لحد endKey) للتقرير الأسبوعي: سطر لكل يوم، ومتوسطات، والعادات، والفلوس، والمهام.
  * days = [{ key, data }]
  */
-export function weekDigest(endKey, days, { tasks = [], metrics = [] } = {}) {
+export function weekDigest(endKey, days, { tasks = [], metrics = [], goals = [] } = {}) {
   const from = addDays(endKey, -6);
   const by = new Map((days || []).map((x) => [x.key, x.data || {}]));
   const week = Array.from({ length: 7 }, (_, i) => addDays(from, i)).map((k) => [k, by.get(k) || {}]);
@@ -935,6 +1233,9 @@ export function weekDigest(endKey, days, { tasks = [], metrics = [] } = {}) {
     const c = (k, v) => decs.filter((d) => d[k] === v).length;
     L.push(`القرارات: ${c('decs', 'fast')} بسرعة و${c('decs', 'slow')} بعد تفكير، و${c('deci', 'part')} بمعلومات ناقصة`);
   }
+  const gLines = goalDigestLines(goals, { days, tasks, metrics, today: endKey });
+  if (gLines.length) L.push(...gLines);
+
   const tired = ds.filter((d) => has(d.tired)).length;
   if (tired) L.push(`أيام فيها إرهاق غير معتاد: ${tired}`);
   return L.join('\n');

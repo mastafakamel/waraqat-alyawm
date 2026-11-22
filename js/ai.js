@@ -14,12 +14,12 @@ export const AI_FIELD = { day: 'ai', week: 'aiw' };
 export async function buildDigest(kind, key = state.cur) {
   await flush();
   const days = await allDays();
-  const opts = { tasks: state.tasks, metrics: state.metrics };
+  const opts = { tasks: state.tasks, metrics: state.metrics, goals: state.goals };
   if (kind === 'week') return weekDigest(key, days, opts);
   const data = days.find((d) => d.key === key)?.data || {};
   const prevKey = addDays(key, -1);
   const prev = days.find((d) => d.key === prevKey) || null;
-  return dayDigest(key, data, { ...opts, prev });
+  return dayDigest(key, data, { ...opts, prev, days });
 }
 
 /** يطلب التقرير ويحفظه في اليوم اللي اتطلب له (حتى لو اتنقلت ليوم تاني وإحنا مستنيين). بيرجّع { text, left }. */

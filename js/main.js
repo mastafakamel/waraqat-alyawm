@@ -12,12 +12,15 @@ import { askPersist, getDoc } from './db.js';
 import {
   addDays, cycleTri, rateTap, rateSet, readNumber, readDuration, toEn, parseExpense, fmtNum, missingStars, EXP_CATS, lineTarget, mergeLine,
   uid, newPeriod, periodOf, periodLabel, AREAS, weekKeys, satWeekKeys, dayStatus, dayProgress, baselineFor, starSplit,
-  hourSpan, sleepHourList, fmtHour, fmtHours,
+  hourSpan, sleepHourList, fmtHour, fmtHours, HABITS, HABIT_GROUPS, HABIT_NUMS, goalRange, goalsSummary,
 } from './logic.js';
 import { monthSheet, updateMonth, shiftMonth } from './views/month.js';
 import { $, $$, esc, openSheet, requestClose, isSheetOpen, sheetEl, syncFields, toast, toastErr, setHtml } from './ui.js';
 import { renderHeader, updateStatus, renderToday, renderTabs } from './views/today.js';
 import { renderTime, hourSheet, updateHourSheet } from './views/time.js';
+import {
+  GOAL_PRESETS, renderGoals, goalDetailSheet, updateGoalDetail, goalArchiveSheet, goalFormSheet, updateGoalForm,
+} from './views/goals.js';
 import { sheetFor, guideStep, updateOutputs } from './views/sheets.js';
 import { dockHtml, updateDock } from './views/dock.js';
 import { tasksShell, updateTasks } from './views/tasks.js';
@@ -32,7 +35,11 @@ import { aiSheet, updateAiSheet } from './views/ai.js';
 // حالة الواجهة بس (مش بتتحفظ). drafts = اللي اتكتب في خانات الإضافة ولسه ماتحفظش، عشان مايضيعش لو غيّرت التبويبة.
 const ui = {
   cat: EXP_CATS[0], guide: null, qmode: 'idea', qmenu: false, qcat: EXP_CATS[0],
-  tpri: false, twhen: 'today', icat: 'تاني', drafts: {},
+  tpri: false, twhen: 'today', tgoal: '', tfilt: 'all', icat: 'تاني', drafts: {},
+  planSub: 'goals', // جوه تبويبة «الخطة»: 'goals' (الأهداف) | 'tasks' (المهام)
+  gfilt: 'all', // فلتر شاشة الأهداف
+  gf: null, // فورم هدف جديد/تعديل
+  gdet: null, // id الهدف المفتوح في شاشة التفاصيل
   mf: null, // فورم المقياس المفتوح: { id?, n, t, u, a, w, newArea }
   mfFrom: null, // 'settings' لو الفورم اتفتح من الإعدادات، عشان نرجعلها بعد الحفظ
   pedit: false, // تعديل تواريخ الفترة مفتوح
@@ -43,6 +50,21 @@ const ui = {
   tperiod: 'all', // فلتر الفترات في تاب «الوقت»
   hf: null, // sheet تفاصيل ساعة: { h, c, t, span }
 };
+
+// كاش لكل الأيام عشان حساب الأهداف يشتغل فوراً بـ 0ms من غير وميض مع كل دوسة
+let daysCache = [];
+async function refreshDaysCache() {
+  daysCache = await allDays();
+  render();
+}
+function allDaysSync() {
+  const out = daysCache.filter((d) => d.key !== state.cur);
+  out.push({ key: state.cur, data: state.day });
+  return out;
+}
+function goalSummaryNow() {
+  return goalsSummary(state.goals, { days: allDaysSync(), tasks: state.tasks, metrics: state.metrics, today: state.today });
+}
 
 // ---------- الأيام اللي حوالين اليوم المفتوح ----------
 // شريط الأسبوع (السبت←الجمعة) والمقارنة بمتوسطك (آخر ٧ قبل اليوم المفتوح) محتاجين أيام تانية من IndexedDB.
@@ -72,7 +94,7 @@ function winCtx() {
   }
   const base = {};
   for (const m of ['sleep', 'screen', 'work', 'spend']) base[m] = baselineFor(days, state.cur, m);
-  return { status, pct, base, hour: new Date().getHours() };
+  return { status, pct, base, hour: new Date().getHours(), gsum: goalSummaryNow() };
 }
 const sx = () => ({ configured: configured(), ...syncInfo }); // حالة المزامنة لكارت الإعدادات
 const DRAFTS = ['taskin', 'ideain', 'iq', 'mamt', 'mdesc', 'linein'];
@@ -96,8 +118,11 @@ function render() {
   setHtml($('#top'), renderHeader(state, ctx));
   updateStatus($('#top'), state);
   const view = $('#view');
-  const tab = TABS[state.tab];
-  if (tab) {
+  if (state.tab === 'tasks' && ui.planSub !== 'tasks') {
+    setHtml(view, renderGoals(state, ui, ctx.gsum));
+    shown = 'goals';
+  } else if (TABS[state.tab]) {
+    const tab = TABS[state.tab];
     if (shown !== state.tab) {
       view.innerHTML = tab.shell(state, ui);
       view._html = null; // المحتوى اتبدّل من غير setHtml
@@ -133,10 +158,17 @@ function render() {
     updateAiSheet(sh, state);
     if (ui.month) updateMonth(sh, ui.month, state, ui.monthStatus);
     if (ui.hf) updateHourSheet(sh, ui.hf);
+    if (ui.gdet) {
+      const g = state.goals.find((x) => String(x.id) === String(ui.gdet));
+      if (g) updateGoalDetail(sh, g, ctx.gsum.evals.get(g.id), state);
+    }
   }
 }
 subscribe(render);
-const updateView = () => TABS[state.tab]?.update($('#view'));
+const updateView = () => {
+  if (state.tab === 'tasks' && ui.planSub !== 'tasks') render();
+  else TABS[state.tab]?.update($('#view'));
+};
 
 // ---------- التسجيل السريع ----------
 async function handleQuick(form) {
@@ -158,6 +190,7 @@ async function handleQuick(form) {
     if (!r) return toastErr('اكتب المبلغ رقم، زي ٧٥ غدا');
     const d = await getDayData(today);
     await setKOn(today, 'exp', [...(d.exp || []), { a: r.a, w: r.w, c: ui.qcat }]);
+    if (state.cur !== today) refreshDaysCache();
     toast(`اتسجل ${fmtNum(r.a)} جنيه · ${ui.qcat}${where}`);
   } else {
     const nowH = new Date().getHours();
@@ -169,6 +202,7 @@ async function handleQuick(form) {
     const slot = curHrs[String(nowH)] || { c: '' };
     curHrs[String(nowH)] = { c: slot.c || '', t: mergeLine(slot.t, v) };
     await setKOn(today, 'hrs', curHrs);
+    if (state.cur !== today) refreshDaysCache();
     toast(`اتكتب في ${fmtHour(nowH)} (${label})${where}`);
   }
   inp.value = '';
@@ -303,12 +337,12 @@ function addTaskFromForm(form) {
   const v = inp.value.trim();
   if (!v) return inp.focus();
   refreshToday();
-  addTask(v, { pri: ui.tpri, due: ui.twhen === 'today' ? state.today : '' });
+  addTask(v, { pri: ui.tpri, due: ui.twhen === 'today' ? state.today : '', goalId: ui.tgoal || '' });
   ui.tpri = false; // "مهم" بيرجع لوضعه بعد كل إضافة
   inp.value = '';
   ui.drafts.taskin = '';
   updateView();
-  return toast(ui.twhen === 'today' ? 'اتضافت للنهارده' : 'اتضافت لبعدين');
+  return toast(ui.tgoal ? 'اتضافت واتربطت بالهدف' : ui.twhen === 'today' ? 'اتضافت للنهارده' : 'اتضافت لبعدين');
 }
 function toggleTask(id) {
   const t = state.tasks.find((x) => String(x.id) === id);
@@ -435,6 +469,7 @@ async function doImport(input) {
   if (!file) return;
   try {
     const r = await importFile(file);
+    await refreshDaysCache();
     // العدد بالعربي: يوم واحد، يومين، ٣ أيام، ١١ يوم
     const count = (n, one, two, few, many) => (n === 1 ? one : n === 2 ? two : `${fmtNum(n)} ${n <= 10 ? few : many}`);
     const parts = [];
@@ -507,7 +542,7 @@ async function makeReport(kind) {
 async function goTo(key) {
   if (!key || key === state.cur) return;
   await loadDay(key);
-  render();
+  refreshDaysCache();
   window.scrollTo(0, 0);
 }
 
@@ -610,6 +645,245 @@ function addLine(form) {
   ui.drafts.linein = '';
   setK(key, mergeLine(state.day[key], v));
   return toast(`اتكتب في ${label}`);
+}
+
+// ---------- نظام الأهداف المتكامل (تاب «الخطة») ----------
+const findGoal = (id) => state.goals.find((x) => String(x.id) === String(id));
+const HABIT_PILLAR = Object.fromEntries(HABIT_GROUPS.flatMap((g) => g.keys.map((k) => [k, g.id])));
+const HABIT_NUM_PILLAR = { wirdp: 'deen', exm: 'health', engm: 'growth', readp: 'growth', techm: 'growth', caf: 'health', relm: 'life' };
+const TIME_PILLAR = { work: 'work', learn: 'growth', health: 'health', sleep: 'health', deen: 'deen', life: 'life', rest: 'life', move: 'work' };
+function inferGoalPillar(m, src) {
+  if (m === 'habit') {
+    if (src.kind === 'salah') return 'deen';
+    return (src.kind === 'sum' ? HABIT_NUM_PILLAR[src.k] : HABIT_PILLAR[src.k]) || 'health';
+  }
+  if (m === 'time') return TIME_PILLAR[src.c] || 'work';
+  if (m === 'metric' && (src.kind === 'income' || src.kind === 'exp_cap')) return 'work';
+  return null;
+}
+
+function defaultGoalSrc(m, s) {
+  if (m === 'habit') return { kind: 'days', k: HABITS[4][0] }; // تمرين افتراضياً
+  if (m === 'time') return { kind: 'cat', c: 'work' };
+  if (m === 'metric') {
+    const first = s.metrics[0];
+    return first ? { kind: 'sum', id: first.id } : { kind: 'exp_cap', cat: EXP_CATS[0] };
+  }
+  return {};
+}
+function defaultGoalUnit(m, src, s) {
+  if (m === 'habit') {
+    if (src.kind === 'salah') return 'صلاة';
+    if (src.kind === 'sum') return HABIT_NUMS.find(([k]) => k === src.k)?.[2] || '';
+    return 'يوم';
+  }
+  if (m === 'time') return 'ساعة';
+  if (m === 'metric') {
+    if (src.kind === 'income' || src.kind === 'exp_cap') return 'ج';
+    const met = s.metrics.find((x) => String(x.id) === String(src.id));
+    return met?.u || (met?.t === 'tri' ? 'يوم' : '');
+  }
+  if (m === 'manual') return 'مرة';
+  return '';
+}
+
+function openGoalDetail(id) {
+  const g = findGoal(id);
+  if (!g) return;
+  const gsum = goalSummaryNow();
+  const ev = gsum.evals.get(g.id);
+  ui.gdet = g.id;
+  ui.gf = null;
+  openSheet({ ...goalDetailSheet(g, ev, state), onClose: () => { ui.gdet = null; } });
+  updateGoalDetail(sheetEl(), g, ev, state);
+}
+
+function openGoalForm(id, prefill = null) {
+  refreshToday();
+  const g = id ? findGoal(id) : null;
+  const base = g || prefill || {};
+  const m = base.m || 'time';
+  const hz = base.hz || 'month';
+  const rng = g?.from && g?.to ? { from: g.from, to: g.to } : goalRange(hz, state.today, state.periods);
+  const src = base.src ? { ...base.src } : defaultGoalSrc(m, state);
+  const unit = base.unit ?? defaultGoalUnit(m, src, state);
+  const stepsText = Array.isArray(base.steps) ? base.steps.map((x) => (typeof x === 'string' ? x : x.t)).join('\n') : '';
+  ui.gdet = null;
+  ui.gf = {
+    id: g?.id || null,
+    t: base.t || '',
+    p: base.p || 'work',
+    m,
+    src,
+    hz,
+    from: rng.from,
+    to: rng.to,
+    start: base.start != null ? String(base.start) : '',
+    target: base.target != null ? String(base.target) : (m === 'time' ? '30' : m === 'habit' ? '20' : m === 'manual' ? '10' : '100'),
+    unit,
+    f: base.f !== undefined ? !!base.f : state.goals.filter((x) => !x.done && x.f).length < 3,
+    stepsText,
+  };
+  openSheet({ ...goalFormSheet(ui.gf), onClose: () => { ui.gf = null; } });
+  updateGoalForm(sheetEl(), ui.gf, state);
+  const titleEl = sheetEl()?.querySelector('[data-role="gtitle"]');
+  if (titleEl && !titleEl.value) titleEl.focus({ preventScroll: true });
+}
+
+function saveGoalForm() {
+  const f = ui.gf;
+  if (!f) return undefined;
+  const sh = sheetEl();
+  const t = (sh?.querySelector('[data-role="gtitle"]')?.value ?? f.t ?? '').trim();
+  if (!t) {
+    toastErr('اكتب اسم الهدف');
+    return sh?.querySelector('[data-role="gtitle"]')?.focus();
+  }
+  const rng = f.hz === 'custom'
+    ? goalRange('custom', state.today, state.periods, f.from, f.to)
+    : goalRange(f.hz, state.today, state.periods);
+  if (rng.from > rng.to) return toastErr('تاريخ البداية لازم يبقى قبل النهاية');
+
+  const isTarget = f.m === 'metric' && f.src.kind === 'target';
+  const targetVal = f.m === 'steps' ? 0 : readNumber(sh?.querySelector('[data-role="gftarget"]')?.value ?? f.target);
+  if (f.m !== 'steps' && (targetVal === '' || (!isTarget && targetVal <= 0))) {
+    toastErr('اكتب رقم المستهدف');
+    return sh?.querySelector('[data-role="gftarget"]')?.focus();
+  }
+  const startVal = isTarget ? readNumber(sh?.querySelector('[data-role="gfstart"]')?.value ?? f.start) : '';
+  if (isTarget && startVal === '') {
+    toastErr('اكتب رقم البداية (الحالي)');
+    return sh?.querySelector('[data-role="gfstart"]')?.focus();
+  }
+  if (f.m === 'time' && f.src.kind === 'proj' && !(f.src.proj || '').trim()) {
+    toastErr('اكتب اسم المشروع');
+    return sh?.querySelector('[data-role="gfproj"]')?.focus();
+  }
+
+  const unit = f.m === 'steps' ? 'خطوة' : ((sh?.querySelector('[data-role="gfunit"]')?.value ?? f.unit ?? '').trim() || defaultGoalUnit(f.m, f.src, state));
+  const payload = {
+    t, p: f.p, f: !!f.f, m: f.m, src: { ...f.src }, hz: f.hz, from: rng.from, to: rng.to,
+    ...(f.m !== 'steps' ? { target: targetVal, unit } : { unit: 'خطوة' }),
+    ...(isTarget ? { start: startVal } : { start: undefined }),
+  };
+
+  if (f.id) {
+    const old = findGoal(f.id);
+    if (f.m === 'steps' && !Array.isArray(old?.steps)) payload.steps = [];
+    patchItem('goals', f.id, payload);
+    toast('اتحفظ تعديل الهدف');
+    return openGoalDetail(f.id);
+  }
+  const steps = f.m === 'steps'
+    ? (sh?.querySelector('[data-role="gfsteps"]')?.value ?? f.stepsText ?? '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean).map((st) => ({ id: uid(), t: st, done: false }))
+    : undefined;
+  const item = {
+    id: uid(), ...payload,
+    ...(f.m === 'manual' ? { cur: 0 } : {}),
+    ...(steps ? { steps } : {}),
+    done: false, at: Date.now(),
+  };
+  addItem('goals', item);
+  requestClose();
+  state.tab = 'tasks';
+  ui.planSub = 'goals';
+  ui.gfilt = 'all';
+  render();
+  return toast(`اتضاف الهدف «${t}»`);
+}
+
+async function toggleGoalHabit(k) {
+  refreshToday();
+  if (state.cur === state.today) {
+    const next = state.day[k] === 2 ? 0 : 2;
+    setK(k, next);
+    toast(next === 2 ? 'اتعلمت النهارده ← الهدف اتحدّث!' : 'اتشالت من النهارده');
+  } else {
+    const d = await getDayData(state.today);
+    const next = d[k] === 2 ? 0 : 2;
+    await setKOn(state.today, k, next);
+    await refreshDaysCache();
+    toast(next === 2 ? 'اتعلمت في النهارده ← الهدف اتحدّث!' : 'اتشالت من النهارده');
+  }
+}
+
+function adjustManualGoal(id, delta) {
+  const g = findGoal(id);
+  if (!g || g.m !== 'manual') return;
+  const next = Math.max(0, (+g.cur || 0) + delta);
+  patchItem('goals', id, { cur: next });
+}
+
+function toggleGoalStep(gid, sid) {
+  const g = findGoal(gid);
+  if (!g || !Array.isArray(g.steps)) return;
+  const steps = g.steps.map((s) => (String(s.id) === String(sid) ? { ...s, done: !s.done } : s));
+  patchItem('goals', gid, { steps });
+}
+
+function deleteGoalStep(gid, sid) {
+  const g = findGoal(gid);
+  if (!g || !Array.isArray(g.steps)) return;
+  const before = structuredClone(g.steps);
+  const steps = g.steps.filter((s) => String(s.id) !== String(sid));
+  patchItem('goals', gid, { steps });
+  toast('اتمسحت المرحلة', 'رجّع', () => patchItem('goals', gid, { steps: before }));
+}
+
+function addGoalStep(form) {
+  const gid = form.dataset.gid;
+  const inp = form.querySelector('[data-role="gstepin"]');
+  const v = inp.value.trim();
+  if (!v) return inp.focus();
+  const g = findGoal(gid);
+  if (!g) return undefined;
+  const steps = [...(g.steps || []), { id: uid(), t: v, done: false }];
+  inp.value = '';
+  patchItem('goals', gid, { steps });
+  return toast('اتضافت المرحلة');
+}
+
+function addGoalTask(form) {
+  const gid = form.dataset.gid;
+  const inp = form.querySelector('[data-role="gtaskin"]');
+  const v = inp.value.trim();
+  if (!v) return inp.focus();
+  refreshToday();
+  inp.value = '';
+  addTask(v, { due: state.today, goalId: gid });
+  return toast('اتضافت لمهام النهارده واتربطت بالهدف');
+}
+
+function openGoalArchive(id) {
+  const g = findGoal(id);
+  if (!g) return;
+  ui.gdet = null;
+  openSheet(goalArchiveSheet(g));
+  const ta = sheetEl()?.querySelector('[data-role="gnote"]');
+  if (ta) ta.focus({ preventScroll: true });
+}
+
+function saveGoalArchive(id) {
+  const note = (sheetEl()?.querySelector('[data-role="gnote"]')?.value || '').trim();
+  patchItem('goals', id, { done: true, f: false, dAt: Date.now(), ...(note ? { note } : {}) });
+  requestClose();
+  ui.gfilt = 'done';
+  render();
+  toast('عاش! الهدف اتنقل لأرشيف الإنجازات');
+}
+
+function deleteGoal(id) {
+  const r = removeItem('goals', id);
+  if (!r) return;
+  if (isSheetOpen()) requestClose();
+  toast(`اتمسح "${r.item.t}"`, 'رجّع', () => restoreItem('goals', r));
+}
+
+function ideaToGoal(id) {
+  const idea = state.ideas.find((x) => String(x.id) === String(id));
+  if (!idea) return;
+  const pMap = { شغل: 'work', مشروع: 'work', تعلم: 'growth', شخصي: 'health' };
+  openGoalForm(null, { t: idea.t.replace(/\s+/g, ' ').trim().slice(0, 90), p: pMap[idea.c] || 'life', m: 'steps', hz: 'month', f: true });
 }
 
 // ---------- الدوسات ----------
@@ -724,6 +998,8 @@ document.addEventListener('click', async (e) => {
     case 'delexp': return deleteExpense(+b.dataset.i);
     case 'tpri': ui.tpri = !ui.tpri; return updateView();
     case 'twhen': ui.twhen = b.dataset.v; return updateView();
+    case 'tgoal': ui.tgoal = id || ''; return updateView();
+    case 'tfilt': ui.tfilt = b.dataset.v; return updateView();
     case 'tdone': return toggleTask(id);
     case 'tmove': return moveTask(id);
     case 'tdel': return deleteItem('tasks', id);
@@ -733,6 +1009,108 @@ document.addEventListener('click', async (e) => {
       return it && patchItem('ideas', id, { pin: !it.pin });
     }
     case 'idel': return deleteItem('ideas', id);
+    case 'igoal': return ideaToGoal(id);
+    // الأهداف (تاب الخطة)
+    case 'plansub':
+      ui.planSub = b.dataset.v;
+      return render();
+    case 'gplan':
+      ui.planSub = 'goals';
+      state.tab = 'tasks';
+      render();
+      return window.scrollTo(0, 0);
+    case 'gtasks':
+      ui.planSub = 'tasks';
+      state.tab = 'tasks';
+      render();
+      return window.scrollTo(0, 0);
+    case 'gfilt':
+      ui.gfilt = b.dataset.v;
+      return render();
+    case 'gopen': return openGoalDetail(id);
+    case 'gform': return openGoalForm(id);
+    case 'gpreset': return openGoalForm(null, GOAL_PRESETS[+b.dataset.i]);
+    case 'ghabit': return toggleGoalHabit(b.dataset.k);
+    case 'ginc': return adjustManualGoal(id, 1);
+    case 'gdec': return adjustManualGoal(id, -1);
+    case 'gstog': return toggleGoalStep(b.dataset.gid, b.dataset.sid);
+    case 'gsdel': return deleteGoalStep(b.dataset.gid, b.dataset.sid);
+    case 'gfocus': {
+      const g = findGoal(id);
+      if (!g) return undefined;
+      patchItem('goals', id, { f: !g.f });
+      return toast(!g.f ? 'اتثبّت في أهداف التركيز' : 'اتشال من التركيز');
+    }
+    case 'garchopen': return openGoalArchive(id);
+    case 'garchsave': return saveGoalArchive(id);
+    case 'greopen':
+      patchItem('goals', id, { done: false, dAt: undefined });
+      requestClose();
+      ui.gfilt = 'all';
+      return toast('الهدف رجع نشط');
+    case 'gdel': return deleteGoal(id);
+    case 'gfmode':
+      if (ui.gf) {
+        ui.gf.m = b.dataset.v;
+        ui.gf.src = defaultGoalSrc(ui.gf.m, state);
+        ui.gf.unit = defaultGoalUnit(ui.gf.m, ui.gf.src, state);
+        if (!ui.gf.id && !ui.gf.pSet) ui.gf.p = inferGoalPillar(ui.gf.m, ui.gf.src) || ui.gf.p;
+        updateGoalForm(sheetEl(), ui.gf, state);
+      }
+      return undefined;
+    case 'gfpil':
+      if (ui.gf) { ui.gf.p = b.dataset.v; ui.gf.pSet = true; updateGoalForm(sheetEl(), ui.gf, state); }
+      return undefined;
+    case 'gfhz':
+      if (ui.gf) {
+        ui.gf.hz = b.dataset.v;
+        const rng = goalRange(ui.gf.hz, state.today, state.periods, ui.gf.from, ui.gf.to);
+        ui.gf.from = rng.from;
+        ui.gf.to = rng.to;
+        updateGoalForm(sheetEl(), ui.gf, state);
+      }
+      return undefined;
+    case 'gffoc':
+      if (ui.gf) { ui.gf.f = !ui.gf.f; updateGoalForm(sheetEl(), ui.gf, state); }
+      return undefined;
+    case 'gfhkind':
+      if (ui.gf) {
+        const k = b.dataset.v;
+        ui.gf.src = k === 'salah' ? { kind: 'salah' } : k === 'sum' ? { kind: 'sum', k: HABIT_NUMS[0][0] } : { kind: 'days', k: HABITS[4][0] };
+        ui.gf.unit = defaultGoalUnit('habit', ui.gf.src, state);
+        if (!ui.gf.id && !ui.gf.pSet) ui.gf.p = inferGoalPillar('habit', ui.gf.src) || ui.gf.p;
+        updateGoalForm(sheetEl(), ui.gf, state);
+      }
+      return undefined;
+    case 'gftkind':
+      if (ui.gf) {
+        const k = b.dataset.v;
+        ui.gf.src = k === 'cat' ? { kind: 'cat', c: 'work' } : k === 'proj' ? { kind: 'proj', proj: '' } : { kind: 'deep' };
+        ui.gf.unit = 'ساعة';
+        if (!ui.gf.id && !ui.gf.pSet) ui.gf.p = inferGoalPillar('time', ui.gf.src) || ui.gf.p;
+        updateGoalForm(sheetEl(), ui.gf, state);
+      }
+      return undefined;
+    case 'gfmkind':
+      if (ui.gf) {
+        const k = b.dataset.v;
+        const mid = state.metrics[0]?.id || '';
+        ui.gf.src = k === 'income' ? { kind: 'income' } : k === 'exp_cap' ? { kind: 'exp_cap', cat: EXP_CATS[0] } : { kind: k, id: mid };
+        ui.gf.unit = defaultGoalUnit('metric', ui.gf.src, state);
+        if (!ui.gf.id && !ui.gf.pSet) ui.gf.p = inferGoalPillar('metric', ui.gf.src) || ui.gf.p;
+        updateGoalForm(sheetEl(), ui.gf, state);
+      }
+      return undefined;
+    case 'gfsrc':
+      if (ui.gf) {
+        ui.gf.src = { ...ui.gf.src, [b.dataset.k]: b.dataset.v };
+        if (ui.gf.m === 'time' && b.dataset.k === 'c') ui.gf.src.kind = b.dataset.v === 'work' ? 'work' : 'cat';
+        ui.gf.unit = defaultGoalUnit(ui.gf.m, ui.gf.src, state);
+        if (!ui.gf.id && !ui.gf.pSet) ui.gf.p = inferGoalPillar(ui.gf.m, ui.gf.src) || ui.gf.p;
+        updateGoalForm(sheetEl(), ui.gf, state);
+      }
+      return undefined;
+    case 'gfsave': return saveGoalForm();
     // مقاييسي
     case 'mplus': return setMetric(id, (+(state.day.m?.[id]) || 0) + 1);
     case 'mtri': return setMetric(id, cycleTri(state.day.m?.[id]) || '');
@@ -778,7 +1156,7 @@ document.addEventListener('click', async (e) => {
     case 'import': return sheetEl()?.querySelector('[data-role="importfile"]').click();
     // المزامنة
     case 'ssignup': return login(b.closest('form'), true);
-    case 'ssync': return syncNow();
+    case 'ssync': return syncNow().then(() => refreshDaysCache());
     // تقرير الذكاء الاصطناعي
     case 'ai': return openAi(b.dataset.kind);
     case 'airegen': return makeReport(b.dataset.kind);
@@ -791,7 +1169,7 @@ document.addEventListener('click', async (e) => {
 
 const FORMS = {
   addexp: addExpense, quick: handleQuick, addtask: addTaskFromForm, addidea: addIdeaFromForm, addmoney: addMoney, addline: addLine,
-  slogin: (f) => login(f, false), hsave: saveHourSheet,
+  slogin: (f) => login(f, false), hsave: saveHourSheet, gstepadd: addGoalStep, gtaskadd: addGoalTask,
 };
 document.addEventListener('submit', (e) => {
   const fn = FORMS[e.target.dataset.act];
@@ -866,6 +1244,14 @@ document.addEventListener('input', (e) => {
     ui.hf.t = el.value;
     return undefined;
   }
+  if (ui.gf) {
+    if (role === 'gtitle') { ui.gf.t = el.value; return undefined; }
+    if (role === 'gftarget') { ui.gf.target = el.value; return undefined; }
+    if (role === 'gfstart') { ui.gf.start = el.value; return undefined; }
+    if (role === 'gfunit') { ui.gf.unit = el.value; return undefined; }
+    if (role === 'gfproj') { ui.gf.src = { ...ui.gf.src, proj: el.value }; return undefined; }
+    if (role === 'gfsteps') { ui.gf.stepsText = el.value; return undefined; }
+  }
   if (el.dataset.m) { // قيمة مقياس من شاشته
     const v = el.dataset.type === 'num' ? readNumber(el.value) : el.value;
     return setMetric(el.dataset.m, typeof v === 'string' && !v.trim() ? '' : v);
@@ -895,17 +1281,20 @@ document.addEventListener('change', (e) => {
   const role = e.target.dataset?.role;
   if (role === 'pfrom' || role === 'pto') editPeriodDate(e.target);
   if (role === 'importfile') doImport(e.target);
+  if (ui.gf && role === 'gffrom') ui.gf.from = e.target.value;
+  if (ui.gf && role === 'gfto') ui.gf.to = e.target.value;
 });
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && isSheetOpen()) requestClose();
-  // Enter في خانة جوه sheet (مش جوه form، ومش سطور متعددة): الخانة اللي بعدها، والأخيرة بتقفل
+  // Enter في خانة جوه sheet (مش جوه form، ومش سطور متعددة): الخانة اللي بعدها، والأخيرة بتقفل (أو بتحفظ فورم الهدف)
   const el = e.target;
   if (e.key !== 'Enter' || e.isComposing || !el.matches?.('input.fld') || el.form || !el.closest('.sheet')) return;
   e.preventDefault();
   const all = [...sheetEl().querySelectorAll('input.fld:not([type="time"]), textarea.fld')].filter((x) => x.getClientRects().length);
   const next = all[all.indexOf(el) + 1];
   if (next) next.focus();
+  else if (ui.gf) saveGoalForm();
   else { el.blur(); requestClose(); }
 });
 
@@ -939,6 +1328,8 @@ $('#dock').innerHTML = dockHtml();
   await askPersist();
   await loadLists();
   await loadDay(state.today);
+  await refreshDaysCache();
   hooks.saved = () => schedule(); // بعد أي حفظ بـ ٣ ثواني بيرفع الجديد
   await initSync();
+  await refreshDaysCache();
 })();

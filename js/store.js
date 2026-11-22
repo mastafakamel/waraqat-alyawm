@@ -13,6 +13,7 @@ export const state = {
   ideas: [],
   metrics: [], // مقاييسي: { id, n, t, u, a, w, on, at }
   periods: [], // الفترات: { id, from, to }
+  goals: [], // الأهداف: { id, t, p, f, m, src, hz, from, to, start?, target, unit, cur?, steps?, done?, dAt?, note?, at }
   tab: 'day',
   status: 'loading', // loading | saving | saved | memory
   sync: 'off', // off | signedout | busy | ok | offline | error | capped (sync.js)
@@ -99,7 +100,7 @@ export async function setKOn(key, k, v) {
 
 // ---------- القوايم ----------
 export async function loadLists() {
-  const names = ['tasks', 'ideas', 'metrics', 'periods'];
+  const names = ['tasks', 'ideas', 'metrics', 'periods', 'goals'];
   const docs = await Promise.all(names.map((n) => getDoc(`list/${n}`)));
   names.forEach((n, i) => { state[n] = docs[i]?.data?.items || []; });
 }
@@ -111,8 +112,8 @@ export function addIdea(t, c = 'تاني') {
   state.ideas.push({ id: uid(), t, c, pin: false, at: Date.now() });
   saveList('ideas');
 }
-export function addTask(t, { pri = false, due = state.today } = {}) {
-  state.tasks.push({ id: uid(), t, pri, due, done: false, at: Date.now() });
+export function addTask(t, { pri = false, due = state.today, goalId = '' } = {}) {
+  state.tasks.push({ id: uid(), t, pri, due, ...(goalId ? { goalId } : {}), done: false, at: Date.now() });
   saveList('tasks');
 }
 
