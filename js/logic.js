@@ -11,6 +11,15 @@ export const PRAYERS = [
   ['isha', 'عشاء'],
 ];
 
+export const KHUSHU_LABELS = [
+  '',
+  'سريع / مشتت',
+  'حاضر جزئياً',
+  'تركيز متوسط',
+  'خشوع واستعداد جيد',
+  'خشوع واستعداد كامل',
+];
+
 export const SLEEP_QUAL = [
   ['fresh', 'فايق'],
   ['ok', 'عادي'],
@@ -383,6 +392,47 @@ export function togglePrayer(day = {}, key) {
   if (!(key in next)) return null;
   next[key] = !next[key];
   const salah = PRAYERS.filter(([k]) => next[k]).length;
+  const fajr = next.fajr ? 2 : 0;
+  return {
+    prayers: salah ? next : '',
+    salah: salah || '',
+    fajr: fajr || '',
+  };
+}
+
+/** تقييم الخشوع والاستعداد لكل صلاة (٠ = غير مقيمة/لم تُسجَّل، ١–٥ = الدرجة) + العدد والمتوسط. */
+export function prayerSummary(day = {}) {
+  const prayed = prayersState(day);
+  const scores = {};
+  let sum = 0;
+  let ratedCount = 0;
+  for (const [k] of PRAYERS) {
+    const raw = day?.prayers?.[k];
+    const sc = typeof raw === 'number' && raw >= 1 && raw <= 5 ? Math.round(raw) : 0;
+    scores[k] = sc;
+    if (sc > 0) {
+      sum += sc;
+      ratedCount += 1;
+    }
+  }
+  const count = PRAYERS.filter(([k]) => prayed[k]).length;
+  const avg = ratedCount ? Math.round((sum / ratedCount) * 10) / 10 : null;
+  return { prayed, scores, count, ratedCount, avg };
+}
+
+/** يضبط تقييم صلاة معيّنة (١–٥ للخشوع والاستعداد، أو ٠ لمسحها) ويحافظ على تقييم باقي الصلوات وتزامن salah و fajr. */
+export function setPrayerScore(day = {}, key, score) {
+  if (!PRAYERS.some(([k]) => k === key)) return null;
+  const base = prayersState(day);
+  const next = {};
+  for (const [k] of PRAYERS) {
+    const raw = day?.prayers?.[k];
+    if (typeof raw === 'number' && raw >= 1 && raw <= 5) next[k] = Math.round(raw);
+    else next[k] = !!base[k];
+  }
+  const n = Math.round(+score || 0);
+  next[key] = n >= 1 && n <= 5 ? n : false;
+  const salah = PRAYERS.filter(([k]) => !!next[k]).length;
   const fajr = next.fajr ? 2 : 0;
   return {
     prayers: salah ? next : '',
@@ -1888,10 +1938,11 @@ export function dayDigest(key, d = {}, { prev = null, tasks = [], metrics = [], 
     if (pick(0).length) L.push(`- ماتعملتش: ${pick(0).join('، ')}`);
   }
   if (has(d.salah) || has(d.prayers)) {
-    const ps = prayersState(d);
-    const doneP = PRAYERS.filter(([k]) => ps[k]).map(([, l]) => l);
-    const cnt = has(d.prayers) ? doneP.length : +d.salah || 0;
-    L.push(`الصلوات في وقتها: ${cnt} من 5${has(d.prayers) && doneP.length ? ` (${doneP.join('، ')})` : ''}`);
+    const psum = prayerSummary(d);
+    const doneP = PRAYERS.filter(([k]) => psum.prayed[k]).map(([k, l]) => (psum.scores[k] ? `${l} ${psum.scores[k]}/5` : l));
+    const cnt = has(d.prayers) ? psum.count : +d.salah || 0;
+    const avgTxt = psum.avg != null ? `، متوسط الخشوع ${psum.avg}/5` : '';
+    L.push(`الصلوات: ${cnt} من 5${has(d.prayers) && doneP.length ? ` (${doneP.join('، ')})` : ''}${avgTxt}`);
   }
   const wkParts = [];
   if (has(d.ext)) wkParts.push(`النوع: ${clip(d.ext, 80)}`);

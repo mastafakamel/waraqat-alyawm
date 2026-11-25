@@ -16,7 +16,7 @@ import {
   DEFAULT_LIFE_AREAS, TODAY_TASK_LIMIT, activeLifeAreas, lifeAreaMap, isBacklogGoal, backlogAgeText, periodReviewState,
   itemKind, itemStatus, todayOpenTasks, canAddTodayTask, systemState, activeHabitGroups,
   DEFAULT_SETTINGS, normalizeSettings, periodsFor, periodHoursFor,
-  prayersState, togglePrayer, guessExpCat, incomeTotal, evalPeriodGoal, periodGoalDigestLines,
+  prayersState, togglePrayer, prayerSummary, setPrayerScore, guessExpCat, incomeTotal, evalPeriodGoal, periodGoalDigestLines,
 } from '../js/logic.js';
 
 test('الأرقام العربي والإنجليزي بتتحول قبل الحفظ', () => {
@@ -890,4 +890,39 @@ test('نظام الفلتر والربط الموحّد: المجال ← هدف
   assert.equal(workArea.goals[0].projects[0].project.id, 'proj1');
   const lifeArea = sys.areas.find((x) => x.area.id === 'life');
   assert.equal(lifeArea.activeHabits.some((h) => h.k === 'h_rel1'), true);
+});
+
+test('تقييم الصلوات الخمس (١–٥ خشوع واستعداد) + التوافق مع الأيام القديمة وملخص AI', () => {
+  let d = {};
+  d = { ...d, ...setPrayerScore(d, 'fajr', 5) };
+  assert.equal(d.salah, 1);
+  assert.equal(d.fajr, 2);
+  assert.equal(d.prayers.fajr, 5);
+  d = { ...d, ...setPrayerScore(d, 'dhuhr', 3) };
+  d = { ...d, ...setPrayerScore(d, 'asr', 4) };
+  const ps = prayerSummary(d);
+  assert.equal(ps.count, 3);
+  assert.equal(ps.ratedCount, 3);
+  assert.equal(ps.avg, 4);
+  assert.equal(ps.prayed.fajr, true);
+  assert.equal(ps.prayed.isha, false);
+
+  // مسح صلاة واحدة بيحافظ على تقييم الباقي
+  d = { ...d, ...setPrayerScore(d, 'dhuhr', 0) };
+  const ps2 = prayerSummary(d);
+  assert.equal(ps2.count, 2);
+  assert.equal(ps2.scores.fajr, 5);
+  assert.equal(ps2.scores.asr, 4);
+  assert.equal(ps2.avg, 4.5);
+
+  // التوافق مع أيام قديمة (boolean بدون تقييم رقمي)
+  const legacy = prayerSummary({ prayers: { fajr: true, dhuhr: true, asr: false, maghrib: false, isha: false }, salah: 2 });
+  assert.equal(legacy.count, 2);
+  assert.equal(legacy.ratedCount, 0);
+  assert.equal(legacy.avg, null);
+
+  // ملخص اليوم للذكاء الاصطناعي يعرض تقييم الصلوات ومتوسط الخشوع
+  const dig = dayDigest('2026-11-26', d, {});
+  assert.match(dig, /فجر 5\/5/);
+  assert.match(dig, /متوسط الخشوع 4\.5\/5/);
 });

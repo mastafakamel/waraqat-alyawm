@@ -13,7 +13,7 @@ import {
   addDays, cycleTri, rateTap, rateSet, readNumber, readDuration, toEn, parseExpense, guessExpCat, fmtNum, missingStars,
   lineTarget, mergeLine, uid, newPeriod, periodOf, periodLabel, AREAS, INC_CATS, STAR_DUE,
   weekKeys, satWeekKeys, dayStatus, dayProgress, baselineFor, starSplit,
-  hourSpan, sleepHoursSplit, fmtHour, fmtHours, togglePrayer, activeHabits, activeHabitGroups, activeTimeCats,
+  hourSpan, sleepHoursSplit, fmtHour, fmtHours, togglePrayer, setPrayerScore, activeHabits, activeHabitGroups, activeTimeCats,
   activeLifeAreas, isBacklogGoal, periodReviewState,
   TODAY_TASK_LIMIT, itemKind, itemStatus, canAddTodayTask, systemState,
   HABIT_NUMS, goalRange, goalsSummary, evalPeriodGoal,
@@ -59,6 +59,8 @@ const ui = {
   ee: null, te: null, ie: null,
   sf: { email: '' },
   push: null,
+  prayPick: null,
+  closeOpen: false,
   month: null, monthStatus: {},
   tbrush: 'work', tperiod: 'all', hf: null,
 };
@@ -113,7 +115,10 @@ function winCtx() {
   const prevNextp = (win.days.get(addDays(state.today, -1))?.nextp || '').trim();
   const review = periodReviewState(state.periods, state.goals, state.today);
   const sys = sysNow();
-  return { status, pct, base, hour: new Date().getHours(), sys, gsum: sys.gsum, curPeriod, periodEv, prevNextp, review };
+  return {
+    status, pct, base, hour: new Date().getHours(), sys, gsum: sys.gsum, curPeriod, periodEv, prevNextp, review,
+    prayPick: ui.prayPick, closeOpen: ui.closeOpen,
+  };
 }
 const sx = () => ({ configured: configured(), ...syncInfo });
 const DRAFTS = ['taskin', 'ideain', 'iq', 'mamt', 'mdesc', 'iamt', 'idesc', 'linein'];
@@ -166,7 +171,7 @@ function render() {
   const sh = sheetEl();
   if (sh) {
     syncFields(sh, state.day);
-    updateOutputs(sh, state);
+    updateOutputs(sh, state, ui);
     updateSettings(sh, state, ui, sx(), allDaysSync());
     if (ui.mf) updateMetricForm(sh, ui.mf, state);
     if (ui.pf) updatePeriodForm(sh, ui.pf, state);
@@ -1770,7 +1775,7 @@ document.addEventListener('click', async (e) => {
 
   const id = b.dataset.id;
   switch (b.dataset.act) {
-    // الصلوات الـ ٥ بأساميهم
+    // الصلوات الـ ٥ بتقييم الخشوع والاستعداد (١–٥) + التوافق مع التبديل القديم
     case 'prayer': {
       const patch = togglePrayer(state.day, b.dataset.p);
       if (patch) {
@@ -1779,6 +1784,25 @@ document.addEventListener('click', async (e) => {
       }
       return undefined;
     }
+    case 'praypick':
+      ui.prayPick = ui.prayPick === b.dataset.p ? null : b.dataset.p;
+      haptic('tap');
+      return render();
+    case 'prayrate': {
+      const v = +b.dataset.v || 0;
+      const patch = setPrayerScore(state.day, b.dataset.p, v);
+      ui.prayPick = null;
+      if (patch) {
+        haptic(v > 0 ? 'done' : 'tap');
+        setMany(patch);
+      } else {
+        render();
+      }
+      return undefined;
+    }
+    case 'eodtoggle':
+      ui.closeOpen = !ui.closeOpen;
+      return render();
     // الكافيين +/-
     case 'cafstep': {
       const next = Math.max(0, (+state.day.caf || 0) + (+b.dataset.d || 0));

@@ -354,7 +354,7 @@ const GUIDE_BODY = {
   sleep: sleepBody,
   screen: screenBody,
   mood: () => `${rate('mood', { big: true, label: 'المزاج' })}<div class="ends"><span>وحش خالص</span><span>عالي</span></div>`,
-  habits: (s) => `<div class="panel" style="padding:8px">${habitsGrid(s.day, false, s.settings)}${salahRow(s.day)}</div>`,
+  habits: (s, ui) => `<div class="panel" style="padding:10px;display:flex;flex-direction:column;gap:10px">${habitsGrid(s.day, false, s.settings)}<div data-out="salahbox">${salahRow(s.day, ui?.prayPick)}</div></div>`,
   work: (s, ui) => workBody(s, ui, { guide: true }),
   money: (s, ui) => moneyBody(ui, s),
   post: postBody,
@@ -374,9 +374,11 @@ export function guideStep(key, i, n, s, ui) {
   };
 }
 
-export function updateOutputs(root, s) {
+export function updateOutputs(root, s, ui) {
   if (!root) return;
   const cfg = s.settings;
+  const sb = root.querySelector('[data-out="salahbox"]');
+  if (sb) sb.innerHTML = salahRow(s.day, ui?.prayPick);
   const dur = root.querySelector('[data-out="sleepdur"]');
   if (dur) {
     const m = sleepMinutes(s.day.sleep, s.day.wake);

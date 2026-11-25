@@ -33,22 +33,17 @@ function cell(m, v) {
   return `<button class="mc" type="button" data-act="medit" data-id="${id}" aria-label="${esc(m.n)}: ${val || 'فاضي'}"><span class="m">${name}<span class="v${val ? '' : ' none'}">${val ? `${esc(val)}${unit}` : '—'}</span></span></button>`;
 }
 
-/** قسم مقاييسي في تبويبة اليوم. */
+/** قسم مقاييسي في تبويبة اليوم. لو مفيش مقاييس، بيعرض أزرار الإعدادات بس من غير كارت فاضي يشغل مساحة. */
 export function metricsSection(s) {
   const hour = new Date().getHours();
   const vis = s.metrics.filter((m) => metricVisible(m, s.cur, s.today, hour, s.settings?.dayStart));
   const vals = s.day.m || {};
-  let body;
-  if (!s.metrics.length) {
-    body = `<div class="empty"><b>مفيش مقاييس لسه</b>
-      <p>أي حاجة عايز تعرف رقمها آخر الفترة: مية، وزن، خطوات، مكالمات عملاء. ضيفها وسجّلها بدوسة.</p></div>`;
-  } else if (!vis.length) {
-    body = '<div class="list"><p class="empty-s">مقاييسك هتظهر هنا في وقتها.</p></div>';
-  } else {
-    body = `<section class="metrics" aria-label="مقاييسي">${groupMetrics(vis).map(([a, ms]) => `<div class="area">${esc(a)}</div>
-      <div class="mgrid">${ms.map((m) => cell(m, vals[m.id])).join('')}</div>`).join('')}</section>`;
-  }
-  return `<div class="sec"><b>مقاييسي</b></div>${body}
+  const headAndBody = vis.length
+    ? `<div class="sec"><b>مقاييسي</b></div>
+      <section class="metrics" aria-label="مقاييسي">${groupMetrics(vis).map(([a, ms]) => `<div class="area">${esc(a)}</div>
+        <div class="mgrid">${ms.map((m) => cell(m, vals[m.id])).join('')}</div>`).join('')}</section>`
+    : '';
+  return `${headAndBody}
     <div class="links">
       <button class="gh" type="button" data-act="mform">${ic(P.plus)}قيس حاجة جديدة</button>
       <button class="gh" type="button" data-act="settings">الإعدادات</button>

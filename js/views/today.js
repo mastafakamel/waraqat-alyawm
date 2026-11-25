@@ -1,9 +1,9 @@
-// views/today.js — الهيدر وتبويبة «اليوم» (Obsidian & Champagne / Alabaster & Bronze).
+// views/today.js — الهيدر وتبويبة «اليوم» بتصميم هندسي حاد ومنظّم (بدون دوائر وبدون حشو).
 
 import {
-  PRAYERS, SLEEP_QUAL, STRESS_OPTS, TODAY_TASK_LIMIT, activeHabits, activeHabitGroups, habitGroupStats, prayersState,
-  dateTitle, fmtNum, fmtHM, fmtHour, habitsDone, todayTasks, groupTasks, has,
-  periodOf, periodDay, isOverdue, shortDate, starSplit, dayStatus, dayProgress, satWeekKeys, weekNumber,
+  PRAYERS, KHUSHU_LABELS, SLEEP_QUAL, STRESS_OPTS, TODAY_TASK_LIMIT, activeHabits, activeHabitGroups,
+  habitGroupStats, prayerSummary, dateTitle, fmtNum, fmtHM, fmtHour, habitsDone, todayTasks, groupTasks, has,
+  periodOf, periodDay, isOverdue, shortDate, dayStatus, dayProgress, satWeekKeys, weekNumber,
   dayNums, compareTo, fmtDiff, timeByCat, fmtHours, hoursWord,
 } from '../logic.js';
 import { esc, ic, ico, P, setHtml } from '../ui.js';
@@ -17,7 +17,7 @@ export const HINTS = {
   sleep: 'وقت ما نمت ووقت ما صحيت، والمدة بتتحسب لوحدها',
   screen: 'من إعدادات الموبايل: Screen Time أو Digital Wellbeing',
   mood: 'دوسة واحدة',
-  habits: 'دوس على اللي عملته، وعلّم الصلوات اللي في وقتها',
+  habits: 'دوس على اللي عملته، وقيّم خشوعك في كل صلاة من ١ لـ ٥',
   work: 'المشروع والساعات، أو علّم إجازة لو مفيش شغل',
   money: 'المبلغ والوصف في سطر واحد، زي "٧٥ غدا"',
   post: 'اكتب اللي اتأجل وليه، في ١٠ ثواني',
@@ -26,7 +26,7 @@ export const HINTS = {
 
 // ---------- الهيدر ----------
 const WD = ['ح', 'ن', 'ث', 'ر', 'خ', 'ج', 'س'];
-const DAY_WORD = { full: 'اتسجل كله', part: 'ناقص', none: 'مش متسجل', future: 'يوم جاي' };
+const DAY_WORD = { full: 'اتسجل كله', part: 'جزئي', none: 'فاضي', future: 'يوم جاي' };
 
 function dayShort(key) {
   return new Date(`${key}T12:00:00`).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric' });
@@ -37,17 +37,6 @@ function weekRange(keys) {
   const b = new Date(`${keys[6]}T12:00:00`);
   if (a.getMonth() === b.getMonth()) return `${fmtNum(a.getDate())} – ${shortDate(keys[6])}`;
   return `${shortDate(keys[0])} – ${shortDate(keys[6])}`;
-}
-
-function dayRing(pct, future) {
-  const r = 14.5;
-  const c = 2 * Math.PI * r;
-  const off = c - (c * Math.max(0, Math.min(100, pct))) / 100;
-  const cls = pct === 100 ? ' full' : pct > 0 ? ' part' : '';
-  return `<svg class="dring${future ? ' fut' : ''}${cls}" width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
-    <circle class="dring-bg" cx="17" cy="17" r="${r}"/>
-    ${pct > 0 ? `<circle class="dring-fg" cx="17" cy="17" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/>` : ''}
-  </svg>`;
 }
 
 export function renderHeader(s, ctx = {}) {
@@ -64,10 +53,12 @@ export function renderHeader(s, ctx = {}) {
     const d = new Date(`${k}T12:00:00`);
     const isToday = k === s.today;
     const cls = `wd${isCur ? ' sel' : ''}${isToday && !isCur ? ' is-today' : ''}${st === 'full' ? ' done-pill' : ''}${future ? ' fut' : ''}`;
+    const barCls = st === 'full' ? ' full' : pct > 0 ? ' part' : '';
     return `<button class="${cls}" type="button" data-act="day" data-key="${k}"${isCur ? ' aria-current="date"' : ''}
       aria-label="${dayShort(k)}${isToday ? '، النهارده' : ''}: ${DAY_WORD[st]}">
       <span class="l">${WD[d.getDay()]}</span>
-      <span class="wd-ring">${dayRing(pct, future)}<span class="n">${fmtNum(d.getDate())}</span></span>
+      <span class="n">${fmtNum(d.getDate())}</span>
+      <span class="wd-bar${barCls}" aria-hidden="true"><i style="width:${future ? 0 : pct}%"></i></span>
     </button>`;
   }).join('');
 
@@ -117,125 +108,161 @@ export function updateStatus(root, s) {
 // ---------- قطع مشتركة ----------
 export function habitsGrid(day, withMore, settings) {
   const hs = activeHabits(settings);
-  return `<div class="habits">${hs.map((h) => `<button class="hp" type="button" data-tri="${esc(h.k)}" data-label="${esc(h.n)}"><i></i>${esc(h.n)}</button>`).join('')}
+  return `<div class="habits2">${hs.map((h) => `<button class="hp" type="button" data-tri="${esc(h.k)}" data-label="${esc(h.n)}"><i></i><span>${esc(h.n)}</span></button>`).join('')}
     ${withMore ? '<button class="hp more" type="button" data-act="sheet" data-sheet="habits">الأرقام والتفاصيل</button>' : ''}</div>`;
 }
 
-/** صف الصلوات الخمس بأساميهم (فجر · ضهر · عصر · مغرب · عشاء) مع تحديث salah و fajr تلقائياً. */
-export function salahRow(day = {}) {
-  const ps = prayersState(day);
-  const cnt = PRAYERS.filter(([k]) => ps[k]).length;
-  return `<div class="pray pray-named">
-      <div class="pray-h"><span>الصلوات في وقتها</span><b>${fmtNum(cnt)}/٥</b></div>
-      <div class="pseg5" role="group" aria-label="الصلوات الخمس">
-        ${PRAYERS.map(([k, l]) => `<button class="ps5${ps[k] ? ' on' : ''}" type="button" data-act="prayer" data-p="${k}" aria-pressed="${!!ps[k]}">${l}</button>`).join('')}
-      </div>
+/** صف الصلوات الخمس بتقييم الخشوع والاستعداد (١–٥ لكل صلاة) + شريط التقييم التفاعلي تحتها. */
+export function salahRow(day = {}, activePick = null) {
+  const ps = prayerSummary(day);
+  const picked = PRAYERS.find(([k]) => k === activePick);
+
+  const tiles = PRAYERS.map(([k, l]) => {
+    const sc = ps.scores[k];
+    const on = ps.prayed[k];
+    const isPick = activePick === k;
+    const lvCls = sc ? ` lv-${sc}` : on ? ' lv-3' : '';
+    const valTxt = sc ? `${fmtNum(sc)}/٥` : on ? '✓' : '—';
+    const pct = sc ? (sc / 5) * 100 : on ? 60 : 0;
+    return `<button class="ps5${lvCls}${isPick ? ' picking' : ''}" type="button" data-act="praypick" data-p="${k}" aria-expanded="${isPick}" aria-label="${l}: ${sc ? `${sc} من ٥` : on ? 'اتصلّت' : 'مش متسجلة'}">
+      <span class="ps5-n">${l}</span>
+      <span class="ps5-v">${valTxt}</span>
+      <span class="ps5-bar" aria-hidden="true"><i style="width:${pct}%"></i></span>
+    </button>`;
+  }).join('');
+
+  let picker = '';
+  if (picked) {
+    const [pk, pl] = picked;
+    const curSc = ps.scores[pk];
+    const curOn = ps.prayed[pk];
+    picker = `<div class="pray-pick" role="group" aria-label="تقييم خشوع واستعداد ${pl}">
+        <div class="pray-ph">
+          <span>خشوع واستعداد <b>${pl}</b>${curSc ? ` · <em>${KHUSHU_LABELS[curSc]}</em>` : ''}</span>
+          ${curOn || curSc ? `<button class="pray-clr" type="button" data-act="prayrate" data-p="${pk}" data-v="0">مسح</button>` : ''}
+        </div>
+        <div class="pray-nums">
+          ${[1, 2, 3, 4, 5].map((n) => `<button class="pnum${curSc === n ? ` on lv-${n}` : ''}" type="button" data-act="prayrate" data-p="${pk}" data-v="${n}" aria-pressed="${curSc === n}">${fmtNum(n)}</button>`).join('')}
+        </div>
+        <div class="pray-ends"><span>١ · سريع / مشتت</span><span>٥ · خشوع واستعداد كامل</span></div>
+      </div>`;
+  }
+
+  return `<div class="pray-card">
+      <div class="pseg5" role="group" aria-label="الصلوات الخمس">${tiles}</div>
+      ${picker}
     </div>`;
 }
 
-// ---------- كارت «نبض اليوم» الموحّد ----------
+// ---------- كارت «ملخص اليوم» (٢ كبار فوق: النوم والعادات + ٣ تحت: الفلوس، الشغل، وقت ضايع) ----------
 const ARROW = { up: 'M12 19V5M6 11l6-6 6 6', down: 'M12 5v14M6 13l6 6 6-6' };
 const showVal = (kind, v) => (kind === 'min' ? fmtHM(Math.round(v)) : fmtNum(kind === 'money' ? Math.round(v) : v));
 
-function diffText(v, base, kind, eps, isLater) {
+function diffText(v, base, kind, eps, emptyLabel = 'اضغط للتسجيل') {
   if (v != null) {
     const cmp = compareTo(v, base, eps);
     if (cmp?.dir === 'same') return '<span class="pm-sub">= زي متوسطك</span>';
     if (cmp) return `<span class="pm-sub"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${ARROW[cmp.dir]}"/></svg>${fmtDiff(kind, cmp.diff)}</span>`;
     return '';
   }
-  if (isLater) return '<span class="pm-sub">بالليل</span>';
   if (base != null) return `<span class="pm-sub">متوسطك ${showVal(kind, base)}</span>`;
-  return '<span class="pm-sub">ناقص</span>';
+  return `<span class="pm-sub">${emptyLabel}</span>`;
 }
 
-function summary(s, split, ctx, tb) {
-  const { now, later } = split;
+function summary(s, ctx, tb) {
   const base = ctx.base || {};
   const cfg = s.settings;
   const isToday = s.cur === s.today;
-  const future = s.cur > s.today;
-
-  let headHtml;
-  if (!now.length && !later.length) {
-    headHtml = '<div class="pulse-ok"><i class="dot done" aria-hidden="true"></i><span>اليوم مكتمل كله</span></div>';
-  } else if (!now.length) {
-    headHtml = `<div class="pulse-h"><b>${future ? 'ده يوم جاي' : 'مفيش حاجة ناقصة دلوقتي'}</b></div>`;
-  } else {
-    headHtml = `<div class="pulse-h"><b>فاضل${isToday ? ' دلوقتي' : ''} <em>${fmtNum(now.length)}</em></b>
-        <button class="sum-go" type="button" data-act="guide">كمّل بالترتيب${ic(P.chev)}</button></div>
-      <div class="sum-miss">${now.map((x) => `<button class="mchip" type="button" data-act="guide" data-q="${x.k}" aria-label="${x.t}: ناقص"><i class="dot miss" aria-hidden="true"></i>${x.t}</button>`).join('')}</div>`;
-  }
-  const lat = later.length && !future
-    ? `<p class="sum-later"><i class="dot later" aria-hidden="true"></i><span>بالليل: ${later.map((x) => x.t).join('، ')}</span></p>` : '';
-
   const nums = dayNums(s.day);
-  const laterK = new Set(later.map((x) => x.k));
 
+  // ١. النوم
   const sleepMin = nums.sleep ?? (tb.by.sleep ? tb.by.sleep * 60 : null);
   const sleepGoalMin = (cfg.sleepTarget || 7.5) * 60;
   const sleepPct = sleepMin != null ? Math.min(100, Math.round((sleepMin / sleepGoalMin) * 100)) : 0;
   const sleepMet = sleepMin != null && sleepMin >= sleepGoalMin;
   const sqLbl = SLEEP_QUAL.find(([k]) => k === s.day.sleepq)?.[1] || '';
+  const sleepSub = nums.sleep == null && tb.by.sleep
+    ? '<span class="pm-sub">من تاب الوقت</span>'
+    : sqLbl ? `<span class="pm-sub">${sqLbl}${+s.day.nap > 0 ? ` · قيلولة ${fmtNum(+s.day.nap)}د` : ''}</span>`
+    : diffText(nums.sleep, base.sleep, 'min', 5, 'اضغط للتسجيل');
 
-  const workH = nums.work ?? (tb.by.work ?? null);
-  const workGoal = cfg.workTarget || 7;
-  const workPct = workH != null ? Math.min(100, Math.round((workH / workGoal) * 100)) : 0;
-  const workMet = workH != null && workH >= workGoal;
-
+  // ٢. العادات (مع الصلوات ومتوسط الخشوع)
   const hs = activeHabits(cfg);
   const hDone = habitsDone(s.day, cfg);
   const hPart = hs.filter((h) => s.day[h.k] === 1).length;
   const hPct = hs.length ? Math.round(((hDone + hPart * 0.5) / hs.length) * 100) : 0;
-  const salah = PRAYERS.filter(([k]) => prayersState(s.day)[k]).length;
+  const psum = prayerSummary(s.day);
+  const habitsSub = `صلوات ${fmtNum(psum.count)}/٥${psum.avg != null ? ` · خشوع ${fmtNum(psum.avg)}` : ''}`;
 
-  const screenGoalMin = (cfg.screenLimit || 3) * 60;
-  const screenPct = nums.screen != null ? Math.min(100, Math.round((nums.screen / screenGoalMin) * 100)) : 0;
-  const screenOk = nums.screen != null && nums.screen <= screenGoalMin;
+  // ٣. الفلوس
+  const spendVal = nums.spend != null
+    ? `${fmtNum(Math.round(nums.spend))} <small>ج</small>`
+    : s.day.noSpend ? '٠ <small>ج</small>' : '—';
+  const spendSub = s.day.noSpend && nums.spend == null
+    ? '<span class="pm-sub">ماصرفتش</span>'
+    : diffText(nums.spend, base.spend, 'money', 5, 'اضغط للتسجيل');
 
-  const sleepSub = nums.sleep == null && tb.by.sleep
-    ? '<span class="pm-sub">من سجل الوقت</span>'
-    : sqLbl ? `<span class="pm-sub">${sqLbl}${+s.day.nap > 0 ? ` · قيلولة ${fmtNum(+s.day.nap)}د` : ''}</span>`
-    : diffText(nums.sleep, base.sleep, 'min', 5, laterK.has('sleep'));
+  // ٤. الشغل (محسوب تلقائياً من تسجيل تاب «الوقت»، مع fallback لليدوي لو موجود)
+  const workFromTime = tb.by.work > 0 ? tb.by.work : null;
+  const workH = workFromTime ?? nums.work;
+  const workGoal = cfg.workTarget || 7;
+  const workPct = workH != null ? Math.min(100, Math.round((workH / workGoal) * 100)) : 0;
+  const workMet = workH != null && workH >= workGoal;
+  const workVal = workH != null ? `${fmtNum(workH)} <small>س</small>` : s.day.workOff ? 'إجازة' : '—';
+  const workSub = workFromTime != null
+    ? '<span class="pm-sub">من تاب الوقت</span>'
+    : s.day.workOff && workH == null
+      ? '<span class="pm-sub">يوم إجازة</span>'
+      : workH != null
+        ? diffText(workH, base.work, 'h', 0.25)
+        : '<span class="pm-sub">سجّل من الوقت</span>';
 
-  const workSub = s.day.workOff && workH == null
-    ? '<span class="pm-sub">يوم إجازة</span>'
-    : nums.work == null && tb.by.work
-      ? '<span class="pm-sub">من سجل الوقت</span>'
-      : diffText(nums.work, base.work, 'h', 0.25, laterK.has('work'));
+  // ٥. وقت ضايع (محسوب تلقائياً من مجال «تشتيت» في تاب «الوقت»)
+  const wasteH = tb.by.distract || 0;
+  const wasteCap = cfg.screenLimit || 3;
+  const wastePct = wasteH > 0 ? Math.min(100, Math.round((wasteH / wasteCap) * 100)) : 0;
+  const wasteVal = wasteH > 0
+    ? `${fmtNum(wasteH)} <small>س</small>`
+    : tb.total > 0 ? '٠ <small>س</small>' : '—';
+  const wasteSub = wasteH > 0
+    ? '<span class="pm-sub">من تاب الوقت</span>'
+    : tb.total > 0
+      ? '<span class="pm-sub">صفر تشتيت ✓</span>'
+      : '<span class="pm-sub">سجّل من الوقت</span>';
 
   const heroRow = `<div class="pm-hero">
-      <button class="pm-cell hero${sleepMin == null ? ' none' : ''}" type="button" data-act="sheet" data-sheet="sleep" aria-label="النوم: ${sleepMin != null ? fmtHM(Math.round(sleepMin)) : 'ناقص'}">
+      <button class="pm-cell hero${sleepMin == null ? ' none' : ''}" type="button" data-act="sheet" data-sheet="sleep" aria-label="النوم: ${sleepMin != null ? fmtHM(Math.round(sleepMin)) : 'فاضي'}">
         <span class="pm-k"><span>النوم</span><span class="pm-ic">${ico('moon')}</span></span>
         <span class="pm-v">${sleepMin != null ? fmtHM(Math.round(sleepMin)) : '—'}</span>
         ${sleepSub}
         <span class="pm-line${sleepMet ? ' done' : ''}"><i style="width:${sleepPct}%"></i></span>
       </button>
-      <button class="pm-cell hero${workH == null && !s.day.workOff ? ' none' : ''}" type="button" data-act="sheet" data-sheet="work" aria-label="الشغل: ${workH != null ? `${fmtNum(workH)} ساعة` : s.day.workOff ? 'إجازة' : 'ناقص'}">
-        <span class="pm-k"><span>الشغل</span><span class="pm-ic">${ico('brief')}</span></span>
-        <span class="pm-v">${workH != null ? `${fmtNum(workH)} <small>س</small>` : s.day.workOff ? 'إجازة' : '—'}</span>
-        ${workSub}
-        <span class="pm-line${workMet || s.day.workOff ? ' done' : ''}"><i style="width:${s.day.workOff ? 100 : workPct}%"></i></span>
+      <button class="pm-cell hero${hDone || hPart ? ' done' : ' none'}" type="button" data-act="scroll" data-to="habits-sec" aria-label="العادات: ${fmtNum(hDone)} من ${fmtNum(hs.length)}">
+        <span class="pm-k"><span>العادات</span><span class="pm-ic">${ico('check')}</span></span>
+        <span class="pm-v">${fmtNum(hDone)}<small>/${fmtNum(hs.length)}</small></span>
+        <span class="pm-sub">${habitsSub}</span>
+        <span class="pm-line done"><i style="width:${hPct}%"></i></span>
       </button>
     </div>`;
 
   const subRow = `<div class="pm-sub3">
-      <button class="pm-cell${hDone || hPart ? ' done' : ' none'}" type="button" data-act="scroll" data-to="pillars" aria-label="العادات: ${fmtNum(hDone)} من ${fmtNum(hs.length)}">
-        <span class="pm-k"><span>العادات</span><span class="pm-ic">${ico('check')}</span></span>
-        <span class="pm-v sm">${fmtNum(hDone)}<small>/${fmtNum(hs.length)}</small></span>
-        <span class="pm-sub">صلوات ${fmtNum(salah)}/٥</span>
-        <span class="pm-line done"><i style="width:${hPct}%"></i></span>
-      </button>
-      <button class="pm-cell${nums.screen == null ? ' none' : ''}" type="button" data-act="sheet" data-sheet="screen" aria-label="الشاشة: ${nums.screen != null ? fmtHM(Math.round(nums.screen)) : 'ناقص'}">
-        <span class="pm-k"><span>الشاشة</span><span class="pm-ic">${ico('phone')}</span></span>
-        <span class="pm-v sm">${nums.screen != null ? fmtHM(Math.round(nums.screen)) : '—'}</span>
-        ${diffText(nums.screen, base.screen, 'min', 5, laterK.has('screen'))}
-        ${nums.screen != null ? `<span class="pm-line${screenOk ? ' done' : ''}"><i style="width:${screenPct}%"></i></span>` : ''}
-      </button>
-      <button class="pm-cell${nums.spend != null ? ' money' : s.day.noSpend ? ' done' : ' none'}" type="button" data-act="tab" data-tab="money" aria-label="الفلوس: ${nums.spend != null ? `${fmtNum(Math.round(nums.spend))} جنيه` : s.day.noSpend ? 'ماصرفتش' : 'ناقص'}">
+      <button class="pm-cell${nums.spend != null ? ' money' : s.day.noSpend ? ' done' : ' none'}" type="button" data-act="tab" data-tab="money" aria-label="الفلوس">
         <span class="pm-k"><span>الفلوس</span><span class="pm-ic">${ico('wallet')}</span></span>
-        <span class="pm-v sm">${nums.spend != null ? `${fmtNum(Math.round(nums.spend))} <small>ج</small>` : s.day.noSpend ? '٠ <small>ج</small>' : '—'}</span>
-        ${s.day.noSpend && nums.spend == null ? '<span class="pm-sub">ماصرفتش</span>' : diffText(nums.spend, base.spend, 'money', 5, laterK.has('money'))}
+        <span class="pm-v sm">${spendVal}</span>
+        ${spendSub}
+        <span class="pm-line"><i style="width:0%"></i></span>
+      </button>
+      <button class="pm-cell${workH == null && !s.day.workOff ? ' none' : workMet ? ' done' : ''}" type="button" data-act="timecat" data-c="work" aria-label="الشغل من الوقت">
+        <span class="pm-k"><span>الشغل</span><span class="pm-ic">${ico('brief')}</span></span>
+        <span class="pm-v sm">${workVal}</span>
+        ${workSub}
+        <span class="pm-line${workMet || s.day.workOff ? ' done' : ''}"><i style="width:${s.day.workOff ? 100 : workPct}%"></i></span>
+      </button>
+      <button class="pm-cell${wasteH > 0 ? ' waste' : tb.total > 0 ? ' done' : ' none'}" type="button" data-act="timecat" data-c="distract" aria-label="الوقت الضايع من الوقت">
+        <span class="pm-k"><span>وقت ضايع</span><span class="pm-ic">${ico('distract')}</span></span>
+        <span class="pm-v sm">${wasteVal}</span>
+        ${wasteSub}
+        <span class="pm-line${wasteH > 0 ? ' waste' : ''}"><i style="width:${wastePct}%"></i></span>
       </button>
     </div>`;
 
@@ -245,72 +272,34 @@ function summary(s, split, ctx, tb) {
         <button class="nextp-b" type="button" data-act="nextptask" data-v="${esc(ctx.prevNextp)}">+ لمهامي</button>
       </div>` : '';
 
-  const anyBase = ['sleep', 'screen', 'work', 'spend'].some((m) => base[m] != null);
-  const cap = anyBase ? 'الأسهم مقارنة بمتوسط آخر ٧ أيام' : 'المقارنة بمتوسطك بتظهر بعد ٣ أيام تسجيل';
-
-  return `<section class="pulse${!now.length && !later.length ? ' ok' : ''}" aria-label="ملخص اليوم">
-      <div class="pulse-top">${headHtml}${lat}</div>
-      ${prevNextp}
+  return `<section class="pulse" aria-label="ملخص اليوم">
       ${heroRow}
       ${subRow}
-      <p class="pulse-cap">${cap}</p>
+      ${prevNextp}
     </section>`;
 }
 
-// ---------- توزيع الوقت حسب المجالات ----------
-function timeSummary(tb, cfg) {
-  const ds = cfg.dayStart || 4;
-  const head = `<div class="sec"><b>توزيع وقتك</b><span class="mut">${tb.total ? `${fmtNum(tb.total)} من ٢٤ ساعة` : 'لسه مفيش ساعات'}</span></div>`;
-  if (!tb.total) {
-    return `${head}<section class="panel tsum-empty" aria-label="توزيع الوقت">
-      <p>سجّل ساعات يومك في تاب «الوقت»، وهتتجمّع هنا تلقائياً لكل مجال (نوم، شغل، تعلم، تشتيت…).</p>
-      <button class="lnk" type="button" data-act="tab" data-tab="time">سجّل ساعات اليوم${ic(P.chev)}</button>
-    </section>`;
-  }
-  const grid = tb.rows.map((r) => {
-    const val = r.hours === 1 ? 'ساعة' : r.hours === 2 ? 'ساعتين' : `${fmtNum(r.hours)} <small>${hoursWord(r.hours)}</small>`;
-    const pct = Math.round((r.hours / tb.total) * 100);
-    return `<button class="ts-item tc-${r.color || r.id}" type="button" data-act="timecat" data-c="${esc(r.id)}" aria-label="${esc(r.name)}: ${fmtHours(r.hours)}">
-      <span class="ts-ic">${ico(r.icon)}</span>
-      <span class="ts-m"><span class="ts-top"><span class="ts-n">${esc(r.name)}</span><span class="ts-p">${fmtNum(pct)}٪</span></span><span class="ts-v">${val}</span></span>
-    </button>`;
-  }).join('');
-  const left = 24 - tb.total;
-  return `${head}<section class="panel tsum" aria-label="توزيع الوقت">
-      <div class="tscale-wrap">
-        ${timeStackBar(tb)}
-        <div class="tscale" aria-hidden="true"><span>${fmtHour(ds)}</span><span>١٢ م</span><span>٨ م</span><span>${fmtHour(ds)}</span></div>
-      </div>
-      <div class="ts-grid">${grid}</div>
-      <div class="ts-foot">
-        <span>${left > 0 ? `فاضل ${fmtHours(left)} غير مسجّلة` : 'الـ ٢٤ ساعة متسجلين'}</span>
-        <button class="ts-go" type="button" data-act="tab" data-tab="time">سجّل الساعات${ic(P.chev)}</button>
-      </div>
+// ---------- قسم الصلوات المستقل (تقييم الخشوع والاستعداد ١–٥) ----------
+function prayersSection(s, activePick) {
+  const ps = prayerSummary(s.day);
+  const stat = ps.count
+    ? `${fmtNum(ps.count)}/٥${ps.avg != null ? ` · خشوع ${fmtNum(ps.avg)}` : ''}`
+    : 'اضغط على أي صلاة لتقييم خشوعك';
+  return `<div class="sec" id="prayers-sec"><b>الصلوات والخشوع</b><span class="${ps.count ? '' : 'mut'}">${stat}</span></div>
+    <section class="panel pblock" aria-label="الصلوات والخشوع">
+      ${salahRow(s.day, activePick)}
     </section>`;
 }
 
-// ---------- أركان حياتك ----------
-function pillarsSection(s, miss, linkedHabits) {
+// ---------- العادات اليومية (كارت واحد منظّم بشبكة متساوية 2×N بدل ٣ كروت ضخمة) ----------
+function habitsSection(s, linkedHabits) {
   const cfg = s.settings;
   const hs = activeHabits(cfg);
-  const groups = activeHabitGroups(cfg);
+  const groups = activeHabitGroups(cfg).filter((g) => g.items.length);
   const n = habitsDone(s.day, cfg);
-  const head = miss.has('habits') ? '<span class="ask">ناقص</span>' : `<span>${fmtNum(n)} من ${fmtNum(hs.length)} تم</span>`;
 
-  const cards = groups.map((g) => {
+  const blocks = groups.map((g, gi) => {
     const st = habitGroupStats(s.day, g);
-    const allDone = st.total > 0 && st.done === st.total;
-    let sub = st.total ? `فاضل ${fmtNum(st.total - st.done)}` : 'الصلوات';
-    if (allDone) sub = 'الركن ده كمل النهارده';
-    else if (st.part) sub = `فاضل ${fmtNum(st.total - st.done)} · ${fmtNum(st.part)} جزئي`;
-
-    const segs = st.total ? `<div class="pil-segs" style="grid-template-columns:repeat(${st.total},1fr)" aria-hidden="true">
-      ${g.keys.map((k) => {
-        const v = +s.day[k] || 0;
-        return `<i class="${v === 2 ? 'v2' : v === 1 ? 'v1' : ''}"></i>`;
-      }).join('')}</div>` : '';
-
-    // ملخص سريع لخانات التمرين (النوع + الوقت + الأرقام) جوّه ركن الصحة
     const hasWorkout = g.items.some((h) => h.workout);
     let wkStrip = '';
     if (hasWorkout) {
@@ -319,45 +308,70 @@ function pillarsSection(s, miss, linkedHabits) {
         has(s.day.exm) ? `${fmtNum(s.day.exm)} د` : '',
         has(s.day.exn) ? s.day.exn : '',
       ].filter(Boolean);
-      wkStrip = `<button class="wk-strip" type="button" data-act="sheet" data-sheet="habits">
-          <span>${wBits.length ? `تفاصيل التمرين: <b>${esc(wBits.join(' · '))}</b>` : 'سجّل تفاصيل التمرين (النوع، الوقت، الأرقام)'}</span>
-          ${ic(P.chev)}
-        </button>`;
+      if (wBits.length) {
+        wkStrip = `<button class="wk-strip" type="button" data-act="sheet" data-sheet="habits">
+            <span>التمرين: <b>${esc(wBits.join(' · '))}</b></span>${ic(P.chev)}
+          </button>`;
+      }
     }
-
-    return `<section class="panel pillar${allDone ? ' done' : ''}" aria-label="${esc(g.name)}">
-        <div class="pil-h">
-          <span class="pil-med">${ico(g.icon)}</span>
-          <div class="pil-m"><b>${esc(g.name)}</b><span class="${allDone ? 'ok' : ''}">${sub}</span></div>
-          ${st.total ? `<span class="pil-cnt">${fmtNum(st.done)}/${fmtNum(st.total)}</span>` : ''}
+    return `<div class="hgrp${gi > 0 ? ' sep' : ''}">
+        <div class="hgrp-h">
+          <span>${esc(g.name)}</span>
+          <b>${fmtNum(st.done)}/${fmtNum(st.total)}</b>
         </div>
-        ${segs}
-        ${g.items.length ? `<div class="habits2">${g.items.map((h) => {
+        <div class="habits2">${g.items.map((h) => {
           const dot = linkedHabits?.has(h.k) ? '<span class="hp-gdot" aria-hidden="true"></span>' : '';
           return `<button class="hp" type="button" data-tri="${esc(h.k)}" data-label="${esc(h.n)}"><i></i><span>${esc(h.n)}</span>${dot}</button>`;
-        }).join('')}</div>` : ''}
+        }).join('')}</div>
         ${wkStrip}
-        ${g.withSalah ? salahRow(s.day) : ''}
-      </section>`;
+      </div>`;
   }).join('');
 
-  return `<div class="sec" id="pillars"><b>عاداتك الصغيرة</b>${head}</div>
-    <div class="pillars">${cards}</div>
-    <button class="gh full" type="button" data-act="sheet" data-sheet="habits">أرقام وتفاصيل العادات (التمرين، الورد، الكافيين…)</button>`;
+  return `<div class="sec" id="habits-sec"><b>العادات اليومية</b><span>${fmtNum(n)} من ${fmtNum(hs.length)} تم</span></div>
+    <section class="panel hunified" aria-label="العادات اليومية">
+      ${blocks}
+      <button class="hdet-btn" type="button" data-act="sheet" data-sheet="habits">أرقام وتفاصيل العادات (التمرين، الورد، الكافيين…)${ic(P.chev)}</button>
+    </section>`;
 }
 
-// ---------- المزاج والطاقة وآخر اليوم ----------
+// ---------- شريط توزيع الوقت (يظهر بس لو سجّلت ساعات اليوم عشان مايشغلش مساحة فاضية) ----------
+function timeSummary(tb, cfg) {
+  if (!tb.total) return '';
+  const ds = cfg.dayStart || 4;
+  const grid = tb.rows.map((r) => {
+    const val = r.hours === 1 ? 'ساعة' : r.hours === 2 ? 'ساعتين' : `${fmtNum(r.hours)} <small>${hoursWord(r.hours)}</small>`;
+    const pct = Math.round((r.hours / tb.total) * 100);
+    return `<button class="ts-item tc-${r.color || r.id}" type="button" data-act="timecat" data-c="${esc(r.id)}" aria-label="${esc(r.name)}: ${fmtHours(r.hours)}">
+      <span class="ts-ic">${ico(r.icon)}</span>
+      <span class="ts-m"><span class="ts-top"><span class="ts-n">${esc(r.name)}</span><span class="ts-p">${fmtNum(pct)}٪</span></span><span class="ts-v">${val}</span></span>
+    </button>`;
+  }).join('');
+  return `<div class="sec"><b>توزيع وقتك</b><span class="mut">${fmtNum(tb.total)} من ٢٤ ساعة</span></div>
+    <section class="panel tsum" aria-label="توزيع الوقت">
+      <div class="tscale-wrap">
+        ${timeStackBar(tb)}
+        <div class="tscale" aria-hidden="true"><span>${fmtHour(ds)}</span><span>١٢ م</span><span>٨ م</span><span>${fmtHour(ds)}</span></div>
+      </div>
+      <div class="ts-grid">${grid}</div>
+      <div class="ts-foot">
+        <span>${24 - tb.total > 0 ? `فاضل ${fmtHours(24 - tb.total)}` : 'الـ ٢٤ ساعة متسجلين'}</span>
+        <button class="ts-go" type="button" data-act="tab" data-tab="time">تاب الوقت${ic(P.chev)}</button>
+      </div>
+    </section>`;
+}
+
+// ---------- المزاج وقفلة اليوم (مضغوطة واختيارية بدون ضغط) ----------
 function row({ sheet, t, sub, subCls = '', st }) {
-  const word = { done: 'اتسجل', miss: 'ناقص', later: 'بالليل' }[st];
-  return `<button class="lr c" type="button" data-act="sheet" data-sheet="${sheet}" aria-label="${t} ${word}">
+  return `<button class="lr c" type="button" data-act="sheet" data-sheet="${sheet}" aria-label="${t}">
     <i class="dot ${st}" aria-hidden="true"></i><span class="m"><span class="t">${t}</span><span class="s ${subCls}">${sub}</span></span>
     <span class="chev">${ic(P.chev)}</span></button>`;
 }
-function endOfDay(s, miss) {
+
+function endOfDay(s, closeOpen) {
   const d = s.day;
-  const sub = (k, empty) => (has(d[k]) ? [esc(d[k]), 'txt', 'done'] : miss.has(k) ? [empty, 'ask', 'miss'] : ['بالليل', '', 'later']);
-  const [ps, pc, pst] = sub('post', 'ناقص، دوس واكتب');
-  const [ts, tc, tst] = sub('top', 'ناقص، جملة قبل ما تنام');
+  const sub = (k, empty) => (has(d[k]) ? [esc(d[k]), 'txt', 'done'] : [empty, '', 'later']);
+  const [ps, pc, pst] = sub('post', 'اختياري — دوس واكتب');
+  const [ts, tc, tst] = sub('top', 'جملة واحدة قبل النوم');
 
   const enBits = [];
   if (has(d.moodTag)) enBits.push(d.moodTag);
@@ -366,16 +380,34 @@ function endOfDay(s, miss) {
   if (has(d.tired)) enBits.push('إرهاق');
   if (has(d.up)) enBits.push(`رفع: ${d.up}`);
   const enHas = enBits.length > 0 || ['p1e', 'p2e', 'p3e', 'p4e'].some((k) => has(d[k]));
-  const enSub = enBits.length ? esc(enBits.join(' · ')) : enHas ? 'الطاقة متسجلة' : 'حالة اليوم، التوتر، الإرهاق، اللي رفع طاقتك';
+  const enSub = enBits.length ? esc(enBits.join(' · ')) : enHas ? 'الطاقة متسجلة' : 'حالة اليوم، التوتر، الإرهاق';
 
-  const mood = `<div class="moodr"><span class="ml">مزاجك النهارده${miss.has('mood') ? '<small>ناقص</small>' : ''}</span>
-    <div class="pseg amb" data-rate="mood" role="group" aria-label="المزاج من ٥">${[1, 2, 3, 4, 5].map((i) => `<button class="ps" type="button" data-v="${i}" aria-label="${i} من ٥">${fmtNum(i)}</button>`).join('')}</div></div>`;
-  return `<div class="sec"><b>المزاج وآخر اليوم</b></div>
-    <section class="ledger">
-      ${mood}
+  const loggedWrap = [enHas, has(d.post), has(d.top), has(d.screen)].filter(Boolean).length;
+  const moodVal = +d.mood || 0;
+
+  const drawer = closeOpen ? `<div class="eod-drawer">
       ${row({ sheet: 'energy', t: 'الطاقة والتوتر', sub: enSub, subCls: enBits.length ? 'txt' : '', st: enHas ? 'done' : 'later' })}
       ${row({ sheet: 'post', t: 'أجّلت إيه؟', sub: ps, subCls: pc, st: pst })}
       ${row({ sheet: 'top', t: 'أهم حاجة حصلت', sub: ts, subCls: tc, st: tst })}
+      ${row({ sheet: 'screen', t: 'وقت الشاشة (Screen Time)', sub: has(d.screen) ? esc(d.screen) : 'اختياري', subCls: has(d.screen) ? 'txt' : '', st: has(d.screen) ? 'done' : 'later' })}
+      <button class="eod-guide" type="button" data-act="guide">قفلة سريعة سؤال بسؤال${ic(P.chev)}</button>
+    </div>` : '';
+
+  return `<div class="sec"><b>المزاج وآخر اليوم</b><span class="mut">${moodVal ? `${fmtNum(moodVal)} / ٥` : 'اختياري'}</span></div>
+    <section class="panel eod-card">
+      <div class="eod-mood">
+        <span class="eod-ml">مزاج اليوم</span>
+        <div class="pseg amb eod-pseg" data-rate="mood" role="group" aria-label="المزاج من ٥">
+          ${[1, 2, 3, 4, 5].map((i) => `<button class="ps" type="button" data-v="${i}" aria-label="${i} من ٥">${fmtNum(i)}</button>`).join('')}
+        </div>
+      </div>
+      <div class="eod-acts">
+        <button class="eod-btn${closeOpen ? ' on' : ''}" type="button" data-act="eodtoggle" aria-expanded="${!!closeOpen}">
+          قفلة اليوم${loggedWrap ? ` (${fmtNum(loggedWrap)})` : ''}
+        </button>
+        <button class="eod-btn ai" type="button" data-act="ai" data-kind="day">تقرير اليوم (AI)</button>
+      </div>
+      ${drawer}
     </section>`;
 }
 
@@ -411,19 +443,17 @@ function tasksToday(s, sys) {
 }
 
 export function renderToday(s, ctx = {}) {
-  const hour = ctx.hour ?? new Date().getHours();
-  const split = starSplit(s.day, s.cur, s.today, hour, s.settings);
-  const miss = new Set(split.now.map((x) => x.k));
   const tb = timeByCat(s.day, s.settings);
-  return `${summary(s, split, ctx, tb)}
+  return `${summary(s, ctx, tb)}
     ${periodCardToday(ctx.curPeriod, ctx.periodEv, s)}
     ${s.cur === s.today ? reviewBannerHtml(ctx.review) : ''}
     ${activeProjectToday(s, ctx.sys)}
     ${tasksToday(s, ctx.sys)}
-    ${pillarsSection(s, miss, ctx.gsum?.linkedHabits)}
+    ${prayersSection(s, ctx.prayPick)}
+    ${habitsSection(s, ctx.gsum?.linkedHabits)}
     ${timeSummary(tb, s.settings)}
-    ${endOfDay(s, miss)}
-    ${aiSection(s)}
+    ${endOfDay(s, ctx.closeOpen)}
+    ${ctx.closeOpen ? aiSection(s) : ''}
     ${metricsSection(s)}`;
 }
 
