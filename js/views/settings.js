@@ -150,7 +150,7 @@ export function updatePeriodDetail(sh, p, ev, s) {
   const backlogCnt = (s.goals || []).filter(isBacklogGoal).length;
   const nearEnd = s.today >= p.to;
   const revBtn = backlogCnt && nearEnd
-    ? `<button type="button" class="gh on" data-act="grevstart" data-pid="${id}">راجع بنك الأهداف (${fmtNum(backlogCnt)}) للفترة الجاية</button>`
+    ? `<button type="button" class="gh on" data-act="grevstart" data-pid="${id}">راجع المجمّد (${fmtNum(backlogCnt)}) للفترة الجاية</button>`
     : '';
 
   const html = `<p class="note" style="margin:0">${rangeStr}</p>
@@ -560,15 +560,15 @@ export function updateSettings(root, s, ui, sx = { configured: false }, days = [
       <div class="card">${syncCard(s, sx)}</div>
     </div>`;
 
-  // ٣أ. جوانب الحياة (خريطة الأهداف وبنك الأهداف)
+  // ٣أ. مجالات الحياة (الفلتر والخريطة)
   const areasList = activeLifeAreas(cfg);
   const areasHtml = `<div class="blk">
-      <p class="hint">خصّص جوانب حياتك اللي بتوزّع عليها أهدافك وبنك الأهداف (تقدر تعدّلهم كمان من «الخطة ← جوانب حياتي»).</p>
+      <p class="hint">خصّص مجالات حياتك اللي بتوزّع عليها عاداتك وأهدافك ومشاريعك (تقدر تعدّلهم كمان من «الخطة ← المجالات»).</p>
       <div class="card">${areasList.map((a) => `<button class="srow srow-b" type="button" data-act="laform" data-id="${esc(a.id)}" style="width:100%;padding-inline:14px">
         <span class="g-med sm" style="margin-inline-end:10px">${ico(a.icon)}</span>
         <span class="m"><b>${esc(a.name)}</b><span>${a.note ? esc(a.note) : 'دوس للتعديل'}</span></span>
       </button>`).join('')}</div>
-      <button type="button" class="gh" data-act="laform">+ جانب حياة جديد</button>
+      <button type="button" class="gh" data-act="laform">+ مجال جديد</button>
     </div>`;
 
   // ٨. التنبيهات والتفاعل
@@ -624,7 +624,7 @@ export function updateSettings(root, s, ui, sx = { configured: false }, days = [
     accSection('targets', 'اليوم والأهداف', `بداية ${fmtNum(cfg.dayStart)} ص · نوم ${fmtNum(cfg.sleepTarget)} س · شغل ${fmtNum(cfg.workTarget)} س`, targetsHtml, openSet),
     accSection('notify', 'التنبيهات والتفاعل', notifySub, notifyHtml, openSet),
     accSection('period', 'الفترة وهدف الفترة', curP ? (curEv ? `${curEv.title} (${fmtNum(curEv.pct)}٪)` : periodLabel(curP)) : 'مفيش فترة حالية', periodHtml, openSet),
-    accSection('areas', 'جوانب الحياة (خريطة الأهداف)', `${fmtNum(areasList.length)} جوانب قابلة للتخصيص`, areasHtml, openSet),
+    accSection('areas', 'مجالات الحياة (الفلتر والخريطة)', `${fmtNum(areasList.length)} مجالات قابلة للتخصيص`, areasHtml, openSet),
     accSection('habits', 'العادات والأركان', `${fmtNum(actHabits.length)} عادة في ${fmtNum(cfg.habitGroups.length)} أركان`, habitsHtml, openSet),
     accSection('cats', 'المشاريع والتصنيفات', `${fmtNum(cfg.projects.length)} مشروع · وقت · فلوس · أفكار`, catsHtml, openSet),
     accSection('stars', 'البنود الأساسية ★', `${fmtNum(enabledStars)} من ٨ مفعّلين`, starsHtml, openSet),

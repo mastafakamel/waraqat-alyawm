@@ -1,14 +1,14 @@
 // views/today.js — الهيدر وتبويبة «اليوم» (Obsidian & Champagne / Alabaster & Bronze).
 
 import {
-  PRAYERS, SLEEP_QUAL, STRESS_OPTS, activeHabits, activeHabitGroups, habitGroupStats, prayersState,
+  PRAYERS, SLEEP_QUAL, STRESS_OPTS, TODAY_TASK_LIMIT, activeHabits, activeHabitGroups, habitGroupStats, prayersState,
   dateTitle, fmtNum, fmtHM, fmtHour, habitsDone, todayTasks, groupTasks, has,
   periodOf, periodDay, isOverdue, shortDate, starSplit, dayStatus, dayProgress, satWeekKeys, weekNumber,
   dayNums, compareTo, fmtDiff, timeByCat, fmtHours, hoursWord,
 } from '../logic.js';
 import { esc, ic, ico, P, setHtml } from '../ui.js';
 import { timeStackBar } from './time.js';
-import { focusGoalsToday, reviewBannerHtml } from './goals.js';
+import { activeProjectToday, reviewBannerHtml } from './goals.js';
 import { periodCardToday } from './settings.js';
 import { metricsSection } from './metrics.js';
 import { aiSection } from './ai.js';
@@ -341,7 +341,7 @@ function pillarsSection(s, miss, linkedHabits) {
       </section>`;
   }).join('');
 
-  return `<div class="sec" id="pillars"><b>أركان حياتك</b>${head}</div>
+  return `<div class="sec" id="pillars"><b>عاداتك الصغيرة</b>${head}</div>
     <div class="pillars">${cards}</div>
     <button class="gh full" type="button" data-act="sheet" data-sheet="habits">أرقام وتفاصيل العادات (التمرين، الورد، الكافيين…)</button>`;
 }
@@ -379,29 +379,35 @@ function endOfDay(s, miss) {
     </section>`;
 }
 
-// ---------- مهام النهارده (لحد ٥ مهام، المهم أولاً) ----------
-function tasksToday(s) {
-  const all = todayTasks(s.tasks, s.today, s.settings?.dayStart);
-  const done = all.filter((t) => t.done).length;
-  const open = groupTasks(s.tasks, s.today).today.slice(0, 5);
+// ---------- مهام النهارده (٣ مهام بالكتير — من الشغّال بس) ----------
+function tasksToday(s, sys) {
+  const open = sys?.todayOpen?.list || groupTasks(s.tasks, s.today).today;
+  const done = (sys?.todayDone || []).length;
   const gMap = new Map((s.goals || []).map((g) => [String(g.id), g]));
-  const head = `<div class="sec"><b>مهام النهارده</b>${all.length ? `<span>${fmtNum(done)} من ${fmtNum(all.length)} خلصت</span>` : ''}</div>`;
-  const rows = open.map((t) => {
+  const over = open.length > TODAY_TASK_LIMIT;
+  const capText = `${fmtNum(open.length)} من ${fmtNum(TODAY_TASK_LIMIT)}${done ? ` · خلصت ${fmtNum(done)}` : ''}`;
+  const head = `<div class="sec"><b>مهام النهارده</b><span class="${over ? 'ask' : ''}">${capText}</span></div>`;
+  const rows = open.slice(0, 5).map((t) => {
     const g = t.goalId ? gMap.get(String(t.goalId)) : null;
     return `<div class="tk${t.pri ? ' pri' : ''}">
       <button class="tk-c" type="button" data-act="tdone" data-id="${esc(t.id)}" aria-pressed="false" aria-label="علّم إنها خلصت: ${esc(t.t)}"><i></i></button>
       <button class="tk-m tk-editb" type="button" data-act="tedit" data-id="${esc(t.id)}">
         <span class="tk-t">${t.pri ? '<span class="flag" aria-label="مهم">⚑</span>' : ''}${esc(t.t)}</span>
         <span class="tk-tags">
-          ${t.cat ? `<span class="tcat">${esc(t.cat)}</span>` : ''}
           ${g ? `<span class="g-tag">${ico('target')}<span>${esc(g.t)}</span></span>` : ''}
+          ${t.cat ? `<span class="tcat">${esc(t.cat)}</span>` : ''}
           ${isOverdue(t, s.today) ? `<span class="tk-s">${ic(P.clock)}متأخرة من ${shortDate(t.due)}</span>` : ''}
         </span>
-      </button></div>`;
+      </button>
+      <button class="ib" type="button" data-act="tfreeze" data-id="${esc(t.id)}" aria-label="جمّد المهمة لبعدين">${ic(P.down)}</button>
+    </div>`;
   }).join('');
-  const body = rows || `<p class="empty-s">${all.length ? 'خلّصت مهام النهارده كلها.' : 'مفيش مهام للنهارده.'}</p>`;
+  const body = rows || `<p class="empty-s">${done ? 'خلّصت مهام النهارده كلها ✓' : 'مفيش مهام للنهارده — اختار لحد ٣ مهام من الشغّال.'}</p>`;
   return `${head}<section class="list">${body}
-    <button class="lnk" type="button" data-act="gtasks">كل المهام${ic(P.chev)}</button></section>`;
+    <div class="today-tfoot">
+      <button class="lnk" type="button" data-act="fltform" data-kind="task" data-st="active">${ic(P.plus)} مهمة للنهارده</button>
+      <button class="lnk" type="button" data-act="gplan">الخطة كلها${ic(P.chev)}</button>
+    </div></section>`;
 }
 
 export function renderToday(s, ctx = {}) {
@@ -412,12 +418,12 @@ export function renderToday(s, ctx = {}) {
   return `${summary(s, split, ctx, tb)}
     ${periodCardToday(ctx.curPeriod, ctx.periodEv, s)}
     ${s.cur === s.today ? reviewBannerHtml(ctx.review) : ''}
-    ${focusGoalsToday(s, ctx.gsum)}
-    ${timeSummary(tb, s.settings)}
+    ${activeProjectToday(s, ctx.sys)}
+    ${tasksToday(s, ctx.sys)}
     ${pillarsSection(s, miss, ctx.gsum?.linkedHabits)}
+    ${timeSummary(tb, s.settings)}
     ${endOfDay(s, miss)}
     ${aiSection(s)}
-    ${tasksToday(s)}
     ${metricsSection(s)}`;
 }
 

@@ -15,6 +15,7 @@ import {
   weekKeys, satWeekKeys, dayStatus, dayProgress, baselineFor, starSplit,
   hourSpan, sleepHoursSplit, fmtHour, fmtHours, togglePrayer, activeHabits, activeHabitGroups, activeTimeCats,
   activeLifeAreas, isBacklogGoal, periodReviewState,
+  TODAY_TASK_LIMIT, itemKind, itemStatus, canAddTodayTask, systemState,
   HABIT_NUMS, goalRange, goalsSummary, evalPeriodGoal,
 } from './logic.js';
 import { monthSheet, updateMonth, shiftMonth } from './views/month.js';
@@ -22,14 +23,13 @@ import { $, $$, esc, openSheet, requestClose, isSheetOpen, sheetEl, syncFields, 
 import { renderHeader, updateStatus, renderToday, renderTabs } from './views/today.js';
 import { renderTime, hourSheet, updateHourSheet } from './views/time.js';
 import {
-  GOAL_PRESETS, renderGoals, goalDetailSheet, updateGoalDetail, goalArchiveSheet, goalFormSheet, updateGoalForm,
-  lifeAreaFormSheet, goalReviewSheet,
+  renderPlan, filterSheet, updateFilterSheet, projectSwapSheet, taskLimitSheet, nextProjectSheet,
+  goalDetailSheet, updateGoalDetail, goalArchiveSheet, lifeAreaFormSheet, goalReviewSheet,
 } from './views/goals.js';
 import {
   sheetFor, guideStep, updateOutputs, expEditSheet, taskEditSheet, ideaEditSheet,
 } from './views/sheets.js';
 import { dockHtml, updateDock } from './views/dock.js';
-import { tasksShell, updateTasks } from './views/tasks.js';
 import { ideasShell, updateIdeas } from './views/ideas.js';
 import { moneyShell, updateMoney } from './views/money.js';
 import { SUGGEST, metricSheet, metricForm, updateMetricForm } from './views/metrics.js';
@@ -46,13 +46,12 @@ import {
 
 // حالة الواجهة بس (مش بتتحفظ)
 const ui = {
-  cat: 'أكل', catManual: false, guide: null, qmode: 'idea', qmenu: false, qcat: 'أكل', qcatManual: false, qarea: 'deen',
+  cat: 'أكل', catManual: false, guide: null, qmode: 'filter', qmenu: false, qcat: 'أكل', qcatManual: false, qarea: 'work',
   inccat: INC_CATS[0],
   tpri: false, twhen: 'today', tdate: '', tcat: '', tgoal: '', tfilt: 'all',
   icat: 'تاني', ifilt: 'all', drafts: {},
-  planSub: 'goals',
-  gfilt: 'all', barea: 'all',
-  gf: null, gdet: null, laf: null, lafFrom: null, rev: null,
+  planView: 'now', ftype: 'all', farea: 'all',
+  flt: null, tswap: null, gdet: null, laf: null, lafFrom: null, rev: null,
   mf: null, mfFrom: null,
   accOpen: new Set(['period']),
   pf: null, pfFrom: null, pdet: null,
@@ -64,7 +63,7 @@ const ui = {
   tbrush: 'work', tperiod: 'all', hf: null,
 };
 
-// كاش لكل الأيام عشان حساب الأهداف وهدف الفترة يشتغل فوراً
+// كاش لكل الأيام عشان حساب الأهداف والمشروع الشغّال يشتغل فوراً
 let daysCache = [];
 async function refreshDaysCache() {
   daysCache = await allDays();
@@ -75,9 +74,9 @@ function allDaysSync() {
   out.push({ key: state.cur, data: state.day });
   return out;
 }
-function goalSummaryNow() {
-  return goalsSummary(state.goals, {
-    days: allDaysSync(), tasks: state.tasks, metrics: state.metrics, today: state.today, settings: state.settings,
+function sysNow() {
+  return systemState(state.goals, state.tasks, state.settings, {
+    days: allDaysSync(), metrics: state.metrics, today: state.today,
   });
 }
 
@@ -113,7 +112,8 @@ function winCtx() {
     : null;
   const prevNextp = (win.days.get(addDays(state.today, -1))?.nextp || '').trim();
   const review = periodReviewState(state.periods, state.goals, state.today);
-  return { status, pct, base, hour: new Date().getHours(), gsum: goalSummaryNow(), curPeriod, periodEv, prevNextp, review };
+  const sys = sysNow();
+  return { status, pct, base, hour: new Date().getHours(), sys, gsum: sys.gsum, curPeriod, periodEv, prevNextp, review };
 }
 const sx = () => ({ configured: configured(), ...syncInfo });
 const DRAFTS = ['taskin', 'ideain', 'iq', 'mamt', 'mdesc', 'iamt', 'idesc', 'linein'];
@@ -123,7 +123,6 @@ if (theme === 'light' || theme === 'dark') document.documentElement.dataset.them
 
 // ---------- الرسم ----------
 const TABS = {
-  tasks: { shell: tasksShell, update: (v) => updateTasks(v, state, ui) },
   ideas: { shell: ideasShell, update: (v) => updateIdeas(v, state, ui) },
   money: { shell: moneyShell, update: (v) => updateMoney(v, state, ui, allDays) },
 };
@@ -134,9 +133,9 @@ function render() {
   setHtml($('#top'), renderHeader(state, ctx));
   updateStatus($('#top'), state);
   const view = $('#view');
-  if (state.tab === 'tasks' && ui.planSub !== 'tasks') {
-    setHtml(view, renderGoals(state, ui, ctx.gsum, ctx.review));
-    shown = 'goals';
+  if (state.tab === 'tasks') {
+    setHtml(view, renderPlan(state, ui, ctx.sys, ctx.review));
+    shown = 'plan';
   } else if (TABS[state.tab]) {
     const tab = TABS[state.tab];
     if (shown !== state.tab) {
@@ -183,8 +182,9 @@ function render() {
     if (ui.hf) updateHourSheet(sh, ui.hf, state);
     if (ui.gdet) {
       const g = state.goals.find((x) => String(x.id) === String(ui.gdet));
-      if (g) updateGoalDetail(sh, g, ctx.gsum.evals.get(g.id), state);
+      if (g) updateGoalDetail(sh, g, ctx.sys, state);
     }
+    if (ui.flt) updateFilterSheet(sh, ui.flt, ctx.sys, state);
   }
   scheduleNotifSync();
 }
@@ -211,10 +211,10 @@ function handleOpenTarget(rawUrl) {
   if (isSheetOpen()) requestClose();
   if (open === 'tasks' || open === 'newtask') {
     state.tab = 'tasks';
-    ui.planSub = 'tasks';
+    ui.planView = 'now';
     render();
     window.scrollTo(0, 0);
-    if (open === 'newtask') setTimeout(() => $('[data-role="taskin"]')?.focus(), 60);
+    if (open === 'newtask') setTimeout(() => openFilterSheet({ kind: 'task', st: 'active' }), 60);
   } else if (open === 'quick') {
     state.tab = 'day';
     render();
@@ -227,7 +227,7 @@ function handleOpenTarget(rawUrl) {
 }
 subscribe(render);
 const updateView = () => {
-  if (state.tab === 'tasks' && ui.planSub !== 'tasks') render();
+  if (state.tab === 'tasks') render();
   else TABS[state.tab]?.update($('#view'));
 };
 
@@ -316,15 +316,13 @@ async function handleQuick(form) {
   if (ui.qmode === 'idea') {
     addIdea(v, state.settings.ideaCats?.at(-1) || 'تاني');
     toast('الفكرة اتحفظت');
-  } else if (ui.qmode === 'goal') {
-    const areas = activeLifeAreas(state.settings);
-    const p = areas.some((a) => a.id === ui.qarea) ? ui.qarea : (areas[0]?.id || 'life');
-    addItem('goals', { id: uid(), st: 'backlog', t: v, p, done: false, at: Date.now() });
-    const aName = areas.find((a) => a.id === p)?.name || '';
-    toast(`اتحفظ في بنك الأهداف${aName ? ` · ${aName}` : ''}`);
+  } else if (ui.qmode === 'filter') {
+    inp.value = '';
+    updateDock($('#dock'), ui, state.cur !== today, state.settings);
+    return openFilterSheet({ t: v, p: ui.qarea, kind: 'project', st: sysNow().activeProject ? 'frozen' : 'active' });
   } else if (ui.qmode === 'task') {
-    addTask(v);
-    toast('المهمة اتضافت للنهارده');
+    const ok = tryAddTodayTask(v, { goalId: sysNow().activeProject?.id || '' });
+    if (ok) toast('المهمة اتضافت للنهارده');
   } else if (ui.qmode === 'exp') {
     const r = parseExpense(v);
     if (!r) return toastErr('اكتب المبلغ رقم، زي ٧٥ غدا');
@@ -600,6 +598,15 @@ function saveTaskEdit() {
   }
   const customDate = sh?.querySelector('[data-role="tedate"]')?.value || ui.te.date;
   const due = resolveTaskDue(ui.te.when, customDate);
+  const chk = due && due <= state.today ? canAddTodayTask(state.tasks, state.today, ui.te.id) : { ok: true };
+  if (!chk.ok) {
+    const tid = ui.te.id;
+    patchItem('tasks', tid, { t: txt, pri: !!ui.te.pri, cat: ui.te.cat || undefined, goalId: ui.te.goalId || undefined });
+    ui.te = null;
+    ui.tswap = { id: tid, t: txt };
+    openSheet({ ...taskLimitSheet(ui.tswap, chk.open), onClose: () => { ui.tswap = null; } });
+    return;
+  }
   patchItem('tasks', ui.te.id, {
     t: txt, due, pri: !!ui.te.pri,
     cat: ui.te.cat || undefined,
@@ -661,8 +668,9 @@ function ideaToTask(id) {
   if (!it) return;
   refreshToday();
   const txt = it.t.replace(/\s+/g, ' ').trim().slice(0, 140);
-  addTask(txt, { due: state.today });
-  toast('اتحولت لمهمة في النهارده ✓');
+  if (tryAddTodayTask(txt, { goalId: sysNow().activeProject?.id || '' })) {
+    toast('اتحولت لمهمة في النهارده ✓');
+  }
 }
 
 // ---------- الإعدادات ومقاييسي ----------
@@ -1193,227 +1201,326 @@ function addLine(form) {
   return toast(`اتكتب في ${label}`);
 }
 
-// ---------- نظام الأهداف المتكامل وبنك الأهداف وخريطة جوانب الحياة (تاب «الخطة») ----------
+// ---------- نظام الفلتر والربط الموحّد (المجال ← هدف ← مشروع واحد شغّال ← ٣ مهام للنهاردة + عادات للمجال) ----------
 const findGoal = (id) => state.goals.find((x) => String(x.id) === String(id));
-const HABIT_NUM_PILLAR = { wirdp: 'deen', exm: 'health', engm: 'growth', readp: 'growth', techm: 'growth', caf: 'health', relm: 'life' };
-const TIME_PILLAR = { work: 'work', learn: 'growth', health: 'health', sleep: 'health', deen: 'deen', life: 'life', rest: 'life', distract: 'life', move: 'work' };
-function inferGoalPillar(m, src) {
-  let guess = null;
-  if (m === 'habit') {
-    if (src.kind === 'salah') guess = 'deen';
-    else if (src.kind === 'sum') guess = HABIT_NUM_PILLAR[src.k] || 'health';
-    else guess = state.settings.habits.find((h) => h.k === src.k)?.g || 'health';
-  } else if (m === 'time') {
-    guess = TIME_PILLAR[src.c] || 'work';
-  } else if (m === 'metric' && (src.kind === 'income' || src.kind === 'exp_cap')) {
-    guess = 'work';
-  }
-  if (!guess) return null;
-  const areas = activeLifeAreas(state.settings);
-  return areas.some((a) => a.id === guess) ? guess : null;
-}
 
-function defaultGoalSrc(m, s) {
-  if (m === 'habit') {
-    const hs = activeHabits(s.settings);
-    const ex = hs.find((h) => h.k === 'ex') || hs[0];
-    return { kind: 'days', k: ex?.k || 'ex' };
+function freezeOtherActiveProjects(exceptId = '') {
+  let frozenPrev = null;
+  for (const g of state.goals) {
+    if (String(g.id) !== String(exceptId) && itemKind(g) === 'project' && itemStatus(g) === 'active') {
+      frozenPrev = frozenPrev || g.t;
+      patchItem('goals', g.id, { st: 'frozen', f: false });
+    }
   }
-  if (m === 'time') return { kind: 'cat', c: 'work' };
-  if (m === 'metric') {
-    const first = s.metrics[0];
-    return first ? { kind: 'sum', id: first.id } : { kind: 'exp_cap', cat: s.settings.expCats[0] || 'أكل' };
-  }
-  return {};
-}
-function defaultGoalUnit(m, src, s) {
-  if (m === 'habit') {
-    if (src.kind === 'salah') return 'صلاة';
-    if (src.kind === 'sum') return HABIT_NUMS.find(([k]) => k === src.k)?.[2] || '';
-    return 'يوم';
-  }
-  if (m === 'time') return 'ساعة';
-  if (m === 'metric') {
-    if (src.kind === 'income' || src.kind === 'exp_cap') return 'ج';
-    const met = s.metrics.find((x) => String(x.id) === String(src.id));
-    return met?.u || (met?.t === 'tri' ? 'يوم' : '');
-  }
-  if (m === 'manual') return 'مرة';
-  return '';
+  return frozenPrev;
 }
 
 function openGoalDetail(id) {
   const g = findGoal(id);
   if (!g) return;
-  if (isBacklogGoal(g)) return openGoalForm(g.id);
-  const gsum = goalSummaryNow();
-  const ev = gsum.evals.get(g.id);
+  if (itemKind(g) === 'goal') return openFilterEdit(g.id);
   ui.gdet = g.id;
-  ui.gf = null;
+  ui.flt = null;
   openSheet({ ...goalDetailSheet(g), onClose: () => { ui.gdet = null; } });
-  updateGoalDetail(sheetEl(), g, ev, state);
+  updateGoalDetail(sheetEl(), g, sysNow(), state);
 }
 
-function openGoalForm(id, prefill = null, opts = {}) {
+// ---------- الفلتر السريع (٣ أسئلة بس) ----------
+function openFilterSheet(prefill = {}) {
   refreshToday();
-  const g = id ? findGoal(id) : null;
-  const base = g || prefill || {};
-  const wasBacklog = !!g && isBacklogGoal(g);
-  const promoting = !!opts.promote;
-  const st = promoting ? 'active' : (opts.st || (g ? (wasBacklog ? 'backlog' : 'active') : (prefill?.st || 'active')));
+  const sys = sysNow();
   const areas = activeLifeAreas(state.settings);
-  const defaultArea = areas.some((a) => a.id === base.p) ? base.p : (areas[0]?.id || 'life');
-  const m = base.m || (promoting ? 'steps' : 'time');
-  const hz = base.hz || (promoting ? 'period' : 'month');
-  const rng = g?.from && g?.to && !wasBacklog ? { from: g.from, to: g.to } : goalRange(hz, state.today, state.periods);
-  const src = base.src && Object.keys(base.src).length ? { ...base.src } : defaultGoalSrc(m, state);
-  const unit = base.unit ?? defaultGoalUnit(m, src, state);
-  const stepsText = Array.isArray(base.steps) ? base.steps.map((x) => (typeof x === 'string' ? x : x.t)).join('\n') : '';
+  const curArea = String(ui.planView || '').startsWith('area:') ? ui.planView.slice(5) : '';
+  const p = areas.some((a) => a.id === prefill.p)
+    ? prefill.p
+    : (areas.some((a) => a.id === curArea) ? curArea : (areas[0]?.id || 'work'));
+  const kind = prefill.kind || 'project';
+  const defaultSt = kind === 'habit' || kind === 'task'
+    ? 'active'
+    : (kind === 'project' ? (sys.activeProject ? 'frozen' : 'active') : 'active');
   ui.gdet = null;
-  ui.gf = {
-    id: g?.id || null,
-    t: base.t || '',
-    p: defaultArea,
-    pSet: !!(g || prefill?.p),
-    st,
-    wasBacklog,
-    promoting,
-    fromReview: !!opts.fromReview,
-    pri: !!base.pri,
-    why: base.why || '',
-    m, src, hz, from: rng.from, to: rng.to,
-    start: base.start != null ? String(base.start) : '',
-    target: base.target != null ? String(base.target) : (m === 'time' ? '30' : m === 'habit' ? '20' : m === 'manual' ? '10' : '100'),
-    unit,
-    f: base.f !== undefined && !wasBacklog ? !!base.f : state.goals.filter((x) => !x.done && !isBacklogGoal(x) && x.f).length < 3,
-    stepsText,
+  ui.flt = {
+    id: null,
+    p,
+    kind,
+    st: prefill.st || defaultSt,
+    t: prefill.t || '',
+    why: prefill.why || '',
+    outcome: prefill.outcome || '',
+    parentId: prefill.parentId || '',
+    newGoal: false,
+    newGoalTitle: '',
+    unit: '',
+    stepsText: '',
+    pri: !!prefill.pri,
+    linkActive: !!sys.activeProject,
+    swapTaskId: '',
+    fromReview: !!prefill.fromReview,
   };
   openSheet({
-    ...goalFormSheet(ui.gf, state),
+    ...filterSheet(ui.flt, sys, state),
     onClose: () => {
-      ui.gf = null;
+      ui.flt = null;
       if (ui.rev && !ui.rev._handoff) ui.rev = null;
     },
   });
-  updateGoalForm(sheetEl(), ui.gf, state);
-  const titleEl = sheetEl()?.querySelector('[data-role="gtitle"]');
-  if (titleEl && !titleEl.value) titleEl.focus({ preventScroll: true });
+  updateFilterSheet(sheetEl(), ui.flt, sys, state, true);
 }
 
-function saveGoalForm() {
-  const f = ui.gf;
+function openFilterEdit(id) {
+  const g = findGoal(id);
+  if (!g) return;
+  refreshToday();
+  const sys = sysNow();
+  const areas = activeLifeAreas(state.settings);
+  const p = areas.some((a) => a.id === g.p) ? g.p : (areas[0]?.id || 'work');
+  const kind = itemKind(g);
+  ui.gdet = null;
+  ui.flt = {
+    id: g.id,
+    p,
+    kind,
+    st: itemStatus(g) === 'frozen' ? 'frozen' : 'active',
+    t: g.t || '',
+    why: g.why || '',
+    outcome: g.outcome || '',
+    parentId: g.parentId || '',
+    newGoal: false,
+    newGoalTitle: '',
+    unit: '',
+    stepsText: '',
+    pri: !!g.pri,
+    linkActive: false,
+    swapTaskId: '',
+    fromReview: false,
+  };
+  openSheet({
+    ...filterSheet(ui.flt, sys, state),
+    onClose: () => { ui.flt = null; },
+  });
+  updateFilterSheet(sheetEl(), ui.flt, sys, state);
+}
+
+function saveFilterSheet() {
+  const f = ui.flt;
   if (!f) return undefined;
   const sh = sheetEl();
-  const t = (sh?.querySelector('[data-role="gtitle"]')?.value ?? f.t ?? '').trim();
+  const t = (sh?.querySelector('[data-role="flttitle"]')?.value ?? f.t ?? '').trim();
   if (!t) {
-    toastErr('اكتب اسم الهدف');
-    return sh?.querySelector('[data-role="gtitle"]')?.focus();
+    toastErr('اكتب الاسم الأول');
+    return sh?.querySelector('[data-role="flttitle"]')?.focus();
   }
-  const why = (sh?.querySelector('[data-role="gfwhy"]')?.value ?? f.why ?? '').trim();
 
-  // حفظ في «بنك الأهداف» (بدون تاريخ ولا ضغط قياس)
-  if (f.st === 'backlog') {
-    const bkPayload = {
-      t, p: f.p, st: 'backlog', pri: !!f.pri, why: why || undefined, f: false, done: false,
-    };
-    if (f.id) {
-      patchItem('goals', f.id, bkPayload);
-      requestClose();
-      return toast('اتحفظ في بنك الأهداف');
-    }
-    addItem('goals', { id: uid(), ...bkPayload, at: Date.now() });
+  // ١. عادة صغيرة ← تخدم المجال مباشرة
+  if (f.kind === 'habit') {
+    const unit = (sh?.querySelector('[data-role="fltunit"]')?.value ?? f.unit ?? '').trim();
+    const k = `h_${uid().slice(-5)}`;
+    const list = structuredClone(state.settings.habits);
+    list.push({ k, n: t, g: f.p, on: f.st === 'active', ...(unit ? { numK: `hn_${k}`, numU: unit } : {}) });
+    patchSettings({ habits: list });
     requestClose();
-    if (state.tab === 'tasks' && ui.planSub === 'goals' && ui.gfilt !== `area:${f.p}`) {
-      ui.gfilt = 'backlog';
-      render();
+    return toast(f.st === 'active' ? `اتضافت عادة «${t}» للمجال ✓` : `اتحفظت عادة «${t}» في المجمّد`);
+  }
+
+  // ٢. مهمة مرة واحدة ← قاعدة ٣ مهام بالكتير للنهاردة
+  if (f.kind === 'task') {
+    refreshToday();
+    const sys = sysNow();
+    const goalId = f.linkActive && sys.activeProject ? sys.activeProject.id : '';
+    const areaObj = activeLifeAreas(state.settings).find((a) => a.id === f.p);
+    const cat = areaObj?.name || '';
+    if (f.st === 'frozen') {
+      addTask(t, { due: '', pri: !!f.pri, goalId, cat });
+      requestClose();
+      return toast(`اتجمّدت مهمة «${t}» لبعدين`);
     }
-    return toast(`اتركن «${t}» في بنك الأهداف`);
+    const chk = canAddTodayTask(state.tasks, state.today);
+    if (!chk.ok) {
+      if (f.swapTaskId) {
+        patchItem('tasks', f.swapTaskId, { due: '' });
+        addTask(t, { due: state.today, pri: !!f.pri, goalId, cat });
+        requestClose();
+        return toast('اتبدّلت المهمة واتضافت للنهاردة ✓');
+      }
+      addTask(t, { due: '', pri: !!f.pri, goalId, cat });
+      requestClose();
+      return toast(`اتحفظت في المجمّد (عندك ${fmtNum(TODAY_TASK_LIMIT)} مهام للنهاردة)`);
+    }
+    addTask(t, { due: state.today, pri: !!f.pri, goalId, cat });
+    requestClose();
+    return toast('اتضافت لمهام النهاردة ✓');
   }
 
-  const rng = f.hz === 'custom'
-    ? goalRange('custom', state.today, state.periods, f.from, f.to)
-    : goalRange(f.hz, state.today, state.periods);
-  if (rng.from > rng.to) return toastErr('تاريخ البداية لازم يبقى قبل النهاية');
-
-  const isTarget = f.m === 'metric' && f.src.kind === 'target';
-  const targetVal = f.m === 'steps' ? 0 : readNumber(sh?.querySelector('[data-role="gftarget"]')?.value ?? f.target);
-  if (f.m !== 'steps' && (targetVal === '' || (!isTarget && targetVal <= 0))) {
-    toastErr('اكتب رقم المستهدف');
-    return sh?.querySelector('[data-role="gftarget"]')?.focus();
-  }
-  const startVal = isTarget ? readNumber(sh?.querySelector('[data-role="gfstart"]')?.value ?? f.start) : '';
-  if (isTarget && startVal === '') {
-    toastErr('اكتب رقم البداية (الحالي)');
-    return sh?.querySelector('[data-role="gfstart"]')?.focus();
-  }
-  if (f.m === 'time' && f.src.kind === 'proj' && !(f.src.proj || '').trim()) {
-    toastErr('اكتب اسم المشروع');
-    return sh?.querySelector('[data-role="gfproj"]')?.focus();
+  // ٣. هدف (ليه؟)
+  if (f.kind === 'goal') {
+    const why = (sh?.querySelector('[data-role="fltwhy"]')?.value ?? f.why ?? '').trim();
+    const payload = { kind: 'goal', p: f.p, t, why: why || undefined, st: f.st, done: false };
+    if (f.id) {
+      patchItem('goals', f.id, payload);
+      requestClose();
+      return toast('اتحفظ تعديل الهدف ✓');
+    }
+    addItem('goals', { id: uid(), ...payload, at: Date.now() });
+    requestClose();
+    return toast(f.st === 'frozen' ? `اتجمّد هدف «${t}»` : `اتضاف هدف «${t}» ✓`);
   }
 
-  const unit = f.m === 'steps' ? 'خطوة' : ((sh?.querySelector('[data-role="gfunit"]')?.value ?? f.unit ?? '').trim() || defaultGoalUnit(f.m, f.src, state));
-  const payload = {
-    t, p: f.p, f: !!f.f, m: f.m, src: { ...f.src }, hz: f.hz, from: rng.from, to: rng.to,
-    st: undefined, pri: undefined, why: why || undefined,
-    ...(f.m !== 'steps' ? { target: targetVal, unit } : { unit: 'خطوة' }),
-    ...(isTarget ? { start: startVal } : { start: undefined }),
-  };
+  // ٤. مشروع (له نتيجة ونهاية وبيحقق هدف — قاعدة مشروع واحد شغّال بس)
+  const outcome = (sh?.querySelector('[data-role="fltout"]')?.value ?? f.outcome ?? '').trim();
+  let parentId = f.parentId || '';
+  if (f.newGoal) {
+    const ngt = (sh?.querySelector('[data-role="fltnewg"]')?.value ?? f.newGoalTitle ?? '').trim();
+    if (ngt) {
+      const ng = { id: uid(), kind: 'goal', p: f.p, t: ngt, st: f.st, done: false, at: Date.now() };
+      addItem('goals', ng);
+      parentId = ng.id;
+    }
+  }
+
+  let frozenOld = null;
+  if (f.st === 'active') frozenOld = freezeOtherActiveProjects(f.id || '');
 
   if (f.id) {
     const old = findGoal(f.id);
-    if (f.m === 'steps' && !Array.isArray(old?.steps)) {
-      const stepsRaw = (sh?.querySelector('[data-role="gfsteps"]')?.value ?? f.stepsText ?? '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-      payload.steps = stepsRaw.map((stTxt) => ({ id: uid(), t: stTxt, done: false }));
-    }
-    if (f.m === 'manual' && old?.cur == null) payload.cur = 0;
-    patchItem('goals', f.id, payload);
-    if (f.fromReview && ui.rev) {
-      ui.rev.stats.activated += 1;
-      ui.rev.i += 1;
-      ui.rev._handoff = true;
-      showReviewStep();
-      ui.rev._handoff = false;
-      return toast(`الهدف «${t}» بقى نشط دلوقتي ✓`);
-    }
-    if (f.wasBacklog) {
-      requestClose();
+    patchItem('goals', f.id, {
+      kind: 'project', p: f.p, parentId: parentId || undefined, t,
+      outcome: outcome || undefined, pri: !!f.pri, st: f.st, f: f.st === 'active',
+      m: old?.m || 'steps', done: false,
+    });
+    requestClose();
+    if (f.st === 'active') {
       state.tab = 'tasks';
-      ui.planSub = 'goals';
-      if (ui.gfilt === 'backlog') ui.gfilt = 'all';
+      ui.planView = 'now';
       render();
-      return toast(`الهدف «${t}» بقى نشط دلوقتي ✓`);
     }
-    toast('اتحفظ تعديل الهدف');
-    return openGoalDetail(f.id);
+    return toast(frozenOld ? `اتجمّد «${frozenOld}» واشتغل «${t}» ✓` : 'اتحفظ تعديل المشروع ✓');
   }
-  const steps = f.m === 'steps'
-    ? (sh?.querySelector('[data-role="gfsteps"]')?.value ?? f.stepsText ?? '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean).map((stTxt) => ({ id: uid(), t: stTxt, done: false }))
-    : undefined;
-  const item = {
-    id: uid(), ...payload,
-    ...(f.m === 'manual' ? { cur: 0 } : {}),
-    ...(steps ? { steps } : {}),
-    done: false, at: Date.now(),
-  };
-  addItem('goals', item);
+
+  const steps = (sh?.querySelector('[data-role="fltsteps"]')?.value ?? f.stepsText ?? '')
+    .split(/\r?\n/).map((x) => x.trim()).filter(Boolean).map((stTxt) => ({ id: uid(), t: stTxt, done: false }));
+  addItem('goals', {
+    id: uid(), kind: 'project', p: f.p, parentId: parentId || undefined, t,
+    outcome: outcome || undefined, pri: !!f.pri, st: f.st, f: f.st === 'active',
+    m: 'steps', steps, done: false, at: Date.now(),
+  });
   requestClose();
   state.tab = 'tasks';
-  ui.planSub = 'goals';
-  if (!String(ui.gfilt || '').startsWith('area:')) ui.gfilt = 'all';
+  if (!String(ui.planView || '').startsWith('area:')) ui.planView = f.st === 'active' ? 'now' : 'frozen';
   render();
-  return toast(`اتضاف الهدف «${t}»`);
+  return toast(frozenOld ? `اتجمّد «${frozenOld}» وبدأ «${t}» ✓` : (f.st === 'active' ? `بدأ مشروع «${t}» ✓` : `اتجمّد مشروع «${t}»`));
 }
 
-function parkGoalInBacklog(id) {
+// ---------- التجميد وإلغاء التجميد وحراس القواعد ----------
+function freezeGoal(id) {
   const g = findGoal(id);
   if (!g) return;
   const prev = { st: g.st, f: g.f, done: g.done };
-  patchItem('goals', id, { st: 'backlog', f: false, done: false });
+  patchItem('goals', id, { st: 'frozen', f: false, done: false });
   if (isSheetOpen()) requestClose();
-  toast(`اتركن «${g.t}» في بنك الأهداف`, 'رجّع', () => patchItem('goals', id, prev));
+  toast(`اتجمّد «${g.t}» (مش ممسوح)`, 'رجّع', () => patchItem('goals', id, prev));
 }
 
-// ---------- خريطة جوانب الحياة القابلة للتخصيص ----------
+function unfreezeGoal(id) {
+  const g = findGoal(id);
+  if (!g) return;
+  if (itemKind(g) === 'goal') {
+    patchItem('goals', id, { st: 'active', done: false });
+    toast(`الهدف «${g.t}» بقى نشط ✓`);
+    return;
+  }
+  const curAct = sysNow().activeProject;
+  if (curAct && String(curAct.id) !== String(g.id)) {
+    openSheet(projectSwapSheet(g, curAct));
+    return;
+  }
+  patchItem('goals', id, { st: 'active', f: true, done: false, dAt: undefined });
+  if (isSheetOpen()) requestClose();
+  state.tab = 'tasks';
+  ui.planView = 'now';
+  render();
+  toast(`بدأ مشروع «${g.t}» ✓`);
+}
+
+function doProjectSwap(incomingId) {
+  const g = findGoal(incomingId);
+  if (!g) return;
+  const oldTitle = freezeOtherActiveProjects(incomingId);
+  patchItem('goals', incomingId, { st: 'active', f: true, done: false, dAt: undefined });
+  requestClose();
+  state.tab = 'tasks';
+  ui.planView = 'now';
+  render();
+  toast(oldTitle ? `اتجمّد «${oldTitle}» وبدأ «${g.t}» ✓` : `بدأ «${g.t}» ✓`);
+}
+
+function setHabitActive(k, on) {
+  const before = structuredClone(state.settings.habits);
+  const h = before.find((x) => x.k === k);
+  if (!h) return;
+  const next = before.map((x) => (x.k === k ? { ...x, on } : x));
+  patchSettings({ habits: next });
+  toast(on ? `رجّعت عادة «${h.n}» شغّالة ✓` : `اتجمّدت عادة «${h.n}» (تاريخها محفوظ)`, 'رجّع', () => patchSettings({ habits: before }));
+}
+
+function freezeTask(id) {
+  const t = state.tasks.find((x) => String(x.id) === String(id));
+  if (!t) return;
+  const oldDue = t.due || '';
+  patchItem('tasks', id, { due: '' });
+  toast(`اتجمّدت «${t.t}» لبعدين`, 'رجّع', () => patchItem('tasks', id, { due: oldDue }));
+}
+
+function tryAddTodayTask(title, opts = {}) {
+  refreshToday();
+  const chk = canAddTodayTask(state.tasks, state.today);
+  if (chk.ok) {
+    addTask(title, { ...opts, due: state.today });
+    return true;
+  }
+  ui.tswap = { id: null, t: title, pri: !!opts.pri, goalId: opts.goalId || '', cat: opts.cat || '' };
+  openSheet({ ...taskLimitSheet(ui.tswap, chk.open), onClose: () => { ui.tswap = null; } });
+  return false;
+}
+
+function activateTaskForToday(id) {
+  const t = state.tasks.find((x) => String(x.id) === String(id));
+  if (!t) return;
+  refreshToday();
+  const chk = canAddTodayTask(state.tasks, state.today, id);
+  if (chk.ok) {
+    patchItem('tasks', id, { due: state.today });
+    toast('اتنقلت لمهام النهاردة ✓');
+    return;
+  }
+  ui.tswap = { id: t.id, t: t.t };
+  openSheet({ ...taskLimitSheet(ui.tswap, chk.open), onClose: () => { ui.tswap = null; } });
+}
+
+function doTaskSwap(swapOutId) {
+  if (!ui.tswap) return;
+  refreshToday();
+  patchItem('tasks', swapOutId, { due: '' });
+  if (ui.tswap.id) {
+    patchItem('tasks', ui.tswap.id, { due: state.today });
+  } else {
+    addTask(ui.tswap.t, { due: state.today, pri: !!ui.tswap.pri, goalId: ui.tswap.goalId, cat: ui.tswap.cat });
+  }
+  ui.tswap = null;
+  requestClose();
+  toast('اتجمّدت القديمة ودخلت دي للنهاردة ✓');
+}
+
+function doTaskSwapFreeze() {
+  if (!ui.tswap) return requestClose();
+  if (!ui.tswap.id) {
+    addTask(ui.tswap.t, { due: '', pri: !!ui.tswap.pri, goalId: ui.tswap.goalId, cat: ui.tswap.cat });
+  }
+  ui.tswap = null;
+  requestClose();
+  toast('اتحفظت في المجمّد لبعدين');
+}
+
+// ---------- خريطة مجالات الحياة القابلة للتخصيص ----------
 function openLifeAreaForm(id) {
   ui.lafFrom = sheetEl()?.querySelector('[data-out="sroot"]') ? 'settings' : null;
   const areas = activeLifeAreas(state.settings);
@@ -1429,7 +1536,7 @@ function saveLifeAreaForm() {
   const sh = sheetEl();
   const name = (sh?.querySelector('[data-role="laname"]')?.value || '').trim();
   if (!name) {
-    toastErr('اكتب اسم الجانب');
+    toastErr('اكتب اسم المجال');
     sh?.querySelector('[data-role="laname"]')?.focus();
     return;
   }
@@ -1444,12 +1551,12 @@ function saveLifeAreaForm() {
       else delete it.note;
     }
     patchSettings({ lifeAreas: list });
-    toast(`اتحفظ جانب «${name}»`);
+    toast(`اتحفظ مجال «${name}»`);
   } else {
     const newArea = { id: `la_${uid().slice(-5)}`, name, icon: f.icon || 'compass', ...(note ? { note } : {}) };
     list.push(newArea);
     patchSettings({ lifeAreas: list });
-    toast(`اتضاف جانب «${name}»`);
+    toast(`اتضاف مجال «${name}»`);
   }
   if (ui.lafFrom === 'settings') openSettings('areas');
   else requestClose();
@@ -1458,26 +1565,27 @@ function deleteLifeAreaForm() {
   if (!ui.laf?.origId) return;
   const before = structuredClone(activeLifeAreas(state.settings));
   const next = before.filter((x) => x.id !== ui.laf.origId);
-  if (!next.length) return toastErr('لازم يفضل جانب حياة واحد على الأقل');
-  if (ui.gfilt === `area:${ui.laf.origId}`) ui.gfilt = 'areas';
+  if (!next.length) return toastErr('لازم يفضل مجال حياة واحد على الأقل');
+  if (ui.planView === `area:${ui.laf.origId}`) ui.planView = 'areas';
   patchSettings({ lifeAreas: next });
   if (ui.lafFrom === 'settings') openSettings('areas');
   else requestClose();
-  return toast('اتمسح الجانب', 'رجّع', () => patchSettings({ lifeAreas: before }));
+  return toast('اتمسح المجال', 'رجّع', () => patchSettings({ lifeAreas: before }));
 }
 
-// ---------- جلسة مراجعة بنك الأهداف (نهاية الفترة) ----------
+// ---------- جلسة مراجعة المجمّد (نهاية الفترة) ----------
 function startGoalReview(pid = null) {
   refreshToday();
-  const gsum = goalSummaryNow();
-  if (!gsum.backlog.length) return toastErr('بنك الأهداف فاضي دلوقتي');
+  const sys = sysNow();
+  const ids = [...sys.frozenProjects.map((x) => x.project.id), ...sys.frozenGoals.map((x) => x.goal.id)];
+  if (!ids.length) return toastErr('مفيش مشاريع أو أهداف مجمّدة دلوقتي');
   const revSt = periodReviewState(state.periods, state.goals, state.today);
   const stampPeriodId = pid || (revSt.due ? revSt.period?.id : null);
   ui.rev = {
-    ids: gsum.backlog.map((g) => g.id),
+    ids,
     i: 0,
     stampPeriodId,
-    stats: { activated: 0, period: 0, kept: 0, dropped: 0 },
+    stats: { activated: 0, kept: 0, dropped: 0 },
     _handoff: false,
   };
   return showReviewStep();
@@ -1495,23 +1603,27 @@ function showReviewStep() {
     rv.stampPeriodId = null;
   }
   openSheet({
-    ...goalReviewSheet(rv, goalSummaryNow(), state),
+    ...goalReviewSheet(rv, sysNow(), state),
     onClose: () => { if (!ui.rev?._handoff) ui.rev = null; },
   });
 }
 function reviewActivate(id) {
-  if (!ui.rev) return openGoalForm(id, null, { promote: true });
-  ui.rev._handoff = true;
-  openGoalForm(id, null, { promote: true, fromReview: true });
-  ui.rev._handoff = false;
-  return undefined;
-}
-function reviewToPeriod(id) {
   const g = findGoal(id);
   if (!g) return;
-  if (ui.rev) ui.rev._handoff = true;
-  openPeriodForm(null, { gTitle: g.t, fromBacklogId: g.id, fromReview: !!ui.rev });
-  if (ui.rev) ui.rev._handoff = false;
+  if (itemKind(g) === 'project') {
+    freezeOtherActiveProjects(id);
+    patchItem('goals', id, { st: 'active', f: true, done: false });
+    toast(`بدأ مشروع «${g.t}» دلوقتي ✓`);
+  } else {
+    patchItem('goals', id, { st: 'active', done: false });
+    toast(`الهدف «${g.t}» بقى نشط ✓`);
+  }
+  if (!ui.rev) return;
+  ui.rev.stats.activated += 1;
+  ui.rev.i += 1;
+  ui.rev._handoff = true;
+  showReviewStep();
+  ui.rev._handoff = false;
 }
 function reviewKeep(id) {
   if (id && findGoal(id)) patchItem('goals', id, { revAt: Date.now() });
@@ -1534,32 +1646,13 @@ function reviewDrop(id) {
 }
 function dismissReviewBanner(pid) {
   if (pid) patchItem('periods', pid, { reviewedAt: Date.now() });
-  toast('اتأجلت المراجعة — تقدر تبدأها أي وقت من بنك الأهداف');
+  toast('اتأجلت المراجعة — تقدر تبدأها أي وقت من المجمّد');
 }
 
-async function toggleGoalHabit(k) {
-  refreshToday();
-  if (state.cur === state.today) {
-    const next = state.day[k] === 2 ? 0 : 2;
-    setK(k, next);
-    toast(next === 2 ? 'اتعلمت النهارده ← الهدف اتحدّث!' : 'اتشالت من النهارده');
-  } else {
-    const d = await getDayData(state.today);
-    const next = d[k] === 2 ? 0 : 2;
-    await setKOn(state.today, k, next);
-    await refreshDaysCache();
-    toast(next === 2 ? 'اتعلمت في النهارده ← الهدف اتحدّث!' : 'اتشالت من النهارده');
-  }
-}
-
-function adjustManualGoal(id, delta) {
-  const g = findGoal(id);
-  if (!g || g.m !== 'manual') return;
-  patchItem('goals', id, { cur: Math.max(0, (+g.cur || 0) + delta) });
-}
 function toggleGoalStep(gid, sid) {
   const g = findGoal(gid);
   if (!g || !Array.isArray(g.steps)) return;
+  haptic('tap');
   patchItem('goals', gid, { steps: g.steps.map((s) => (String(s.id) === String(sid) ? { ...s, done: !s.done } : s)) });
 }
 function deleteGoalStep(gid, sid) {
@@ -1567,7 +1660,7 @@ function deleteGoalStep(gid, sid) {
   if (!g || !Array.isArray(g.steps)) return;
   const before = structuredClone(g.steps);
   patchItem('goals', gid, { steps: g.steps.filter((s) => String(s.id) !== String(sid)) });
-  toast('اتمسحت المرحلة', 'رجّع', () => patchItem('goals', gid, { steps: before }));
+  toast('اتمسحت الخطوة', 'رجّع', () => patchItem('goals', gid, { steps: before }));
 }
 function addGoalStep(form) {
   const gid = form.dataset.gid;
@@ -1578,17 +1671,16 @@ function addGoalStep(form) {
   if (!g) return undefined;
   inp.value = '';
   patchItem('goals', gid, { steps: [...(g.steps || []), { id: uid(), t: v, done: false }] });
-  return toast('اتضافت المرحلة');
+  return toast('اتضافت الخطوة');
 }
 function addGoalTask(form) {
   const gid = form.dataset.gid;
   const inp = form.querySelector('[data-role="gtaskin"]');
   const v = inp.value.trim();
   if (!v) return inp.focus();
-  refreshToday();
   inp.value = '';
-  addTask(v, { due: state.today, goalId: gid });
-  return toast('اتضافت لمهام النهارده واتربطت بالهدف');
+  if (tryAddTodayTask(v, { goalId: gid })) toast('اتضافت لمهام النهاردة ✓');
+  return undefined;
 }
 function openGoalArchive(id) {
   const g = findGoal(id);
@@ -1599,12 +1691,20 @@ function openGoalArchive(id) {
   if (ta) ta.focus({ preventScroll: true });
 }
 function saveGoalArchive(id) {
+  const g = findGoal(id);
   const note = (sheetEl()?.querySelector('[data-role="gnote"]')?.value || '').trim();
-  patchItem('goals', id, { done: true, f: false, dAt: Date.now(), ...(note ? { note } : {}) });
+  patchItem('goals', id, { done: true, f: false, st: 'active', dAt: Date.now(), ...(note ? { note } : {}) });
+  haptic('done');
+  const nextFrozen = sysNow().frozenProjects;
+  if (nextFrozen.length) {
+    openSheet(nextProjectSheet(g?.t || 'المشروع', nextFrozen));
+    toast('عاش! المشروع خلص ✓');
+    return;
+  }
   requestClose();
-  ui.gfilt = 'done';
+  ui.planView = 'now';
   render();
-  toast('عاش! الهدف اتنقل لأرشيف الإنجازات');
+  toast('عاش! المشروع خلص ✓');
 }
 function deleteGoal(id) {
   const r = removeItem('goals', id);
@@ -1617,9 +1717,9 @@ function ideaToGoal(id) {
   if (!idea) return;
   const pMap = { شغل: 'work', مشروع: 'work', تعلم: 'growth', شخصي: 'health' };
   const areas = activeLifeAreas(state.settings);
-  const guessed = pMap[idea.c] || 'life';
-  const p = areas.some((a) => a.id === guessed) ? guessed : (areas[0]?.id || 'life');
-  openGoalForm(null, { t: idea.t.replace(/\s+/g, ' ').trim().slice(0, 90), p, m: 'steps', hz: 'month', f: true });
+  const guessed = pMap[idea.c] || 'work';
+  const p = areas.some((a) => a.id === guessed) ? guessed : (areas[0]?.id || 'work');
+  openFilterSheet({ t: idea.t.replace(/\s+/g, ' ').trim().slice(0, 90), p, kind: 'project', st: 'frozen' });
 }
 
 // ---------- الدوسات ----------
@@ -1723,11 +1823,12 @@ document.addEventListener('click', async (e) => {
       setK('income', '');
       return toast('اتمسح الدخل', 'رجّع', () => setK('income', old));
     }
-    // أولوية امبارح ← لمهامي
+    // أولوية امبارح ← لمهامي (مع احترام حد الـ ٣ مهام)
     case 'nextptask':
-      refreshToday();
-      addTask(b.dataset.v, { pri: true, due: state.today });
-      return toast('اتضافت لأولويات مهام النهارده ✓');
+      if (tryAddTodayTask(b.dataset.v, { pri: true, goalId: sysNow().activeProject?.id || '' })) {
+        return toast('اتضافت لأولويات مهام النهارده ✓');
+      }
+      return undefined;
     // التنقل بين الأيام
     case 'day':
       if (isSheetOpen()) requestClose();
@@ -1829,64 +1930,90 @@ document.addEventListener('click', async (e) => {
     }
     case 'idel': return deleteItem('ideas', id);
     case 'igoal': return ideaToGoal(id);
-    // الأهداف وبنك الأهداف وخريطة جوانب الحياة والمراجعة (تاب الخطة)
-    case 'plansub': ui.planSub = b.dataset.v; return render();
-    case 'gplan': ui.planSub = 'goals'; state.tab = 'tasks'; render(); return window.scrollTo(0, 0);
-    case 'gtasks': ui.planSub = 'tasks'; state.tab = 'tasks'; render(); return window.scrollTo(0, 0);
-    case 'gfilt': ui.gfilt = b.dataset.v; return render();
-    case 'barea': ui.barea = b.dataset.v; return render();
+    // نظام الفلتر والربط الموحّد (دلوقتي · المجمّد · المجالات + حراس القواعد + المراجعة)
+    case 'planview': ui.planView = b.dataset.v; return render();
+    case 'planfrozen': state.tab = 'tasks'; ui.planView = 'frozen'; render(); return window.scrollTo(0, 0);
+    case 'gplan': state.tab = 'tasks'; ui.planView = 'now'; render(); return window.scrollTo(0, 0);
+    case 'gtasks': state.tab = 'tasks'; ui.planView = 'now'; render(); return window.scrollTo(0, 0);
+    case 'ftype': ui.ftype = b.dataset.v; return render();
+    case 'farea': ui.farea = b.dataset.v; return render();
+    case 'fltform':
+      return openFilterSheet({
+        kind: b.dataset.kind || undefined,
+        p: b.dataset.p || undefined,
+        st: b.dataset.st || undefined,
+        parentId: b.dataset.parent || undefined,
+      });
+    case 'fltedit': return openFilterEdit(id);
+    case 'fltp':
+      if (ui.flt) {
+        ui.flt.p = b.dataset.v;
+        ui.flt.parentId = '';
+        ui.flt.newGoal = false;
+        updateFilterSheet(sheetEl(), ui.flt, sysNow(), state, true);
+      }
+      return undefined;
+    case 'fltkind':
+      if (ui.flt) {
+        ui.flt.kind = b.dataset.v;
+        ui.flt.parentId = '';
+        ui.flt.newGoal = false;
+        ui.flt.swapTaskId = '';
+        if (ui.flt.kind === 'project') ui.flt.st = sysNow().activeProject ? 'frozen' : 'active';
+        else if (ui.flt.kind === 'habit' || ui.flt.kind === 'task') ui.flt.st = 'active';
+        updateFilterSheet(sheetEl(), ui.flt, sysNow(), state, true);
+      }
+      return undefined;
+    case 'fltst':
+      if (ui.flt) {
+        ui.flt.st = b.dataset.v === 'frozen' ? 'frozen' : 'active';
+        ui.flt.swapTaskId = '';
+        updateFilterSheet(sheetEl(), ui.flt, sysNow(), state, false);
+      }
+      return undefined;
+    case 'fltpar':
+      if (ui.flt) {
+        if (b.dataset.v === '__new__') {
+          ui.flt.newGoal = !ui.flt.newGoal;
+          ui.flt.parentId = '';
+        } else {
+          ui.flt.newGoal = false;
+          ui.flt.parentId = b.dataset.v;
+        }
+        updateFilterSheet(sheetEl(), ui.flt, sysNow(), state, true);
+        if (ui.flt.newGoal) sheetEl()?.querySelector('[data-role="fltnewg"]')?.focus();
+      }
+      return undefined;
+    case 'fltpri':
+      if (ui.flt) { ui.flt.pri = !ui.flt.pri; updateFilterSheet(sheetEl(), ui.flt, sysNow(), state, true); }
+      return undefined;
+    case 'fltlinkp':
+      if (ui.flt) { ui.flt.linkActive = !ui.flt.linkActive; updateFilterSheet(sheetEl(), ui.flt, sysNow(), state, true); }
+      return undefined;
+    case 'fltswap':
+      if (ui.flt) {
+        ui.flt.swapTaskId = String(ui.flt.swapTaskId) === String(id) ? '' : id;
+        updateFilterSheet(sheetEl(), ui.flt, sysNow(), state);
+      }
+      return undefined;
+    case 'fltsave': return saveFilterSheet();
+    // تفاصيل وتجميد وإلغاء تجميد المشاريع والأهداف والعادات والمهام
     case 'gopen': return openGoalDetail(id);
-    case 'gform':
-      return openGoalForm(
-        id,
-        b.dataset.p ? { p: b.dataset.p } : null,
-        b.dataset.st ? { st: b.dataset.st } : {},
-      );
-    case 'gpromote': return openGoalForm(id, null, { promote: true });
-    case 'gtobacklog': return parkGoalInBacklog(id);
-    case 'gpreset': return openGoalForm(null, GOAL_PRESETS[+b.dataset.i]);
-    case 'ghabit': return toggleGoalHabit(b.dataset.k);
-    case 'ginc': return adjustManualGoal(id, 1);
-    case 'gdec': return adjustManualGoal(id, -1);
+    case 'gfreeze': return freezeGoal(id);
+    case 'gunfreeze': return unfreezeGoal(id);
+    case 'gswapdo': return doProjectSwap(id);
+    case 'hfreeze': return setHabitActive(b.dataset.k, false);
+    case 'hunfreeze': return setHabitActive(b.dataset.k, true);
+    case 'tfreeze': return freezeTask(id);
+    case 'tactivate': return activateTaskForToday(id);
+    case 'tswapdo': return doTaskSwap(b.dataset.swap);
+    case 'tswapfreeze': return doTaskSwapFreeze();
     case 'gstog': return toggleGoalStep(b.dataset.gid, b.dataset.sid);
     case 'gsdel': return deleteGoalStep(b.dataset.gid, b.dataset.sid);
-    case 'gfocus': {
-      const g = findGoal(id);
-      if (!g) return undefined;
-      patchItem('goals', id, { f: !g.f });
-      return toast(!g.f ? 'اتثبّت في أهداف التركيز' : 'اتشال من التركيز');
-    }
     case 'garchopen': return openGoalArchive(id);
     case 'garchsave': return saveGoalArchive(id);
-    case 'greopen':
-      patchItem('goals', id, { done: false, dAt: undefined });
-      requestClose();
-      ui.gfilt = 'all';
-      return toast('الهدف رجع نشط');
     case 'gdel': return deleteGoal(id);
-    case 'gfstate':
-      if (ui.gf) {
-        ui.gf.st = b.dataset.v === 'backlog' ? 'backlog' : 'active';
-        if (ui.gf.st === 'backlog') ui.gf.promoting = false;
-        updateGoalForm(sheetEl(), ui.gf, state);
-      }
-      return undefined;
-    case 'gfpri':
-      if (ui.gf) {
-        ui.gf.pri = !ui.gf.pri;
-        updateGoalForm(sheetEl(), ui.gf, state);
-      }
-      return undefined;
-    case 'gfmode':
-      if (ui.gf) {
-        ui.gf.m = b.dataset.v;
-        ui.gf.src = defaultGoalSrc(ui.gf.m, state);
-        ui.gf.unit = defaultGoalUnit(ui.gf.m, ui.gf.src, state);
-        if (!ui.gf.id && !ui.gf.pSet) ui.gf.p = inferGoalPillar(ui.gf.m, ui.gf.src) || ui.gf.p;
-        updateGoalForm(sheetEl(), ui.gf, state);
-      }
-      return undefined;
-    // جوانب الحياة القابلة للتخصيص
+    // مجالات الحياة القابلة للتخصيص
     case 'laform': return openLifeAreaForm(id);
     case 'laico':
       if (ui.laf) {
@@ -1896,11 +2023,10 @@ document.addEventListener('click', async (e) => {
       return undefined;
     case 'lasave': return saveLifeAreaForm();
     case 'ladel': return deleteLifeAreaForm();
-    // جلسة مراجعة بنك الأهداف (نهاية الفترة)
+    // جلسة مراجعة المجمّد (نهاية الفترة)
     case 'grevstart': return startGoalReview(b.dataset.pid || null);
     case 'grevdone': return dismissReviewBanner(b.dataset.pid || null);
     case 'grevact': return reviewActivate(id);
-    case 'grevperiod': return reviewToPeriod(id);
     case 'grevkeep': return reviewKeep(id);
     case 'grevdrop': return reviewDrop(id);
     case 'grevback':
@@ -1912,60 +2038,6 @@ document.addEventListener('click', async (e) => {
         requestClose();
       }
       return undefined;
-    case 'gfpil':
-      if (ui.gf) { ui.gf.p = b.dataset.v; ui.gf.pSet = true; updateGoalForm(sheetEl(), ui.gf, state); }
-      return undefined;
-    case 'gfhz':
-      if (ui.gf) {
-        ui.gf.hz = b.dataset.v;
-        const rng = goalRange(ui.gf.hz, state.today, state.periods, ui.gf.from, ui.gf.to);
-        ui.gf.from = rng.from;
-        ui.gf.to = rng.to;
-        updateGoalForm(sheetEl(), ui.gf, state);
-      }
-      return undefined;
-    case 'gffoc':
-      if (ui.gf) { ui.gf.f = !ui.gf.f; updateGoalForm(sheetEl(), ui.gf, state); }
-      return undefined;
-    case 'gfhkind':
-      if (ui.gf) {
-        const k = b.dataset.v;
-        const hs = activeHabits(state.settings);
-        ui.gf.src = k === 'salah' ? { kind: 'salah' } : k === 'sum' ? { kind: 'sum', k: HABIT_NUMS[0][0] } : { kind: 'days', k: hs[0]?.k || 'ex' };
-        ui.gf.unit = defaultGoalUnit('habit', ui.gf.src, state);
-        if (!ui.gf.id && !ui.gf.pSet) ui.gf.p = inferGoalPillar('habit', ui.gf.src) || ui.gf.p;
-        updateGoalForm(sheetEl(), ui.gf, state);
-      }
-      return undefined;
-    case 'gftkind':
-      if (ui.gf) {
-        const k = b.dataset.v;
-        ui.gf.src = k === 'cat' ? { kind: 'cat', c: 'work' } : k === 'proj' ? { kind: 'proj', proj: '' } : { kind: 'deep' };
-        ui.gf.unit = 'ساعة';
-        if (!ui.gf.id && !ui.gf.pSet) ui.gf.p = inferGoalPillar('time', ui.gf.src) || ui.gf.p;
-        updateGoalForm(sheetEl(), ui.gf, state);
-      }
-      return undefined;
-    case 'gfmkind':
-      if (ui.gf) {
-        const k = b.dataset.v;
-        const mid = state.metrics[0]?.id || '';
-        ui.gf.src = k === 'income' ? { kind: 'income' } : k === 'exp_cap' ? { kind: 'exp_cap', cat: state.settings.expCats[0] || 'أكل' } : { kind: k, id: mid };
-        ui.gf.unit = defaultGoalUnit('metric', ui.gf.src, state);
-        if (!ui.gf.id && !ui.gf.pSet) ui.gf.p = inferGoalPillar('metric', ui.gf.src) || ui.gf.p;
-        updateGoalForm(sheetEl(), ui.gf, state);
-      }
-      return undefined;
-    case 'gfsrc':
-      if (ui.gf) {
-        ui.gf.src = { ...ui.gf.src, [b.dataset.k]: b.dataset.v };
-        if (ui.gf.m === 'time' && b.dataset.k === 'c') ui.gf.src.kind = b.dataset.v === 'work' ? 'work' : 'cat';
-        ui.gf.unit = defaultGoalUnit(ui.gf.m, ui.gf.src, state);
-        if (!ui.gf.id && !ui.gf.pSet) ui.gf.p = inferGoalPillar(ui.gf.m, ui.gf.src) || ui.gf.p;
-        updateGoalForm(sheetEl(), ui.gf, state);
-      }
-      return undefined;
-    case 'gfsave': return saveGoalForm();
     // الفترات وهدف الفترة الواحد
     case 'pdetail': return openPeriodDetail(id);
     case 'pform': return openPeriodForm(id);
@@ -2321,14 +2393,13 @@ document.addEventListener('input', (e) => {
   }
   if (role === 'semail') { ui.sf.email = el.value; return undefined; }
   if (ui.hf && role === 'hnote') { ui.hf.t = el.value; return undefined; }
-  if (ui.gf) {
-    if (role === 'gtitle') { ui.gf.t = el.value; return undefined; }
-    if (role === 'gfwhy') { ui.gf.why = el.value; return undefined; }
-    if (role === 'gftarget') { ui.gf.target = el.value; return undefined; }
-    if (role === 'gfstart') { ui.gf.start = el.value; return undefined; }
-    if (role === 'gfunit') { ui.gf.unit = el.value; return undefined; }
-    if (role === 'gfproj') { ui.gf.src = { ...ui.gf.src, proj: el.value }; return undefined; }
-    if (role === 'gfsteps') { ui.gf.stepsText = el.value; return undefined; }
+  if (ui.flt) {
+    if (role === 'flttitle') { ui.flt.t = el.value; return undefined; }
+    if (role === 'fltunit') { ui.flt.unit = el.value; return undefined; }
+    if (role === 'fltwhy') { ui.flt.why = el.value; return undefined; }
+    if (role === 'fltnewg') { ui.flt.newGoalTitle = el.value; return undefined; }
+    if (role === 'fltout') { ui.flt.outcome = el.value; return undefined; }
+    if (role === 'fltsteps') { ui.flt.stepsText = el.value; return undefined; }
   }
   if (ui.laf) {
     if (role === 'laname') { ui.laf.name = el.value; return undefined; }
@@ -2406,7 +2477,7 @@ document.addEventListener('keydown', (e) => {
   const all = [...sheetEl().querySelectorAll('input.fld:not([type="time"]), textarea.fld')].filter((x) => x.getClientRects().length);
   const next = all[all.indexOf(el) + 1];
   if (next) next.focus();
-  else if (ui.gf) saveGoalForm();
+  else if (ui.flt) saveFilterSheet();
   else if (ui.laf) saveLifeAreaForm();
   else if (ui.pf) savePeriodForm();
   else if (ui.te) saveTaskEdit();

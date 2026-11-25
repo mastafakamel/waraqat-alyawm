@@ -24,7 +24,7 @@ function ideaCard(i) {
     <div class="idea-f">
       <span class="idea-m">${esc(i.c)}، ${shortDate(i.at)}</span>
       <button class="idea-conv" type="button" data-act="itask" data-id="${esc(i.id)}" aria-label="حوّل الفكرة لمهمة">لمهمة${ic(P.plus)}</button>
-      <button class="idea-conv" type="button" data-act="igoal" data-id="${esc(i.id)}" aria-label="حوّل الفكرة لهدف">لهدف${ic(P.arrowUpLeft)}</button>
+      <button class="idea-conv" type="button" data-act="igoal" data-id="${esc(i.id)}" aria-label="عدّي الفكرة على الفلتر">للفلتر${ic(P.arrowUpLeft)}</button>
       <button class="ib pinb" type="button" data-act="ipin" data-id="${esc(i.id)}" aria-pressed="${!!i.pin}" aria-label="${i.pin ? 'شيل التثبيت' : 'ثبّت الفكرة فوق'}">${ic(P.pin)}</button>
       <button class="ib" type="button" data-act="idel" data-id="${esc(i.id)}" aria-label="امسح الفكرة">${ic(P.close)}</button>
     </div></article>`;

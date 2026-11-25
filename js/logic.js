@@ -77,12 +77,14 @@ const LEGACY_HABIT_LABELS = {
 };
 
 export const DEFAULT_LIFE_AREAS = [
-  { id: 'deen',   name: 'الدين والروح',    icon: 'star',  note: '' },
-  { id: 'health', name: 'الصحة والجسم',    icon: 'heart', note: '' },
-  { id: 'work',   name: 'الشغل والمال',    icon: 'brief', note: '' },
-  { id: 'growth', name: 'التعلم والتطوير',  icon: 'book',  note: '' },
-  { id: 'life',   name: 'شخصي وحياة',      icon: 'home',  note: '' },
+  { id: 'work',   name: 'شغل',    icon: 'brief', note: '' },
+  { id: 'deen',   name: 'ديني',   icon: 'star',  note: '' },
+  { id: 'health', name: 'صحة',    icon: 'heart', note: '' },
+  { id: 'life',   name: 'علاقات', icon: 'users', note: '' },
+  { id: 'growth', name: 'تعلم',   icon: 'book',  note: '' },
 ];
+
+export const TODAY_TASK_LIMIT = 3;
 
 export const EXP_CATS = ['أكل', 'مواصلات', 'بيت', 'شخصي', 'شغل', 'صحة', 'تعلم', 'اشتراكات'];
 export const IDEA_CATS = ['مشروع', 'شغل', 'شخصي', 'تعلم', 'تاني'];
@@ -196,13 +198,24 @@ export function activeHabits(settings) {
 export function activeHabitGroups(settings) {
   const cfg = normalizeSettings(settings);
   const hs = cfg.habits.filter((h) => h.on !== false);
-  return cfg.habitGroups
-    .map((g) => ({
+  const seen = new Set();
+  const base = cfg.habitGroups.map((g) => {
+    seen.add(g.id);
+    return {
       ...g,
       items: hs.filter((h) => h.g === g.id),
       keys: hs.filter((h) => h.g === g.id).map((h) => h.k),
-    }))
-    .filter((g) => g.keys.length || g.withSalah);
+    };
+  });
+  for (const a of cfg.lifeAreas || []) {
+    if (seen.has(a.id)) continue;
+    const items = hs.filter((h) => h.g === a.id);
+    if (items.length) {
+      seen.add(a.id);
+      base.push({ id: a.id, name: a.name, icon: a.icon || 'target', items, keys: items.map((h) => h.k) });
+    }
+  }
+  return base.filter((g) => g.keys.length || g.withSalah);
 }
 export function allHabitLabel(k, settings) {
   const found = normalizeSettings(settings).habits.find((h) => h.k === k);
@@ -1275,9 +1288,35 @@ export function lifeAreaMap(settings) {
   return m;
 }
 
-/** هل الهدف في «بنك الأهداف» (في الانتظار للمراجعة)؟ */
+/** نوع العنصر داخل list/goals: 'goal' (هدف = ليه) أو 'project' (مشروع = إيه اللي هيحققه). */
+export function itemKind(g) {
+  return g?.kind === 'goal' ? 'goal' : 'project';
+}
+
+/** حالة العنصر: 'active' (شغّال دلوقتي) | 'frozen' (مجمّد مش ممسوح) | 'done' (مكتمل). */
+export function itemStatus(g) {
+  if (!g) return 'frozen';
+  if (g.done) return 'done';
+  if (g.st === 'frozen' || g.st === 'backlog') return 'frozen';
+  return 'active';
+}
+
+/** هل الهدف/المشروع مجمّد (في الانتظار للمراجعة)؟ يدعم الاسم القديم backlog والجديد frozen. */
 export function isBacklogGoal(g) {
-  return !!g && !g.done && g.st === 'backlog';
+  return !!g && !g.done && (g.st === 'backlog' || g.st === 'frozen');
+}
+
+/** مهام النهاردة المفتوحة فقط (بحد أقصى ٣ للتركيز). */
+export function todayOpenTasks(tasks, today) {
+  return (tasks || [])
+    .filter((t) => !t.done && t.due && t.due <= today)
+    .sort((a, b) => (b.pri ? 1 : 0) - (a.pri ? 1 : 0) || (a.at || 0) - (b.at || 0));
+}
+
+/** فحص قاعدة الـ ٣ مهام للنهاردة قبل الإضافة أو النقل للنهاردة. */
+export function canAddTodayTask(tasks, today, excludeId = '') {
+  const open = todayOpenTasks(tasks, today).filter((t) => String(t.id) !== String(excludeId));
+  return { ok: open.length < TODAY_TASK_LIMIT, count: open.length, limit: TODAY_TASK_LIMIT, open };
 }
 
 /** عمر فكرة الهدف في بنك الأهداف (قاعدة التبريد): النهارده / من امبارح / من ٥ أيام. */
@@ -1553,10 +1592,10 @@ export function evalGoal(g, { days = [], tasks = [], metrics = [], today = dayKe
   };
 }
 
-/** تقييم كل الأهداف وبنك الأهداف وخريطة جوانب الحياة مرة واحدة. */
+/** تقييم كل الأهداف والمشاريع وبنك المجمّد وخريطة المجالات مرة واحدة. */
 export function goalsSummary(goals, ctx) {
   const list = goals || [];
-  const active = list.filter((g) => !g.done && g.st !== 'backlog');
+  const active = list.filter((g) => !g.done && !isBacklogGoal(g));
   const backlog = list
     .filter(isBacklogGoal)
     .sort((a, b) => (b.pri ? 1 : 0) - (a.pri ? 1 : 0) || (b.at || 0) - (a.at || 0));
@@ -1564,13 +1603,14 @@ export function goalsSummary(goals, ctx) {
   const evals = new Map();
   for (const g of list) evals.set(g.id, evalGoal(g, ctx));
 
-  const actEvals = active.map((g) => evals.get(g.id));
+  const actProjects = active.filter((g) => itemKind(g) === 'project');
+  const actEvals = actProjects.map((g) => evals.get(g.id));
   const avgPct = actEvals.length ? Math.round(actEvals.reduce((a, x) => a + x.pct, 0) / actEvals.length) : 0;
   const onTrack = actEvals.filter((x) => !x.isBehind).length;
   const needPush = actEvals.filter((x) => x.isBehind).length;
-  const pinned = active.filter((g) => g.f);
-  const focus = (pinned.length ? pinned : active.slice(0, 2)).slice(0, 3);
-  const linkedHabits = new Set(active.filter((g) => g.m === 'habit' && g.src?.kind !== 'salah' && g.src?.k).map((g) => g.src.k));
+  const pinned = actProjects.filter((g) => g.f);
+  const focus = (pinned.length ? pinned : actProjects.slice(0, 2)).slice(0, 3);
+  const linkedHabits = new Set(actProjects.filter((g) => g.m === 'habit' && g.src?.kind !== 'salah' && g.src?.k).map((g) => g.src.k));
 
   const areasList = activeLifeAreas(ctx?.settings);
   const areaIds = new Set(areasList.map((a) => a.id));
@@ -1580,32 +1620,169 @@ export function goalsSummary(goals, ctx) {
     const act = active.filter((g) => belong(g) === area.id);
     const bak = backlog.filter((g) => belong(g) === area.id);
     const arc = archived.filter((g) => belong(g) === area.id);
-    const areaAvg = act.length ? Math.round(act.reduce((sum, g) => sum + (evals.get(g.id)?.pct || 0), 0) / act.length) : null;
-    const areaPush = act.filter((g) => evals.get(g.id)?.isBehind).length;
+    const actP = act.filter((g) => itemKind(g) === 'project');
+    const areaAvg = actP.length ? Math.round(actP.reduce((sum, g) => sum + (evals.get(g.id)?.pct || 0), 0) / actP.length) : null;
+    const areaPush = actP.filter((g) => evals.get(g.id)?.isBehind).length;
     return { area, active: act, backlog: bak, archived: arc, avgPct: areaAvg, needPush: areaPush };
   });
 
   return { active, backlog, archived, focus, evals, avgPct, onTrack, needPush, linkedHabits, areas };
 }
 
-/** سطور مختصرة لأهدافك النشطة عشان تتبعت لتقرير الذكاء الاصطناعي. */
+/**
+ * حالة النظام الكاملة بناءً على الفلتر والربط الموحّد:
+ * المجال ← هدف (ليه) ← مشروع (إيه اللي هيحققه — واحد بس شغّال) ← مهمة النهاردة (٣ بالكتير)
+ * + العادات تخدم المجال مباشرة (شغّالة / مجمّدة) من غير هدف تحتها.
+ */
+export function systemState(goals, tasks, settings, ctx = {}) {
+  const cfg = normalizeSettings(settings);
+  const today = ctx.today || dayKeyAt(new Date(), cfg.dayStart);
+  const gsum = goalsSummary(goals, { ...ctx, tasks, today, settings: cfg });
+  const list = goals || [];
+  const areasList = activeLifeAreas(cfg);
+  const areaMap = lifeAreaMap(cfg);
+  const areaIds = new Set(areasList.map((a) => a.id));
+  const fallbackId = areasList[0]?.id || 'work';
+  const resolveArea = (id) => (id && areaIds.has(id) ? id : fallbackId);
+
+  const goalsById = new Map(list.map((g) => [String(g.id), g]));
+  const allGoals = list.filter((g) => itemKind(g) === 'goal');
+  const allProjects = list.filter((g) => itemKind(g) === 'project');
+
+  const activeProjects = allProjects
+    .filter((p) => itemStatus(p) === 'active')
+    .sort((a, b) => (b.f ? 1 : 0) - (a.f ? 1 : 0) || (b.at || 0) - (a.at || 0));
+  const activeProject = activeProjects[0] || null;
+  const extraActiveProjects = activeProjects.slice(1);
+
+  const frozenProjects = allProjects
+    .filter((p) => itemStatus(p) === 'frozen')
+    .sort((a, b) => (b.pri ? 1 : 0) - (a.pri ? 1 : 0) || (b.at || 0) - (a.at || 0));
+  const completedProjects = allProjects
+    .filter((p) => itemStatus(p) === 'done')
+    .sort((a, b) => (b.dAt || 0) - (a.dAt || 0));
+
+  const activeGoals = allGoals.filter((g) => itemStatus(g) === 'active');
+  const frozenGoals = allGoals
+    .filter((g) => itemStatus(g) === 'frozen')
+    .sort((a, b) => (b.pri ? 1 : 0) - (a.pri ? 1 : 0) || (b.at || 0) - (a.at || 0));
+  const completedGoals = allGoals.filter((g) => itemStatus(g) === 'done');
+
+  const allHabits = cfg.habits || [];
+  const actHabits = allHabits.filter((h) => h.on !== false);
+  const frozenHabits = allHabits.filter((h) => h.on === false);
+
+  const openToday = todayOpenTasks(tasks, today);
+  const todayAll = todayTasks(tasks, today, cfg.dayStart);
+  const todayDone = todayAll.filter((t) => t.done);
+  const frozenTasks = (tasks || [])
+    .filter((t) => !t.done && (!t.due || t.due > today))
+    .sort((a, b) => (b.pri ? 1 : 0) - (a.pri ? 1 : 0) || (a.at || 0) - (b.at || 0));
+
+  const enrichProject = (proj) => {
+    const parentGoal = proj.parentId ? goalsById.get(String(proj.parentId)) || null : null;
+    const areaId = resolveArea(proj.p || parentGoal?.p);
+    const area = areaMap.get(areaId) || areasList[0] || DEFAULT_LIFE_AREAS[0];
+    const ev = gsum.evals.get(proj.id);
+    const linkedTasks = (tasks || []).filter((t) => String(t.goalId || '') === String(proj.id));
+    const openLinked = linkedTasks.filter((t) => !t.done);
+    const nextStep = (Array.isArray(proj.steps) ? proj.steps.find((s) => !s.done)?.t : '') || openLinked[0]?.t || '';
+    return { project: proj, goal: parentGoal, area, ev, tasks: linkedTasks, openTasks: openLinked, nextStep };
+  };
+
+  const activeChain = activeProject ? enrichProject(activeProject) : null;
+
+  const areas = areasList.map((area) => {
+    const aActiveHabits = actHabits.filter((h) => resolveArea(h.g) === area.id);
+    const aFrozenHabits = frozenHabits.filter((h) => resolveArea(h.g) === area.id);
+    const aGoals = allGoals
+      .filter((g) => resolveArea(g.p) === area.id && !g.done)
+      .sort((a, b) => (itemStatus(a) === 'active' ? -1 : 1) - (itemStatus(b) === 'active' ? -1 : 1) || (b.at || 0) - (a.at || 0));
+    const goalIds = new Set(aGoals.map((g) => String(g.id)));
+    const aProjects = allProjects.filter((p) => {
+      if (p.done) return false;
+      const pid = p.parentId ? String(p.parentId) : '';
+      if (pid && goalIds.has(pid)) return true;
+      return resolveArea(p.p) === area.id;
+    });
+    const goalTree = aGoals.map((goal) => {
+      const children = aProjects
+        .filter((p) => String(p.parentId || '') === String(goal.id))
+        .map(enrichProject);
+      return { goal, projects: children };
+    });
+    const standaloneProjects = aProjects
+      .filter((p) => !p.parentId || !goalIds.has(String(p.parentId)))
+      .map(enrichProject);
+    const areaCompleted = completedProjects.filter((p) => resolveArea(p.p) === area.id).map(enrichProject);
+    const hasActiveProj = activeChain?.area?.id === area.id;
+    const frozenCount = aFrozenHabits.length
+      + aGoals.filter((g) => itemStatus(g) === 'frozen').length
+      + aProjects.filter((p) => itemStatus(p) === 'frozen').length;
+    return {
+      area,
+      activeHabits: aActiveHabits,
+      frozenHabits: aFrozenHabits,
+      goals: goalTree,
+      standaloneProjects,
+      completedProjects: areaCompleted,
+      hasActiveProject: hasActiveProj,
+      activeProject: hasActiveProj ? activeChain : null,
+      frozenCount,
+    };
+  });
+
+  const frozenTotal = frozenProjects.length + frozenGoals.length + frozenHabits.length + frozenTasks.length;
+
+  return {
+    today,
+    activeProject,
+    activeChain,
+    extraActiveProjects: extraActiveProjects.map(enrichProject),
+    activeGoals,
+    frozenProjects: frozenProjects.map(enrichProject),
+    frozenGoals: frozenGoals.map((goal) => ({
+      goal,
+      area: areaMap.get(resolveArea(goal.p)) || areasList[0] || DEFAULT_LIFE_AREAS[0],
+    })),
+    frozenHabits: frozenHabits.map((habit) => ({
+      habit,
+      area: areaMap.get(resolveArea(habit.g)) || areasList[0] || DEFAULT_LIFE_AREAS[0],
+    })),
+    frozenTasks,
+    completedProjects: completedProjects.map(enrichProject),
+    completedGoals,
+    todayOpen: { list: openToday, count: openToday.length, limit: TODAY_TASK_LIMIT, atLimit: openToday.length >= TODAY_TASK_LIMIT },
+    todayDone,
+    areas,
+    frozenTotal,
+    gsum,
+    evals: gsum.evals,
+  };
+}
+
+/** سطور مختصرة لمشروعك الشغّال وأهدافك عشان تتبعت لتقرير الذكاء الاصطناعي. */
 export function goalDigestLines(goals, ctx) {
-  const active = (goals || []).filter((g) => !g.done && g.st !== 'backlog');
-  const backlog = (goals || []).filter(isBacklogGoal);
+  const list = goals || [];
+  const active = list.filter((g) => !g.done && !isBacklogGoal(g) && itemKind(g) === 'project');
+  const frozen = list.filter(isBacklogGoal);
+  const byId = new Map(list.map((g) => [String(g.id), g]));
   const lines = [];
   if (active.length) {
     lines.push('الأهداف النشطة:');
     for (const g of active.slice(0, 8)) {
       const ev = evalGoal(g, ctx);
+      const parent = g.parentId ? byId.get(String(g.parentId)) : null;
+      const chain = parent ? ` [${ev.pillar.name} ← ${clip(parent.t, 40)}]` : '';
       const val = ev.isTargetMetric
         ? `${ev.cur ?? '—'} من أصل ${g.start ?? 0} → ${ev.target} ${ev.unit}`.trim()
         : `${ev.cur}/${ev.target}${ev.unit ? ` ${ev.unit}` : ''}`;
       const stateWord = ev.pct >= 100 && !ev.isCap ? 'مكتمل' : ev.isBehind ? 'محتاج دفعة' : 'على المسار';
-      lines.push(`- ${clip(g.t, 80)}${g.f ? ' [تركيز]' : ''}: ${ev.pct}% (${val}، عدّى ${ev.timePct}% من الوقت، ${stateWord})`);
+      lines.push(`- ${clip(g.t, 80)}${g.f ? ' [تركيز]' : ''}${chain}: ${ev.pct}% (${val}، عدّى ${ev.timePct}% من الوقت، ${stateWord})`);
     }
   }
-  if (backlog.length) {
-    lines.push(`بنك الأهداف (في الانتظار للمراجعة): ${backlog.length} هدف`);
+  if (frozen.length) {
+    lines.push(`بنك الأهداف (في الانتظار للمراجعة): ${frozen.length} هدف`);
   }
   return lines;
 }

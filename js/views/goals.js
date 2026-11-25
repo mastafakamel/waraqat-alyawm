@@ -1,75 +1,63 @@
-// views/goals.js — نظام الأهداف المتكامل + بنك الأهداف (للمراجعة) + خريطة جوانب الحياة القابلة للتخصيص + جلسة مراجعة نهاية الفترة.
+// views/goals.js — نظام الفلتر والربط الموحّد:
+// المجال ← هدف (ليه) ← مشروع (واحد بس شغّال) ← مهمة النهاردة (٣ بالكتير)
+// والعادات الصغيرة بتخدم المجال مباشرة من غير هدف تحتها، والباقي مجمّد مش ممسوح.
 
 import {
-  HABIT_NUMS, GOAL_MODES, GOAL_HORIZONS,
-  activeHabits, activeTimeCats, activeLifeAreas, allHabitLabel, isBacklogGoal, backlogAgeText,
-  fmtNum, fmtDays, todayTasks, isOverdue, shortDate, periodOf,
+  TODAY_TASK_LIMIT, activeLifeAreas, itemKind, itemStatus, isBacklogGoal, backlogAgeText,
+  fmtNum, fmtDays, isOverdue, shortDate, periodOf,
 } from '../logic.js';
 import { esc, ic, ico, P, setHtml } from '../ui.js';
 
-export const GOAL_PRESETS = [
-  { t: '٤٠ ساعة شغل عميق في الفترة', p: 'work', m: 'time', src: { kind: 'work', c: 'work' }, hz: 'period', target: 40, unit: 'ساعة', f: true },
-  { t: '٢٠ يوم تمرين الشهر ده', p: 'health', m: 'habit', src: { kind: 'days', k: 'ex' }, hz: 'month', target: 20, unit: 'يوم', f: true },
-  { t: 'إنجاز مشروع بخطوات ومهام', p: 'growth', m: 'steps', hz: 'month', f: true, steps: ['تحديد أول خطوة', 'النسخة الأولى', 'المراجعة والإنهاء'] },
-  { t: 'سقف مصاريف الأكل', p: 'work', m: 'metric', src: { kind: 'exp_cap', cat: 'أكل' }, hz: 'month', target: 3000, unit: 'ج', f: false },
-];
-
 export const LIFE_AREA_ICONS = [
-  ['star', 'دين وروح'],
-  ['heart', 'صحة وجسم'],
   ['brief', 'شغل'],
-  ['wallet', 'مال واستثمار'],
-  ['book', 'تعلم'],
-  ['home', 'بيت وحياة'],
+  ['star', 'ديني'],
+  ['heart', 'صحة'],
   ['users', 'علاقات'],
-  ['spark', 'إبداع وشغف'],
-  ['compass', 'تطوير الذات'],
+  ['book', 'تعلم'],
+  ['wallet', 'مال'],
+  ['home', 'بيت وحياة'],
+  ['spark', 'إبداع'],
+  ['compass', 'تطوير'],
   ['target', 'مشاريع'],
   ['moon', 'نوم وهدوء'],
-  ['rest', 'راحة ونفسية'],
+  ['rest', 'راحة'],
 ];
 
-const MODE_DESC = {
-  habit: 'يتحدث تلقائياً لما تعلّم العادة في اليوم أو تكتب رقمها (مثل التمرين، الورد، الإنجليزي، الصلوات).',
-  time: 'يتجمع تلقائياً من ساعات تاب «الوقت» أو ساعات «الشغل» والتركيز العميق.',
-  metric: 'مربوط بمقياس من «مقاييسي» (تجميعي أو وصول لرقم زي الوزن) أو الدخل أو سقف مصاريف في «الفلوس».',
-  steps: 'هدف مشروع بمراحل (Milestones) ومهام مربوطة من تاب «المهام».',
-  manual: 'عدّاد مرن بتزوّده بنفسك (+١) زي عدد الكتب أو الكورسات.',
-};
+export const FILTER_KINDS = [
+  ['habit',   'عادة صغيرة', 'check',  'بتتكرر وصغيرة وتخدم المجال مباشرة (مش محتاجة هدف تحتها).'],
+  ['goal',    'هدف (ليه؟)', 'compass', 'الاتجاه أو السبب جوه المجال — المشاريع هي اللي بتحققه.'],
+  ['project', 'مشروع',      'target', 'له نتيجة ونهاية وبيحقق هدف. القاعدة: مشروع واحد بس شغّال.'],
+  ['task',    'مهمة',       'tasks',  'خطوة مرة واحدة. القاعدة: ٣ مهام بالكتير للنهاردة من الشغّال.'],
+];
 
-function goalsWord(n) {
-  if (n === 1) return 'هدف واحد';
-  if (n === 2) return 'هدفين';
-  return `${fmtNum(n)} ${n <= 10 ? 'أهداف' : 'هدف'}`;
+function countWord(n, one, two, few, many) {
+  if (n === 1) return one;
+  if (n === 2) return two;
+  return `${fmtNum(n)} ${n <= 10 ? few : many}`;
 }
 
-/** مفتاح التبديل فوق تبويبة «الخطة»: الأهداف | المهام */
-export function planSwitch(s, ui) {
-  const activeG = (s.goals || []).filter((g) => !g.done && !isBacklogGoal(g)).length;
-  const openT = todayTasks(s.tasks, s.today, s.settings?.dayStart).filter((t) => !t.done).length;
-  const isGoals = ui.planSub !== 'tasks';
-  const newBtn = ui.gfilt === 'backlog'
-    ? `<button type="button" class="g-newbtn" data-act="gform" data-st="backlog">${ic(P.plus)}<span>اركن هدف</span></button>`
-    : ui.gfilt === 'areas'
-      ? `<button type="button" class="g-newbtn" data-act="laform">${ic(P.plus)}<span>جانب جديد</span></button>`
-      : `<button type="button" class="g-newbtn" data-act="gform">${ic(P.plus)}<span>هدف جديد</span></button>`;
+/** شريط التنقل فوق تبويبة «الخطة»: دلوقتي | المجمّد | المجالات + زرار «+ الفلتر» */
+export function planSwitch(sys, ui) {
+  const cur = String(ui.planView || 'now');
+  const tabCur = cur.startsWith('area:') ? 'areas' : cur;
   return `<div class="plan-top">
-      <div class="seg-top" role="tablist" aria-label="أقسام الخطة">
-        <button type="button" role="tab" class="${isGoals ? 'on' : ''}" data-act="plansub" data-v="goals" aria-selected="${isGoals}">الأهداف<span class="seg-cnt">${fmtNum(activeG)}</span></button>
-        <button type="button" role="tab" class="${!isGoals ? 'on' : ''}" data-act="plansub" data-v="tasks" aria-selected="${!isGoals}">المهام<span class="seg-cnt">${fmtNum(openT)}</span></button>
+      <div class="seg-top seg-top3" role="tablist" aria-label="أقسام الخطة">
+        <button type="button" role="tab" class="${tabCur === 'now' ? 'on' : ''}" data-act="planview" data-v="now" aria-selected="${tabCur === 'now'}">دلوقتي</button>
+        <button type="button" role="tab" class="${tabCur === 'frozen' ? 'on' : ''}" data-act="planview" data-v="frozen" aria-selected="${tabCur === 'frozen'}">المجمّد<span class="seg-cnt">${fmtNum(sys.frozenTotal)}</span></button>
+        <button type="button" role="tab" class="${tabCur === 'areas' ? 'on' : ''}" data-act="planview" data-v="areas" aria-selected="${tabCur === 'areas'}">المجالات<span class="seg-cnt">${fmtNum(sys.areas.length)}</span></button>
       </div>
-      ${isGoals ? newBtn : ''}
+      <button type="button" class="g-newbtn" data-act="fltform">${ic(P.plus)}<span>الفلتر</span></button>
     </div>`;
 }
 
-/** شريط تذكير هادي بمراجعة بنك الأهداف عند نهاية الفترة (يظهر في اليوم والخطة عند الميعاد فقط). */
+/** شريط تذكير مراجعة نهاية الفترة (يظهر عند نهاية الفترة لما يكون في مشاريع/أهداف مجمّدة). */
 export function reviewBannerHtml(rev) {
   if (!rev?.due) return '';
   const pName = rev.period?.name ? ` «${rev.period.name}»` : '';
   const head = rev.reason === 'last_day'
     ? `آخر يوم في الفترة${pName}`
     : `انتهت الفترة${pName}`;
-  const sub = `عندك ${goalsWord(rev.count)} في بنك الأهداف — راجعهم واختار إيه يستاهل يبدأ دلوقتي.`;
+  const sub = `عندك ${countWord(rev.count, 'حاجة واحدة مجمّدة', 'حاجتين مجمّدين', 'حاجات مجمّدة', 'حاجة مجمّدة')} — راجعهم واختار إيه يتفتح دلوقتي.`;
   return `<section class="rev-ban" aria-label="مراجعة نهاية الفترة">
       <div class="rev-ban-h">
         <span class="g-med sm attn">${ico('inbox')}</span>
@@ -85,174 +73,371 @@ export function reviewBannerHtml(rev) {
     </section>`;
 }
 
-export function goalValHtml(g, ev) {
-  if (g.m === 'steps') return `${fmtNum(ev.cur)} <small>من ${fmtNum(ev.target)} خطوة</small>`;
-  if (ev.isTargetMetric) {
-    const start = g.start != null ? fmtNum(g.start) : '—';
-    const cur = ev.cur != null ? fmtNum(ev.cur) : '—';
-    return `${start} ← ${cur} <small>/ ${fmtNum(ev.target)}${ev.unit ? ` ${esc(ev.unit)}` : ''}</small>`;
-  }
-  return `${fmtNum(ev.cur)} <small>/ ${fmtNum(ev.target)}${ev.unit ? ` ${esc(ev.unit)}` : ''}</small>`;
-}
-
-function paceBarHtml(ev, tall = false) {
-  const showTick = !ev.overdue && ev.timePct > 0 && ev.timePct < 100;
-  return `<div class="pace-bar${tall ? ' tall' : ''}" aria-hidden="true">
-      <div class="pace-fill${ev.status === 'attn' ? ' attn' : ''}" style="width:${ev.pct}%"></div>
-      ${showTick ? `<span class="pace-tick" style="inset-inline-start:${ev.timePct}%"></span>` : ''}
+/** السلسلة البصرية: المجال ← الهدف (ليه) */
+function chainCrumbs(area, goal) {
+  return `<div class="chain-crumbs">
+      <span class="apill on">${ico(area.icon)}<span>${esc(area.name)}</span></span>
+      ${goal ? `<span class="chain-arr" aria-hidden="true">←</span><button type="button" class="apill chain-gbtn" data-act="fltedit" data-id="${esc(goal.id)}">${esc(goal.t)}</button>` : ''}
     </div>`;
 }
 
-function quickActionHtml(g, ev, s) {
-  const id = esc(g.id);
-  const src = g.src || {};
-  if (g.m === 'habit') {
-    if (src.kind === 'days' && src.k) {
-      const v = +s.day[src.k] || 0;
-      const done = v === 2;
-      const label = allHabitLabel(src.k, s.settings) || 'العادة';
-      return `<button type="button" class="g-act${done ? ' done' : ' attn'}" data-act="ghabit" data-k="${esc(src.k)}">${done ? `${ic(P.check)}اتعملت النهارده` : `علّم ${esc(label)}`}</button>`;
-    }
-    if (src.kind === 'salah') {
-      return `<button type="button" class="g-act" data-act="tab" data-tab="day">الصلوات${ic(P.chev)}</button>`;
-    }
-    return `<button type="button" class="g-act" data-act="sheet" data-sheet="habits">سجّل الرقم${ic(P.chev)}</button>`;
-  }
-  if (g.m === 'time') {
-    if (src.kind === 'deep' || src.kind === 'proj') {
-      return `<button type="button" class="g-act" data-act="sheet" data-sheet="work">سجّل شغل${ic(P.chev)}</button>`;
-    }
-    const cat = src.kind === 'work' ? 'work' : (src.c || 'work');
-    return `<button type="button" class="g-act" data-act="timecat" data-c="${esc(cat)}">سجّل ساعة${ic(P.chev)}</button>`;
-  }
-  if (g.m === 'metric') {
-    if (src.kind === 'income' || src.kind === 'exp_cap') {
-      return `<button type="button" class="g-act" data-act="tab" data-tab="money">الفلوس${ic(P.chev)}</button>`;
-    }
-    const met = s.metrics.find((m) => String(m.id) === String(src.id));
-    if (met?.t === 'count') {
-      return `<button type="button" class="g-act" data-act="mplus" data-id="${esc(met.id)}">${ic(P.plus)}١ ${esc(met.u || '')}</button>`;
-    }
-    if (met) {
-      return `<button type="button" class="g-act" data-act="medit" data-id="${esc(met.id)}">سجّل قراية${ic(P.chev)}</button>`;
-    }
-    return `<button type="button" class="g-act" data-act="gopen" data-id="${id}">التفاصيل${ic(P.chev)}</button>`;
-  }
-  if (g.m === 'manual') {
-    return `<button type="button" class="g-act" data-act="ginc" data-id="${id}">${ic(P.plus)}١ ${esc(ev.unit || '')}</button>`;
-  }
-  return `<button type="button" class="g-act" data-act="gopen" data-id="${id}">التفاصيل${ic(P.chev)}</button>`;
-}
-
-function focusCardHtml(g, ev, s) {
-  const id = esc(g.id);
-  const nextLine = g.m === 'steps'
-    ? `<span>الجاية: <b>${esc(ev.nextText)}</b></span>`
-    : `<span>${esc(ev.horizonText || 'هدف نشط')}</span>`;
-
-  return `<article class="gcard${ev.pct >= 100 && !ev.isCap ? ' done' : ''}">
-      <div class="gcard-h">
-        <span class="g-med">${ico(ev.pillar.icon)}</span>
-        <button type="button" class="g-main" data-act="gopen" data-id="${id}" aria-label="تفاصيل الهدف: ${esc(g.t)}">
-          <span class="g-title">${esc(g.t)}</span>
-          <span class="g-src">${esc(ev.pillar.name)} · ${esc(ev.sourceLabel)}</span>
-        </button>
-        <span class="g-pct ${ev.status}">${fmtNum(ev.pct)}٪</span>
-      </div>
-      <div class="pace-wrap">
-        ${g.m === 'steps' && ev.segs?.length
-          ? `<div class="m-segs" style="grid-template-columns:repeat(${ev.segs.length},1fr)" aria-hidden="true">${ev.segs.map((on) => `<i class="${on ? 'on' : ''}"></i>`).join('')}</div>`
-          : paceBarHtml(ev)}
+function projectProgressHtml(project, ev) {
+  const steps = Array.isArray(project.steps) ? project.steps : [];
+  if (project.m && project.m !== 'steps' && ev && ev.target > 0) {
+    return `<div class="pace-wrap">
+        <div class="pace-bar" aria-hidden="true"><div class="pace-fill${ev.status === 'attn' ? ' attn' : ''}" style="width:${ev.pct}%"></div></div>
         <div class="pace-meta">
-          <span class="pace-val">${goalValHtml(g, ev)}</span>
-          <span class="pace-tag ${ev.status}">${esc(ev.paceText)}</span>
+          <span class="pace-val">${fmtNum(ev.cur)} <small>/ ${fmtNum(ev.target)} ${esc(ev.unit || '')}</small></span>
+          <span class="pace-tag ${ev.status}">${fmtNum(ev.pct)}٪</span>
         </div>
+      </div>`;
+  }
+  const doneCnt = steps.filter((x) => x.done).length + (ev?.linked?.filter((t) => t.done).length || 0);
+  const total = steps.length + (ev?.linked?.length || 0);
+  if (!total) return '';
+  const pct = Math.round((doneCnt / total) * 100);
+  return `<div class="pace-wrap">
+      <div class="m-segs" style="grid-template-columns:repeat(${Math.min(total, 12)},1fr)" aria-hidden="true">
+        ${Array.from({ length: Math.min(total, 12) }, (_, i) => `<i class="${i < Math.round((doneCnt / total) * Math.min(total, 12)) ? 'on' : ''}"></i>`).join('')}
       </div>
-      <div class="g-foot">
-        <div class="g-next">${nextLine}</div>
-        ${quickActionHtml(g, ev, s)}
+      <div class="pace-meta">
+        <span class="pace-val">${fmtNum(doneCnt)} <small>من ${fmtNum(total)} خطوة ومهمة</small></span>
+        <span class="pace-tag done">${fmtNum(pct)}٪</span>
       </div>
-    </article>`;
+    </div>`;
 }
 
-function compactRowHtml(g, ev) {
-  const id = esc(g.id);
-  return `<div class="grow">
-      <span class="g-med sm">${ico(ev.pillar.icon)}</span>
-      <button type="button" class="grow-m" data-act="gopen" data-id="${id}" aria-label="تفاصيل الهدف: ${esc(g.t)}">
-        <span class="grow-r1"><b>${esc(g.t)}</b><span class="${ev.status}">${fmtNum(ev.pct)}٪</span></span>
-        ${paceBarHtml(ev)}
-        <span class="grow-r2"><span>${goalValHtml(g, ev)}</span><span>${esc(ev.paceText)}</span></span>
+/** كارت «المشروع الواحد الشغّال دلوقتي» (يظهر في اليوم والخطة). */
+export function activeProjectToday(s, sys) {
+  const ch = sys?.activeChain;
+  if (!ch) {
+    if (!sys?.frozenProjects?.length) return '';
+    return `<section class="panel now-empty-card" aria-label="المشروع الشغّال">
+        <div class="gcard-h">
+          <span class="g-med sm">${ico('target')}</span>
+          <div class="g-main">
+            <span class="g-title">مفيش مشروع شغّال دلوقتي</span>
+            <span class="g-src">عندك ${countWord(sys.frozenProjects.length, 'مشروع واحد مجمّد', 'مشروعين مجمّدين', 'مشاريع مجمّدة', 'مشروع مجمّد')} مستني دوره</span>
+          </div>
+          <button type="button" class="g-act attn" data-act="planfrozen">افتح واحد${ic(P.chev)}</button>
+        </div>
+      </section>`;
+  }
+  const { project: p, goal, area, ev, nextStep } = ch;
+  const id = esc(p.id);
+  const firstOpenStep = Array.isArray(p.steps) ? p.steps.find((x) => !x.done) : null;
+  const actBtn = firstOpenStep
+    ? `<button type="button" class="g-act attn" data-act="gstog" data-gid="${id}" data-sid="${esc(firstOpenStep.id)}">${ic(P.check)}خلّصت الخطوة</button>`
+    : `<button type="button" class="g-act" data-act="gopen" data-id="${id}">التفاصيل${ic(P.chev)}</button>`;
+
+  return `<div class="sec"><b>المشروع الشغّال دلوقتي</b><span class="mut">١ فقط للتركيز</span></div>
+    <article class="gcard chain-card" aria-label="المشروع الشغّال دلوقتي">
+      ${chainCrumbs(area, goal)}
+      <button type="button" class="g-main chain-head" data-act="gopen" data-id="${id}">
+        <span class="chain-title">${esc(p.t)}</span>
+        ${p.outcome ? `<span class="chain-out">النتيجة: ${esc(p.outcome)}</span>` : ''}
       </button>
-      ${g.m === 'manual' ? `<button type="button" class="g-incsm" data-act="ginc" data-id="${id}" aria-label="زوّد واحد">+١</button>` : ''}
+      ${projectProgressHtml(p, ev)}
+      <div class="g-foot">
+        <div class="g-next">${nextStep ? `الجاية: <b>${esc(nextStep)}</b>` : 'ضيف خطوات أو مهام للنهاردة'}</div>
+        ${actBtn}
+      </div>
+    </article>`;
+}
+
+/** التوافق مع الاستيراد القديم في today.js إن وُجد. */
+export const focusGoalsToday = activeProjectToday;
+
+function taskRowHtml(t, today, projMap, inFrozen = false) {
+  const late = !t.done && isOverdue(t, today);
+  const proj = t.goalId ? projMap.get(String(t.goalId)) : null;
+  const actionBtn = t.done
+    ? ''
+    : inFrozen
+      ? `<button class="g-act sm" type="button" data-act="tactivate" data-id="${esc(t.id)}" aria-label="انقلها للنهاردة">للنهاردة${ic(P.up)}</button>`
+      : `<button class="ib" type="button" data-act="tfreeze" data-id="${esc(t.id)}" aria-label="جمّد المهمة لبعدين">${ic(P.down)}</button>`;
+  return `<div class="tk${t.done ? ' done' : ''}${t.pri && !t.done ? ' pri' : ''}">
+      <button class="tk-c" type="button" data-act="tdone" data-id="${esc(t.id)}" aria-pressed="${!!t.done}" aria-label="${t.done ? 'رجّعها مفتوحة' : 'علّم إنها خلصت'}: ${esc(t.t)}"><i>${t.done ? ic(P.check) : ''}</i></button>
+      <button class="tk-m tk-editb" type="button" data-act="tedit" data-id="${esc(t.id)}" aria-label="عدّل المهمة: ${esc(t.t)}">
+        <span class="tk-t">${t.pri && !t.done ? '<span class="flag" aria-label="مهم">⚑</span>' : ''}${esc(t.t)}</span>
+        <span class="tk-tags">
+          ${proj ? `<span class="g-tag">${ico('target')}<span>${esc(proj.t)}</span></span>` : ''}
+          ${t.cat ? `<span class="tcat">${esc(t.cat)}</span>` : ''}
+          ${late ? `<span class="tk-s">${ic(P.clock)}متأخرة من ${shortDate(t.due)}</span>` : ''}
+        </span>
+      </button>
+      ${actionBtn}
+      <button class="ib" type="button" data-act="tdel" data-id="${esc(t.id)}" aria-label="امسح المهمة">${ic(P.close)}</button>
     </div>`;
 }
 
-function backlogCardHtml(g, ev, s) {
-  const id = esc(g.id);
-  const age = backlogAgeText(g.at, s.today, s.settings?.dayStart);
-  const revNote = g.revAt ? ` · اتراجع ${backlogAgeText(g.revAt, s.today, s.settings?.dayStart)}` : '';
-  return `<article class="gcard bkcard${g.pri ? ' pri' : ''}">
-      <div class="gcard-h">
-        <span class="g-med sm">${ico(ev.pillar.icon)}</span>
-        <button type="button" class="g-main" data-act="gform" data-id="${id}" aria-label="عدّل فكرة الهدف: ${esc(g.t)}">
-          <span class="g-title">${g.pri ? '<span class="flag" aria-label="أولوية">⚑</span>' : ''}${esc(g.t)}</span>
-          <span class="g-src">${esc(ev.pillar.name)}${age ? ` · ${esc(age)}` : ''}${esc(revNote)}</span>
-        </button>
-        <button type="button" class="ib" data-act="gdel" data-id="${id}" aria-label="امسح فكرة الهدف">${ic(P.close)}</button>
-      </div>
-      ${g.why ? `<p class="bk-why">${esc(g.why)}</p>` : ''}
-      <div class="g-foot">
-        <button type="button" class="bk-link" data-act="gform" data-id="${id}">تعديل</button>
-        <button type="button" class="g-act attn" data-act="gpromote" data-id="${id}">ابدأه دلوقتي${ic(P.arrowUpLeft)}</button>
-      </div>
-    </article>`;
+// ---------- شاشة ١: «دلوقتي» (المشروع الواحد + ٣ مهام بالكتير + العادات الصغيرة) ----------
+function renderNowView(s, sys) {
+  const projMap = new Map((s.goals || []).map((g) => [String(g.id), g]));
+  const ch = sys.activeChain;
+
+  // ١. المشروع الشغّال دلوقتي (١ فقط)
+  let projSection = '';
+  if (ch) {
+    const { project: p, goal, area, ev } = ch;
+    const id = esc(p.id);
+    const steps = Array.isArray(p.steps) ? p.steps : [];
+    const openSteps = steps.filter((x) => !x.done);
+    projSection = `<div class="sec"><b>المشروع الشغّال دلوقتي</b><span class="ask">١ من ١</span></div>
+      <article class="gcard chain-card">
+        ${chainCrumbs(area, goal)}
+        <div class="gcard-h">
+          <button type="button" class="g-main" data-act="gopen" data-id="${id}">
+            <span class="chain-title">${esc(p.t)}</span>
+            ${p.outcome ? `<span class="chain-out">النتيجة: ${esc(p.outcome)}</span>` : ''}
+            ${goal?.why ? `<span class="g-src">ليه: ${esc(goal.why)}</span>` : ''}
+          </button>
+          <button type="button" class="ib" data-act="gopen" data-id="${id}" aria-label="تفاصيل المشروع">${ic(P.chev)}</button>
+        </div>
+        ${projectProgressHtml(p, ev)}
+        ${openSteps.length ? `<div class="mini-steps">${openSteps.slice(0, 3).map((st) => `<div class="tk">
+            <button class="tk-c" type="button" data-act="gstog" data-gid="${id}" data-sid="${esc(st.id)}" aria-pressed="false" aria-label="${esc(st.t)}"><i></i></button>
+            <div class="tk-m"><span class="tk-t">${esc(st.t)}</span></div>
+          </div>`).join('')}</div>` : ''}
+        <div class="chain-acts">
+          <button type="button" class="g-act done" data-act="garchopen" data-id="${id}">${ic(P.check)}خلّصت المشروع</button>
+          <button type="button" class="g-act" data-act="gfreeze" data-id="${id}">جمّده مؤقتاً</button>
+          <button type="button" class="g-act" data-act="gopen" data-id="${id}">الخطوات${ic(P.chev)}</button>
+        </div>
+      </article>`;
+  } else {
+    projSection = `<div class="sec"><b>المشروع الشغّال دلوقتي</b><span class="mut">٠ من ١</span></div>
+      <div class="empty g-empty">
+        <b>مفيش مشروع شغّال دلوقتي</b>
+        <p>القاعدة بسيطة: <b>مشروع كبير واحد بس</b> شغّال في المرة، والباقي مجمّد مش ممسوح — ولما يخلص تفتح اللي بعده.</p>
+        <div class="btns" style="margin-top:12px">
+          ${sys.frozenProjects.length
+            ? `<button type="button" class="pri" data-act="planview" data-v="frozen">افتح مشروع من المجمّد (${fmtNum(sys.frozenProjects.length)})</button>`
+            : `<button type="button" class="pri" data-act="fltform" data-kind="project" data-st="active">+ ابدأ أول مشروع بالفلتر</button>`}
+          <button type="button" data-act="fltform" data-kind="project" data-st="frozen">+ اركن مشروع مجمّد</button>
+        </div>
+      </div>`;
+  }
+
+  // لو في مشاريع شغّالة زيادة من بيانات قديمة
+  const extraWarn = sys.extraActiveProjects.length
+    ? `<section class="panel extra-warn">
+        <b>عندك ${countWord(sys.extraActiveProjects.length, 'مشروع تاني مفتوح', 'مشروعين تانيين مفتوحين', 'مشاريع تانية مفتوحة', 'مشروع تاني مفتوح')}</b>
+        <p class="hint" style="margin:0">عشان التركيز مايتشتتش، يفضّل تجمّد الزيادة وتخلي مشروع واحد بس شغّال دلوقتي.</p>
+        <div class="list">${sys.extraActiveProjects.map(({ project: ep, area: ea }) => `<div class="srow">
+          <button class="srow-b" type="button" data-act="gopen" data-id="${esc(ep.id)}"><span class="m"><b>${esc(ep.t)}</b><span>${esc(ea.name)}</span></span></button>
+          <button class="g-act sm attn" type="button" data-act="gfreeze" data-id="${esc(ep.id)}">جمّده</button>
+        </div>`).join('')}</div>
+      </section>` : '';
+
+  // ٢. مهام النهاردة (٣ مهام بالكتير من الشغّال)
+  const overCap = sys.todayOpen.count > TODAY_TASK_LIMIT;
+  const atCap = sys.todayOpen.count >= TODAY_TASK_LIMIT;
+  const capCls = overCap ? 'ask' : atCap ? 'ok' : '';
+  const tasksBody = sys.todayOpen.list.length
+    ? `<div class="list">${sys.todayOpen.list.map((t) => taskRowHtml(t, s.today, projMap, false)).join('')}</div>`
+    : `<div class="list"><p class="empty-s">${sys.todayDone.length ? 'خلّصت مهام النهاردة كلها ✓' : 'مفيش مهام للنهاردة — اختار لحد ٣ مهام من الشغّال بس.'}</p></div>`;
+
+  const todayDoneBox = sys.todayDone.length
+    ? `<details class="done-det"><summary>خلّصت النهاردة (${fmtNum(sys.todayDone.length)})</summary>
+        <div class="list">${sys.todayDone.map((t) => taskRowHtml(t, s.today, projMap, false)).join('')}</div>
+      </details>` : '';
+
+  const tasksSection = `<div class="sec">
+      <b>مهام النهاردة</b>
+      <span class="${capCls}">${fmtNum(sys.todayOpen.count)} من ${fmtNum(TODAY_TASK_LIMIT)}${overCap ? ' · فوق الحد' : atCap ? ' · كفاية للنهاردة' : ''}</span>
+    </div>
+    ${tasksBody}
+    <div class="now-tacts">
+      <button type="button" class="gh full" data-act="fltform" data-kind="task" data-st="active">${ic(P.plus)} ${atCap ? 'ضيف أو بدّل مهمة للنهاردة (حد ٣)' : 'مهمة جديدة للنهاردة'}</button>
+    </div>
+    ${todayDoneBox}`;
+
+  // ٣. العادات الصغيرة الشغّالة (تخدم المجال مباشرة)
+  const areasWithHabits = sys.areas.filter((a) => a.activeHabits.length > 0);
+  const totalActHabits = areasWithHabits.reduce((sum, a) => sum + a.activeHabits.length, 0);
+  const habitsSection = `<div class="sec"><b>العادات الصغيرة الشغّالة</b><span class="mut">${fmtNum(totalActHabits)} · تخدم المجال مباشرة</span></div>
+    ${areasWithHabits.length ? `<section class="panel hab-overview">
+      ${areasWithHabits.map(({ area, activeHabits: hs }) => `<div class="hab-ov-grp">
+        <div class="hab-ov-h"><span class="apill on">${ico(area.icon)}<span>${esc(area.name)}</span></span></div>
+        <div class="hab-ov-chips">${hs.map((h) => `<span class="hchip"><span>${esc(h.n)}</span><button type="button" class="hchip-frz" data-act="hfreeze" data-k="${esc(h.k)}" aria-label="جمّد عادة ${esc(h.n)}">جمّد</button></span>`).join('')}</div>
+      </div>`).join('')}
+      <button type="button" class="lnk" data-act="fltform" data-kind="habit" data-st="active">${ic(P.plus)} عادة صغيرة جديدة${ic(P.chev)}</button>
+    </section>` : `<div class="list"><p class="empty-s">مفيش عادات شغّالة دلوقتي. <button type="button" class="bk-link" data-act="fltform" data-kind="habit" data-st="active">+ ضيف عادة</button></p></div>`}`;
+
+  return `${projSection}${extraWarn}${tasksSection}${habitsSection}`;
 }
 
-function areaCardHtml(entry) {
-  const { area, active, backlog, archived, avgPct, needPush } = entry;
-  const aid = esc(area.id);
-  const hasAct = active.length > 0;
-  const statusCls = hasAct ? (needPush > 0 ? 'attn' : 'done') : (backlog.length > 0 ? 'attn' : '');
-  const midHtml = hasAct
-    ? `<div class="pace-wrap">
-        <div class="pace-bar" aria-hidden="true"><div class="pace-fill${needPush > 0 ? ' attn' : ''}" style="width:${avgPct}%"></div></div>
-        <div class="pace-meta">
-          <span class="area-sub">متوسط التقدّم في الجانب ده</span>
-          <span class="pace-tag ${needPush > 0 ? 'attn' : 'done'}">${fmtNum(avgPct)}٪</span>
-        </div>
-      </div>`
-    : `<p class="area-empty-line">${backlog.length
-      ? `مفيش هدف نشط دلوقتي · مستني ${goalsWord(backlog.length)} في البنك`
-      : 'الجانب ده فاضي — تقدر تبدأ هدف أو تركن أفكار فيه'}</p>`;
+// ---------- شاشة ٢: «المجمّد» (مش ممسوح — بيتفتح لما حاجة تخلص) ----------
+function renderFrozenView(s, ui, sys, rev) {
+  const projMap = new Map((s.goals || []).map((g) => [String(g.id), g]));
+  const ftype = ui.ftype || 'all';
+  const farea = ui.farea || 'all';
 
-  return `<article class="gcard acard">
-      <div class="gcard-h">
-        <span class="g-med${hasAct && !needPush ? ' ok' : ''}">${ico(area.icon)}</span>
-        <button type="button" class="g-main" data-act="gfilt" data-v="area:${aid}" aria-label="افتح جانب ${esc(area.name)}">
-          <span class="g-title">${esc(area.name)}</span>
-          <span class="g-src">${area.note ? esc(area.note) : 'دوس عشان تشوف أهداف الجانب ده'}</span>
-        </button>
-        <button type="button" class="ib" data-act="laform" data-id="${aid}" aria-label="عدّل جانب ${esc(area.name)}">${ic(P.edit)}</button>
-      </div>
-      ${midHtml}
-      <div class="acard-foot">
-        <div class="acard-pills">
-          <span class="apill${hasAct ? ' on' : ''}">نشط ${fmtNum(active.length)}</span>
-          <span class="apill${!hasAct && backlog.length ? ' attn' : ''}">في البنك ${fmtNum(backlog.length)}</span>
-          ${archived.length ? `<span class="apill done">مكتمل ${fmtNum(archived.length)}</span>` : ''}
+  const typeTabs = [
+    ['all', `الكل (${fmtNum(sys.frozenTotal)})`],
+    ['project', `مشاريع (${fmtNum(sys.frozenProjects.length)})`],
+    ['goal', `أهداف (${fmtNum(sys.frozenGoals.length)})`],
+    ['task', `مهام (${fmtNum(sys.frozenTasks.length)})`],
+    ['habit', `عادات (${fmtNum(sys.frozenHabits.length)})`],
+    ...(sys.completedProjects.length ? [['done', `المكتمل (${fmtNum(sys.completedProjects.length)})`]] : []),
+  ];
+  const curType = typeTabs.some(([k]) => k === ftype) ? ftype : 'all';
+
+  const topBar = `<div class="bk-bar">
+      ${(sys.frozenProjects.length + sys.frozenGoals.length) > 0
+        ? `<button type="button" class="g-act${rev?.due ? ' attn' : ''}" data-act="grevstart">${ico('inbox')}<span>جلسة مراجعة (${fmtNum(sys.frozenProjects.length + sys.frozenGoals.length)})</span></button>`
+        : ''}
+      <button type="button" class="g-act" data-act="fltform" data-st="frozen">${ic(P.plus)}<span>اركن في المجمّد</span></button>
+    </div>
+    <div class="pfilt" role="group" aria-label="نوع المجمّد">
+      ${typeTabs.map(([k, l]) => `<button type="button" class="pf" data-act="ftype" data-v="${k}" aria-pressed="${curType === k}">${l}</button>`).join('')}
+    </div>`;
+
+  if (curType === 'done') {
+    const doneHtml = `<div class="sec"><b>مشاريع خلصتها</b><span>${fmtNum(sys.completedProjects.length)}</span></div>
+      <div class="pillars">${sys.completedProjects.map(({ project: p, goal, area }) => `<article class="gcard done">
+        ${chainCrumbs(area, goal)}
+        <div class="gcard-h">
+          <span class="g-med ok">${ico('trophy')}</span>
+          <button type="button" class="g-main" data-act="gopen" data-id="${esc(p.id)}">
+            <span class="g-title">${esc(p.t)}</span>
+            ${p.outcome ? `<span class="g-src">${esc(p.outcome)}</span>` : ''}
+          </button>
+          <span class="g-pct done">خلص ✓</span>
         </div>
-        <button type="button" class="acard-open ${statusCls}" data-act="gfilt" data-v="area:${aid}">افتح${ic(P.chev)}</button>
-      </div>
-    </article>`;
+        ${p.note ? `<p class="g-ref"><b>الدرس المستفاد:</b> ${esc(p.note)}</p>` : ''}
+      </article>`).join('')}</div>`;
+    return `${topBar}${doneHtml}`;
+  }
+
+  const areaBar = sys.areas.length > 1 && sys.frozenTotal > 0
+    ? `<div class="pfilt sub-filt" role="group" aria-label="فلترة بالمجال">
+        <button type="button" class="pf" data-act="farea" data-v="all" aria-pressed="${farea === 'all'}">كل المجالات</button>
+        ${sys.areas.map((a) => `<button type="button" class="pf" data-act="farea" data-v="${esc(a.area.id)}" aria-pressed="${farea === a.area.id}">${esc(a.area.name)}</button>`).join('')}
+      </div>` : '';
+
+  const byArea = (areaId) => farea === 'all' || areaId === farea;
+  const fProjs = (curType === 'all' || curType === 'project') ? sys.frozenProjects.filter((x) => byArea(x.area.id)) : [];
+  const fGoals = (curType === 'all' || curType === 'goal') ? sys.frozenGoals.filter((x) => byArea(x.area.id)) : [];
+  const fTasks = (curType === 'all' || curType === 'task')
+    ? sys.frozenTasks.filter((t) => {
+      if (farea === 'all') return true;
+      const pr = t.goalId ? projMap.get(String(t.goalId)) : null;
+      return pr?.p === farea || t.p === farea;
+    }) : [];
+  const fHabits = (curType === 'all' || curType === 'habit') ? sys.frozenHabits.filter((x) => byArea(x.area.id)) : [];
+
+  let sections = '';
+  if (fProjs.length) {
+    sections += `<div class="sec"><b>مشاريع مجمّدة</b><span class="ask">${fmtNum(fProjs.length)}</span></div>
+      <div class="pillars">${fProjs.map(({ project: p, goal, area }) => {
+        const age = backlogAgeText(p.at, s.today, s.settings?.dayStart);
+        return `<article class="gcard bkcard${p.pri ? ' pri' : ''}">
+          ${chainCrumbs(area, goal)}
+          <div class="gcard-h">
+            <button type="button" class="g-main" data-act="fltedit" data-id="${esc(p.id)}">
+              <span class="g-title">${p.pri ? '<span class="flag" aria-label="أولوية">⚑</span>' : ''}${esc(p.t)}</span>
+              <span class="g-src">${p.outcome ? `النتيجة: ${esc(p.outcome)}` : (age ? `مجمّد ${esc(age)}` : 'مشروع مجمّد')}</span>
+            </button>
+            <button type="button" class="ib" data-act="gdel" data-id="${esc(p.id)}" aria-label="امسح المشروع">${ic(P.close)}</button>
+          </div>
+          ${p.why ? `<p class="bk-why">${esc(p.why)}</p>` : ''}
+          <div class="g-foot">
+            <button type="button" class="bk-link" data-act="fltedit" data-id="${esc(p.id)}">تعديل</button>
+            <button type="button" class="g-act attn" data-act="gunfreeze" data-id="${esc(p.id)}">شغّله دلوقتي${ic(P.arrowUpLeft)}</button>
+          </div>
+        </article>`;
+      }).join('')}</div>`;
+  }
+
+  if (fGoals.length) {
+    sections += `<div class="sec"><b>أهداف مجمّدة (ليه؟)</b><span>${fmtNum(fGoals.length)}</span></div>
+      <div class="pillars">${fGoals.map(({ goal: g, area }) => `<article class="gcard bkcard">
+        <div class="gcard-h">
+          <span class="g-med sm">${ico(area.icon)}</span>
+          <button type="button" class="g-main" data-act="fltedit" data-id="${esc(g.id)}">
+            <span class="g-title">${esc(g.t)}</span>
+            <span class="g-src">${esc(area.name)} · هدف مجمّد</span>
+          </button>
+          <button type="button" class="ib" data-act="gdel" data-id="${esc(g.id)}" aria-label="امسح الهدف">${ic(P.close)}</button>
+        </div>
+        ${g.why ? `<p class="bk-why">ليه: ${esc(g.why)}</p>` : ''}
+        <div class="g-foot">
+          <button type="button" class="bk-link" data-act="fltform" data-kind="project" data-p="${esc(area.id)}" data-parent="${esc(g.id)}">+ مشروع للهدف ده</button>
+          <button type="button" class="g-act" data-act="gunfreeze" data-id="${esc(g.id)}">فعّل الهدف</button>
+        </div>
+      </article>`).join('')}</div>`;
+  }
+
+  if (fTasks.length) {
+    sections += `<div class="sec"><b>مهام مجمّدة / لبعدين</b><span>${fmtNum(fTasks.length)}</span></div>
+      <div class="list">${fTasks.map((t) => taskRowHtml(t, s.today, projMap, true)).join('')}</div>`;
+  }
+
+  if (fHabits.length) {
+    sections += `<div class="sec"><b>عادات مجمّدة (محفوظ تاريخها)</b><span>${fmtNum(fHabits.length)}</span></div>
+      <div class="list">${fHabits.map(({ habit: h, area }) => `<div class="srow">
+        <span class="g-med sm" style="margin-inline-end:8px">${ico(area.icon)}</span>
+        <span class="m"><b>${esc(h.n)}</b><span>${esc(area.name)} · مجمّدة</span></span>
+        <button type="button" class="g-act sm done" data-act="hunfreeze" data-k="${esc(h.k)}">رجّعها شغّالة</button>
+      </div>`).join('')}</div>`;
+  }
+
+  if (!sections) {
+    sections = `<div class="empty g-empty">
+        <b>مفيش حاجة مجمّدة هنا</b>
+        <p>أي مشروع أو هدف أو عادة مش وقتهم دلوقتي اركنهم هنا بدل ما تمسحهم أو تزحم يومك بيهم — ولما حاجة تخلص تفتحهم.</p>
+      </div>`;
+  }
+
+  return `${topBar}${areaBar}${sections}`;
 }
 
-function renderAreaDetail(entry, gsum, s) {
-  const { area, active, backlog, archived } = entry;
+// ---------- شاشة ٣: «المجالات» (خريطة الحياة + شجرة كل مجال) ----------
+function renderAreasMap(sys) {
+  const cards = sys.areas.map((entry) => {
+    const { area, activeHabits, goals, standaloneProjects, hasActiveProject, activeProject, frozenCount } = entry;
+    const aid = esc(area.id);
+    const totalProjects = goals.reduce((a, x) => a + x.projects.length, 0) + standaloneProjects.length;
+    const mid = hasActiveProject && activeProject
+      ? `<div class="area-now-strip"><i class="f-dot" aria-hidden="true"></i><span>شغّال دلوقتي: <b>${esc(activeProject.project.t)}</b></span></div>`
+      : `<p class="area-empty-line">${activeHabits.length
+        ? `${countWord(activeHabits.length, 'عادة واحدة شغّالة', 'عادتين شغّالين', 'عادات شغّالة', 'عادة شغّالة')} بتخدم المجال مباشرة`
+        : 'دوس عشان ترتّب العادات والأهداف والمشاريع في المجال ده'}</p>`;
+    return `<article class="gcard acard${hasActiveProject ? ' has-now' : ''}">
+        <div class="gcard-h">
+          <span class="g-med${hasActiveProject ? ' ok' : ''}">${ico(area.icon)}</span>
+          <button type="button" class="g-main" data-act="planview" data-v="area:${aid}" aria-label="افتح مجال ${esc(area.name)}">
+            <span class="g-title">${esc(area.name)}</span>
+            <span class="g-src">${area.note ? esc(area.note) : 'المجال ← أهداف ← مشاريع + عادات'}</span>
+          </button>
+          <button type="button" class="ib" data-act="laform" data-id="${aid}" aria-label="عدّل مجال ${esc(area.name)}">${ic(P.edit)}</button>
+        </div>
+        ${mid}
+        <div class="acard-foot">
+          <div class="acard-pills">
+            <span class="apill${activeHabits.length ? ' on' : ''}">عادات ${fmtNum(activeHabits.length)}</span>
+            <span class="apill${goals.length ? ' on' : ''}">أهداف ${fmtNum(goals.length)}</span>
+            <span class="apill${frozenCount ? ' attn' : ''}">مشاريع ${fmtNum(totalProjects)}</span>
+          </div>
+          <button type="button" class="acard-open${hasActiveProject ? ' done' : ''}" data-act="planview" data-v="area:${aid}">افتح${ic(P.chev)}</button>
+        </div>
+      </article>`;
+  }).join('');
+
+  return `<div class="sec"><b>خريطة مجالات حياتك</b><span>${fmtNum(sys.areas.length)} مجالات</span></div>
+    <div class="pillars">${cards}</div>
+    <button type="button" class="gh full" data-act="laform">${ic(P.plus)} أضف مجال جديد</button>`;
+}
+
+function renderAreaTree(entry) {
+  const { area, activeHabits, frozenHabits, goals, standaloneProjects, completedProjects } = entry;
   const aid = esc(area.id);
+
   const topBar = `<div class="adet-top">
-      <button type="button" class="adet-back" data-act="gfilt" data-v="areas">${ic(P.prev)}<span>كل الجوانب</span></button>
-      <button type="button" class="adet-ed" data-act="laform" data-id="${aid}">${ic(P.edit)}<span>تعديل الجانب</span></button>
+      <button type="button" class="adet-back" data-act="planview" data-v="areas">${ic(P.prev)}<span>كل المجالات</span></button>
+      <button type="button" class="adet-ed" data-act="laform" data-id="${aid}">${ic(P.edit)}<span>تعديل المجال</span></button>
     </div>`;
 
   const hero = `<section class="panel adet-hero">
@@ -260,515 +445,434 @@ function renderAreaDetail(entry, gsum, s) {
         <span class="g-med">${ico(area.icon)}</span>
         <div class="g-main">
           <span class="g-title">${esc(area.name)}</span>
-          <span class="g-src">${area.note ? esc(area.note) : `${fmtNum(active.length)} نشط · ${fmtNum(backlog.length)} في بنك الأهداف`}</span>
+          <span class="g-src">${area.note ? esc(area.note) : 'عادات مباشرة + أهداف (ليه) ← مشاريع'}</span>
         </div>
       </div>
       <div class="adet-acts">
-        <button type="button" class="g-act" data-act="gform" data-p="${aid}" data-st="active">${ic(P.plus)}هدف نشط</button>
-        <button type="button" class="g-act attn" data-act="gform" data-p="${aid}" data-st="backlog">${ic(P.plus)}اركن في البنك</button>
+        <button type="button" class="g-act" data-act="fltform" data-p="${aid}" data-kind="habit">+ عادة للمجال</button>
+        <button type="button" class="g-act attn" data-act="fltform" data-p="${aid}" data-kind="goal">+ هدف / مشروع</button>
       </div>
     </section>`;
 
-  let sections = '';
-  if (active.length) {
-    sections += `<div class="sec"><b>شغال عليهم دلوقتي</b><span>${fmtNum(active.length)}</span></div>
-      <div class="pillars">${active.map((g) => focusCardHtml(g, gsum.evals.get(g.id), s)).join('')}</div>`;
-  }
-  if (backlog.length) {
-    sections += `<div class="sec"><b>في بنك الأهداف (مستني دوره)</b><span class="ask">${fmtNum(backlog.length)}</span></div>
-      <div class="pillars">${backlog.map((g) => backlogCardHtml(g, gsum.evals.get(g.id), s)).join('')}</div>`;
-  }
-  if (archived.length) {
-    sections += `<div class="sec"><b>إنجازات مكتملة</b><span>${fmtNum(archived.length)}</span></div>
-      <div class="pillars">${archived.map((g) => {
-        const ev = gsum.evals.get(g.id);
-        return `<article class="gcard done">
-            <div class="gcard-h">
-              <span class="g-med">${ico('trophy')}</span>
-              <button type="button" class="g-main" data-act="gopen" data-id="${esc(g.id)}">
-                <span class="g-title">${esc(g.t)}</span>
-                <span class="g-src">${esc(ev.horizonText)} · ${esc(ev.sourceLabel)}</span>
-              </button>
-              <span class="g-pct done">١٠٠٪</span>
-            </div>
-            ${g.note ? `<p class="g-ref"><b>الدرس المستفاد:</b> ${esc(g.note)}</p>` : ''}
-          </article>`;
-      }).join('')}</div>`;
-  }
-  if (!active.length && !backlog.length && !archived.length) {
-    sections = `<div class="empty g-empty">
-        <b>لسه مفيش أهداف في «${esc(area.name)}»</b>
-        <p>تقدر تبدأ هدف نشط دلوقتي، أو تركن أي حاجة عايز تظبطها في الجانب ده جوه «بنك الأهداف» وتراجعها نهاية الفترة.</p>
+  // ١. العادات (تخدم المجال مباشرة من غير هدف تحتها)
+  const habBlock = `<div class="sec"><b>عادات المجال (مباشرة)</b><span>${fmtNum(activeHabits.length)} شغّالة</span></div>
+    <section class="panel hab-overview">
+      ${activeHabits.length ? `<div class="hab-ov-chips">${activeHabits.map((h) => `<span class="hchip"><span>${esc(h.n)}</span><button type="button" class="hchip-frz" data-act="hfreeze" data-k="${esc(h.k)}">جمّد</button></span>`).join('')}</div>`
+        : '<p class="hint" style="margin:0">مفيش عادات شغّالة في المجال ده لسه.</p>'}
+      ${frozenHabits.length ? `<div class="hab-frz-row"><span class="hint" style="margin:0">مجمّدة:</span>${frozenHabits.map((h) => `<button type="button" class="hchip muted" data-act="hunfreeze" data-k="${esc(h.k)}">${esc(h.n)} ↺</button>`).join('')}</div>` : ''}
+    </section>`;
+
+  // ٢. الأهداف (ليه) ← وتحت كل هدف مشاريعه
+  const projRow = ({ project: p, ev, openTasks }) => {
+    const isAct = itemStatus(p) === 'active';
+    return `<div class="tree-proj${isAct ? ' is-now' : ''}">
+        <button type="button" class="tree-proj-m" data-act="gopen" data-id="${esc(p.id)}">
+          <span class="tree-proj-r1">
+            <b>${esc(p.t)}</b>
+            <span class="apill ${isAct ? 'done' : ''}">${isAct ? 'شغّال دلوقتي' : 'مجمّد'}</span>
+          </span>
+          ${p.outcome ? `<span class="g-src">النتيجة: ${esc(p.outcome)}</span>` : ''}
+          ${openTasks.length ? `<span class="g-src">${countWord(openTasks.length, 'مهمة مفتوحة', 'مهمتين مفتوحين', 'مهام مفتوحة', 'مهمة مفتوحة')}</span>` : (ev?.pct > 0 ? `<span class="g-src">تقدّم ${fmtNum(ev.pct)}٪</span>` : '')}
+        </button>
+        ${isAct
+          ? `<button type="button" class="g-act sm" data-act="gfreeze" data-id="${esc(p.id)}">جمّده</button>`
+          : `<button type="button" class="g-act sm attn" data-act="gunfreeze" data-id="${esc(p.id)}">شغّله</button>`}
       </div>`;
+  };
+
+  let goalsBlock = `<div class="sec"><b>الأهداف (ليه؟) ومشاريعها</b><span>${fmtNum(goals.length)}</span></div>`;
+  if (goals.length) {
+    goalsBlock += `<div class="pillars">${goals.map(({ goal: g, projects }) => {
+      const isFrz = itemStatus(g) === 'frozen';
+      return `<article class="gcard tree-goal">
+          <div class="gcard-h">
+            <span class="g-med sm">${ico('compass')}</span>
+            <button type="button" class="g-main" data-act="fltedit" data-id="${esc(g.id)}">
+              <span class="g-title">${esc(g.t)}</span>
+              <span class="g-src">${g.why ? `ليه: ${esc(g.why)}` : (isFrz ? 'هدف مجمّد' : 'هدف نشط')}</span>
+            </button>
+            <button type="button" class="g-act sm" data-act="${isFrz ? 'gunfreeze' : 'gfreeze'}" data-id="${esc(g.id)}">${isFrz ? 'فعّل' : 'جمّد'}</button>
+          </div>
+          ${projects.length ? `<div class="tree-children">${projects.map(projRow).join('')}</div>` : '<p class="hint" style="margin:0">لسه مفيش مشروع مربوط بالهدف ده.</p>'}
+          <button type="button" class="lnk" data-act="fltform" data-kind="project" data-p="${aid}" data-parent="${esc(g.id)}">${ic(P.plus)} مشروع يحقق الهدف ده${ic(P.chev)}</button>
+        </article>`;
+    }).join('')}</div>`;
+  } else {
+    goalsBlock += `<div class="list"><p class="empty-s">مفيش أهداف في «${esc(area.name)}» لسه. ضيف هدف (ليه) واربط بيه مشروع يحققه.</p></div>`;
   }
-  return `${topBar}${hero}${sections}`;
+
+  const standaloneBlock = standaloneProjects.length
+    ? `<div class="sec"><b>مشاريع في المجال ده (بدون هدف مربوط)</b><span>${fmtNum(standaloneProjects.length)}</span></div>
+      <div class="panel tree-children">${standaloneProjects.map(projRow).join('')}</div>` : '';
+
+  const doneBlock = completedProjects.length
+    ? `<div class="sec"><b>مشاريع خلصت هنا</b><span>${fmtNum(completedProjects.length)}</span></div>
+      <div class="list">${completedProjects.map(({ project: p }) => `<button type="button" class="srow srow-b" data-act="gopen" data-id="${esc(p.id)}" style="width:100%;padding-inline:14px">
+        <span class="g-med sm ok" style="margin-inline-end:8px">${ico('trophy')}</span>
+        <span class="m"><b>${esc(p.t)}</b>${p.outcome ? `<span>${esc(p.outcome)}</span>` : ''}</span>
+      </button>`).join('')}</div>` : '';
+
+  return `${topBar}${hero}${habBlock}${goalsBlock}${standaloneBlock}${doneBlock}`;
 }
 
-/** تبويبة الأهداف الكاملة (جوه تبويبة الخطة): النشطة · بنك الأهداف · جوانب حياتي · الأرشيف. */
-export function renderGoals(s, ui, gsum, rev = null) {
-  const head = planSwitch(s, ui);
+/** التبويبة الموحدة «الخطة»: دلوقتي · المجمّد · المجالات */
+export function renderPlan(s, ui, sys, rev = null) {
+  const head = planSwitch(sys, ui);
   const ban = reviewBannerHtml(rev);
-  const areasList = gsum.areas || [];
+  const view = String(ui.planView || 'now');
 
-  const pulse = `<section class="pulse" aria-label="ملخص الأهداف">
+  const pulse = `<section class="pulse" aria-label="ملخص النظام">
       <div class="gp-grid">
-        <div class="gp-cell"><span class="gp-k">متوسط التقدّم</span><span class="gp-v">${gsum.active.length ? `${fmtNum(gsum.avgPct)}٪` : '—'}</span><span class="gp-s">${fmtNum(gsum.active.length)} نشط</span></div>
-        <div class="gp-cell"><span class="gp-k">على المسار</span><span class="gp-v ${gsum.needPush ? 'attn' : 'done'}">${fmtNum(gsum.onTrack)}</span><span class="gp-s">${gsum.needPush ? `${fmtNum(gsum.needPush)} محتاج دفعة` : 'ماشي كويس'}</span></div>
-        <button type="button" class="gp-cell gp-btn" data-act="gfilt" data-v="backlog" aria-label="افتح بنك الأهداف: ${fmtNum(gsum.backlog.length)}">
-          <span class="gp-k">بنك الأهداف</span>
-          <span class="gp-v${rev?.due ? ' attn' : ''}">${fmtNum(gsum.backlog.length)}</span>
-          <span class="gp-s">${rev?.due ? 'وقت المراجعة' : 'مستني المراجعة'}</span>
+        <button type="button" class="gp-cell gp-btn" data-act="planview" data-v="now" style="border-inline-start:0">
+          <span class="gp-k">مشروع شغّال</span>
+          <span class="gp-v ${sys.activeProject ? 'done' : ''}">${sys.activeProject ? '١' : '٠'}<small>/١</small></span>
+          <span class="gp-s">${sys.activeProject ? 'مركز عليه' : 'فاضي'}</span>
+        </button>
+        <button type="button" class="gp-cell gp-btn" data-act="planview" data-v="now">
+          <span class="gp-k">مهام النهاردة</span>
+          <span class="gp-v ${sys.todayOpen.count > TODAY_TASK_LIMIT ? 'attn' : 'done'}">${fmtNum(sys.todayOpen.count)}<small>/${fmtNum(TODAY_TASK_LIMIT)}</small></span>
+          <span class="gp-s">${sys.todayOpen.count >= TODAY_TASK_LIMIT ? 'الحد الأقصى' : 'من الشغّال'}</span>
+        </button>
+        <button type="button" class="gp-cell gp-btn" data-act="planview" data-v="frozen">
+          <span class="gp-k">المجمّد</span>
+          <span class="gp-v${rev?.due ? ' attn' : ''}">${fmtNum(sys.frozenTotal)}</span>
+          <span class="gp-s">${rev?.due ? 'وقت المراجعة' : 'محفوظ لبعدين'}</span>
         </button>
       </div>
     </section>`;
 
-  const filters = [
-    ['all', `النشطة (${fmtNum(gsum.active.length)})`],
-    ['backlog', `بنك الأهداف (${fmtNum(gsum.backlog.length)})`],
-    ['areas', `جوانب حياتي (${fmtNum(areasList.length)})`],
-    ...(gsum.active.some((g) => g.f) ? [['focus', 'تركيز دلوقتي']] : []),
-    ...(gsum.archived.length ? [['done', `الأرشيف (${fmtNum(gsum.archived.length)})`]] : []),
-  ];
+  if (view.startsWith('area:')) {
+    const aid = view.slice(5);
+    const entry = sys.areas.find((x) => x.area.id === aid);
+    if (entry) return `${head}${renderAreaTree(entry)}`;
+  }
+  if (view === 'frozen') return `${head}${ban}${pulse}${renderFrozenView(s, ui, sys, rev)}`;
+  if (view === 'areas') return `${head}${ban}${pulse}${renderAreasMap(sys)}`;
+  return `${head}${ban}${pulse}${renderNowView(s, sys)}`;
+}
 
-  const isAreaView = typeof ui.gfilt === 'string' && ui.gfilt.startsWith('area:');
-  const activeAreaEntry = isAreaView ? areasList.find((x) => `area:${x.area.id}` === ui.gfilt) : null;
-  const fcur = activeAreaEntry ? ui.gfilt : (filters.some(([k]) => k === ui.gfilt) ? ui.gfilt : 'all');
-  const barCur = activeAreaEntry ? 'areas' : fcur;
+// ---------- شاشة الفلتر السريع (٣ أسئلة بس: المجال؟ · النوع؟ · الحالة؟) ----------
+export function filterSheet(f, sys, s) {
+  const editing = !!f.id;
+  const areas = activeLifeAreas(s.settings);
+  const title = editing
+    ? (f.kind === 'goal' ? 'عدّل الهدف' : f.kind === 'habit' ? 'عدّل العادة' : 'عدّل المشروع')
+    : 'الفلتر — ٣ أسئلة بس';
 
-  const filtBar = `<div class="pfilt" role="group" aria-label="عرض الأهداف">${filters.map(([k, l]) => `<button type="button" class="pf" data-act="gfilt" data-v="${k}" aria-pressed="${barCur === k}">${l}</button>`).join('')}</div>`;
+  return {
+    label: title,
+    head: `<h2>${title}</h2>`,
+    body: `<div class="flt-wrap">
+        <div>
+          <span class="lbl">١. المجال؟</span>
+          <div class="picks" role="group" aria-label="المجال">
+            ${areas.map((a) => `<button class="pk" type="button" data-act="fltp" data-v="${esc(a.id)}" data-keep aria-pressed="false">${esc(a.name)}</button>`).join('')}
+          </div>
+        </div>
+        ${!editing ? `<div>
+          <span class="lbl">٢. نوعها إيه؟</span>
+          <div class="mode-grid2" role="group" aria-label="النوع">
+            ${FILTER_KINDS.map(([k, l, icon]) => `<button class="mopt" type="button" data-act="fltkind" data-v="${k}" data-keep aria-pressed="false">${ico(icon)}<span>${l}</span></button>`).join('')}
+          </div>
+          <p class="hint" data-out="fltkdesc" style="margin-top:6px"></p>
+        </div>` : ''}
+        <div class="blk" data-out="fltfields"></div>
+        <div>
+          <span class="lbl">${editing ? 'الحالة' : '٣. حالتها؟'}</span>
+          <div class="seg2" role="group" aria-label="الحالة">
+            <button type="button" class="so" data-act="fltst" data-v="active" data-keep aria-pressed="false" data-out="fltactlbl">شغّال دلوقتي</button>
+            <button type="button" class="so" data-act="fltst" data-v="frozen" data-keep aria-pressed="false">مجمّد (مش ممسوح)</button>
+          </div>
+        </div>
+        <div data-out="fltguard"></div>
+      </div>`,
+    foot: `<div data-out="fltfoot"></div>`,
+  };
+}
 
-  let body = '';
-  if (activeAreaEntry) {
-    body = renderAreaDetail(activeAreaEntry, gsum, s);
-  } else if (fcur === 'areas') {
-    const activeAreasCnt = areasList.filter((x) => x.active.length > 0).length;
-    const waitingOnlyCnt = areasList.filter((x) => !x.active.length && x.backlog.length > 0).length;
-    const subParts = [`${fmtNum(activeAreasCnt)} فيها أهداف نشطة`];
-    if (waitingOnlyCnt) subParts.push(`${fmtNum(waitingOnlyCnt)} في الانتظار بس`);
-    body = `<div class="sec"><b>خريطة جوانب حياتك</b><span>${subParts.join(' · ')}</span></div>
-      <div class="pillars">${areasList.map(areaCardHtml).join('')}</div>
-      <button type="button" class="gh full" data-act="laform">${ic(P.plus)} أضف جانب حياة جديد</button>`;
-  } else if (fcur === 'backlog') {
-    if (!gsum.backlog.length) {
-      body = `<div class="empty g-empty">
-          <b>بنك الأهداف فاضي لسه</b>
-          <p>أي هدف ييجي في بالك ومش وقته دلوقتي اركنه هنا من غير تاريخ ولا ضغط — ومع نهاية كل فترة هتراجعه وتقرر يستاهل يبدأ ولا لأ.</p>
-          <p class="hint" style="margin-top:8px">وتقدر تضيف بسرعة من الشريط السريع في «اليوم» باختيار «فكرة هدف».</p>
-          <div class="btns" style="margin-top:14px">
-            <button type="button" class="pri" data-act="gform" data-st="backlog">+ اركن أول فكرة هدف</button>
-          </div>
-        </div>`;
-    } else {
-      const usedAreas = areasList.filter((x) => x.backlog.length > 0);
-      const bArea = ui.barea && usedAreas.some((x) => x.area.id === ui.barea) ? ui.barea : 'all';
-      const shown = bArea === 'all' ? gsum.backlog : gsum.backlog.filter((g) => gsum.evals.get(g.id)?.pillar?.id === bArea);
-      const areaFilt = usedAreas.length > 1
-        ? `<div class="pfilt sub-filt" role="group" aria-label="فلترة بنك الأهداف حسب الجانب">
-            <button type="button" class="pf" data-act="barea" data-v="all" aria-pressed="${bArea === 'all'}">كل الجوانب (${fmtNum(gsum.backlog.length)})</button>
-            ${usedAreas.map((x) => `<button type="button" class="pf" data-act="barea" data-v="${esc(x.area.id)}" aria-pressed="${bArea === x.area.id}">${esc(x.area.name)} (${fmtNum(x.backlog.length)})</button>`).join('')}
-          </div>` : '';
-      const revCta = `<div class="bk-bar">
-          <button type="button" class="g-act${rev?.due ? ' attn' : ''}" data-act="grevstart">${ico('inbox')}<span>ابدأ جلسة مراجعة (${fmtNum(gsum.backlog.length)})</span></button>
-          <button type="button" class="g-act" data-act="gform" data-st="backlog">${ic(P.plus)}<span>اركن هدف</span></button>
-        </div>`;
-      body = `${revCta}${areaFilt}
-        <div class="sec"><b>مستنيين المراجعة</b><span>${fmtNum(shown.length)}</span></div>
-        <div class="pillars">${shown.map((g) => backlogCardHtml(g, gsum.evals.get(g.id), s)).join('')}</div>`;
-    }
-  } else if (fcur === 'done') {
-    body = `<div class="sec"><b>إنجازاتك المكتملة</b><span>${fmtNum(gsum.archived.length)}</span></div>
-      <div class="pillars">${gsum.archived.map((g) => {
-        const ev = gsum.evals.get(g.id);
-        return `<article class="gcard done">
-            <div class="gcard-h">
-              <span class="g-med">${ico('trophy')}</span>
-              <button type="button" class="g-main" data-act="gopen" data-id="${esc(g.id)}">
-                <span class="g-title">${esc(g.t)}</span>
-                <span class="g-src">${esc(ev.pillar.name)} · ${esc(ev.horizonText)}</span>
-              </button>
-              <span class="g-pct done">١٠٠٪</span>
-            </div>
-            ${g.note ? `<p class="g-ref"><b>الدرس المستفاد:</b> ${esc(g.note)}</p>` : ''}
-          </article>`;
-      }).join('')}</div>`;
-  } else {
-    // النشطة أو تركيز دلوقتي
-    const filtered = fcur === 'focus' ? gsum.active.filter((g) => g.f) : gsum.active;
-    if (!gsum.active.length) {
-      body = `<div class="empty g-empty">
-          <b>مفيش أهداف نشطة دلوقتي</b>
-          <p>اربط أهدافك بعاداتك أو وقتك أو مهامك أو فلوسك — أو اركن أفكارك الأول في «بنك الأهداف» واختار منها اللي يستاهل يبدأ دلوقتي.</p>
-          <div class="btns" style="margin-top:12px">
-            <button type="button" class="pri" data-act="gform" data-st="active">+ هدف نشط</button>
-            <button type="button" data-act="gform" data-st="backlog">+ اركن في البنك</button>
-          </div>
-          <div class="g-presets">
-            ${GOAL_PRESETS.map((p, i) => `<button type="button" class="g-pre" data-act="gpreset" data-i="${i}">${ic(P.plus)}<span>${esc(p.t)}</span></button>`).join('')}
-          </div>
-        </div>`;
-    } else {
-      const focusList = filtered.filter((g) => g.f);
-      const otherList = filtered.filter((g) => !g.f);
-      if (focusList.length) {
-        body += `<div class="sec"><b>تركيز دلوقتي</b><span class="ask">${fmtNum(focusList.length)} مثبّت</span></div>
-          <div class="pillars">${focusList.map((g) => focusCardHtml(g, gsum.evals.get(g.id), s)).join('')}</div>`;
-      }
-      if (otherList.length) {
-        body += `<div class="sec"><b>${focusList.length ? 'أهداف تانية شغالة' : 'أهدافك النشطة'}</b><span class="mut">${fmtNum(otherList.length)}</span></div>
-          <section class="ledger">${otherList.map((g) => compactRowHtml(g, gsum.evals.get(g.id))).join('')}</section>`;
-      }
-      if (!filtered.length) {
-        body = '<div class="list"><p class="empty-s">مفيش أهداف مثبّتة في التركيز دلوقتي.</p></div>';
-      }
-    }
+export function updateFilterSheet(sh, f, sys, s, forceFields = false) {
+  if (!sh || !f) return;
+  for (const b of sh.querySelectorAll('[data-act="fltp"]')) b.setAttribute('aria-pressed', b.dataset.v === f.p);
+  for (const b of sh.querySelectorAll('[data-act="fltkind"]')) b.setAttribute('aria-pressed', b.dataset.v === f.kind);
+  for (const b of sh.querySelectorAll('[data-act="fltst"]')) {
+    const on = b.dataset.v === f.st;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on);
+  }
+  const desc = sh.querySelector('[data-out="fltkdesc"]');
+  if (desc) desc.textContent = FILTER_KINDS.find(([k]) => k === f.kind)?.[3] || '';
+  const actLbl = sh.querySelector('[data-out="fltactlbl"]');
+  if (actLbl) {
+    actLbl.textContent = f.kind === 'task' ? 'للنهاردة (شغّال)' : f.kind === 'habit' ? 'شغّالة دلوقتي' : 'شغّال دلوقتي';
   }
 
-  return `${head}${ban}${pulse}${filtBar}${body}`;
+  // الحقول المبسطة حسب النوع
+  const fieldsBox = sh.querySelector('[data-out="fltfields"]');
+  const activeEl = document.activeElement;
+  const skipFields = !forceFields && activeEl && fieldsBox?.contains(activeEl) && activeEl.matches('input, textarea');
+  if (fieldsBox && !skipFields) {
+    let html = '';
+    if (f.kind === 'habit') {
+      html = `<label class="f"><span class="lbl">اسم العادة الصغيرة</span>
+          <input class="fld" data-role="flttitle" autocomplete="off" placeholder="مثلاً: ١٠ دقايق قراءة، مشي ١٥ دقيقة، ورد صفحتين…" value="${esc(f.t)}">
+        </label>
+        <label class="f"><span class="lbl">وحدة الرقم التفصيلي (اختياري)</span>
+          <input class="fld" data-role="fltunit" autocomplete="off" placeholder="سيبها فاضية لو عادة بلمسة واحدة بس" value="${esc(f.unit || '')}">
+        </label>`;
+    } else if (f.kind === 'goal') {
+      html = `<label class="f"><span class="lbl">الهدف</span>
+          <input class="fld" data-role="flttitle" autocomplete="off" placeholder="مثلاً: أكون مستقر مادياً، جسمي قوي ونشيط…" value="${esc(f.t)}">
+        </label>
+        <label class="f"><span class="lbl">ليه الهدف ده مهم ليك؟ (اختياري)</span>
+          <textarea class="fld" rows="2" data-role="fltwhy" placeholder="السبب الحقيقي اللي بيخلّيك عايز تحققه…">${esc(f.why || '')}</textarea>
+        </label>`;
+    } else if (f.kind === 'project') {
+      const areaGoals = (s.goals || []).filter((g) => itemKind(g) === 'goal' && !g.done && g.p === f.p);
+      html = `<label class="f"><span class="lbl">اسم المشروع (له نتيجة ونهاية)</span>
+          <input class="fld" data-role="flttitle" autocomplete="off" placeholder="مثلاً: إطلاق متجر الأسواف، تظبيط نومي ١٤ يوم…" value="${esc(f.t)}">
+        </label>
+        <div>
+          <span class="lbl">بيحقق أنهي هدف (ليه)؟</span>
+          <div class="picks" role="group" aria-label="الهدف المربوط">
+            <button class="pk" type="button" data-act="fltpar" data-v="" data-keep aria-pressed="${!f.parentId && !f.newGoal}">بدون هدف دلوقتي</button>
+            ${areaGoals.map((g) => `<button class="pk" type="button" data-act="fltpar" data-v="${esc(g.id)}" data-keep aria-pressed="${String(f.parentId) === String(g.id)}">${esc(g.t)}</button>`).join('')}
+            <button class="pk dash" type="button" data-act="fltpar" data-v="__new__" data-keep aria-pressed="${!!f.newGoal}">+ اكتب هدف جديد</button>
+          </div>
+          ${f.newGoal ? `<input class="fld" data-role="fltnewg" autocomplete="off" style="margin-top:8px" placeholder="اسم الهدف (ليه) اللي المشروع ده بيحققه…" value="${esc(f.newGoalTitle || '')}">` : ''}
+        </div>
+        <label class="f"><span class="lbl">النتيجة النهائية (إمتى أقول خلص؟)</span>
+          <input class="fld" data-role="fltout" autocomplete="off" placeholder="مثلاً: أول ١٠ مبيعات، أو الموقع شغال أونلاين…" value="${esc(f.outcome || '')}">
+        </label>
+        ${!f.id ? `<label class="f"><span class="lbl">أول خطوات المشروع (كل خطوة في سطر — اختياري)</span>
+          <textarea class="fld" rows="2" data-role="fltsteps" placeholder="الخطوة الأولى&#10;الخطوة التانية">${esc(f.stepsText || '')}</textarea>
+        </label>` : ''}
+        <div class="topts">
+          <button class="opt" type="button" data-act="fltpri" data-keep aria-pressed="${!!f.pri}">أولوية عالية ⚑</button>
+        </div>`;
+    } else {
+      // مهمة
+      const actP = sys.activeProject;
+      const projLabel = actP ? `مربوطة بالمشروع الشغّال: «${actP.t}»` : 'مفيش مشروع شغّال — هتتحفظ كمهمة مباشرة';
+      html = `<label class="f"><span class="lbl">المهمة (خطوة مرة واحدة)</span>
+          <input class="fld" data-role="flttitle" autocomplete="off" placeholder="اكتب خطوة واضحة تتعمل مرة واحدة…" value="${esc(f.t)}">
+        </label>
+        <div class="topts">
+          <button class="opt" type="button" data-act="fltpri" data-keep aria-pressed="${!!f.pri}">مهم ⚑</button>
+          ${actP ? `<button class="opt" type="button" data-act="fltlinkp" data-keep aria-pressed="${!!f.linkActive}">${f.linkActive ? `✓ ${esc(actP.t)}` : 'اربطها بالمشروع الشغّال'}</button>` : `<span class="hint" style="margin:0">${esc(projLabel)}</span>`}
+        </div>`;
+    }
+    setHtml(fieldsBox, html);
+  }
+
+  // حارس القواعد (مشروع واحد شغّال + ٣ مهام بالكتير للنهاردة)
+  const guardBox = sh.querySelector('[data-out="fltguard"]');
+  if (guardBox) {
+    let gHtml = '';
+    if (f.kind === 'project' && f.st === 'active' && sys.activeProject && String(sys.activeProject.id) !== String(f.id || '')) {
+      gHtml = `<div class="guard-box">
+          <b>قاعدة المشروع الواحد:</b>
+          <p>عندك مشروع شغّال دلوقتي: <b>«${esc(sys.activeProject.t)}»</b>. لو حفظت ده شغّال، القديم هيتجمّد (مش هيتمسح) وده يبدأ مكانه — أو اختار «مجمّد» فوق.</p>
+        </div>`;
+    } else if (f.kind === 'task' && f.st === 'active' && sys.todayOpen.count >= TODAY_TASK_LIMIT) {
+      gHtml = `<div class="guard-box">
+          <b>قاعدة ٣ مهام للنهاردة (${fmtNum(sys.todayOpen.count)}/${fmtNum(TODAY_TASK_LIMIT)}):</b>
+          <p>عشان النهاردة يفضل مركز، اختار «مجمّد» فوق أو اختار مهمة نجمّدها ونحط دي مكانها:</p>
+          <div class="picks">
+            ${sys.todayOpen.list.map((t) => `<button type="button" class="pk" data-act="fltswap" data-id="${esc(t.id)}" data-keep aria-pressed="${String(f.swapTaskId) === String(t.id)}">بدّل مكان: ${esc(t.t)}</button>`).join('')}
+          </div>
+        </div>`;
+    }
+    setHtml(guardBox, gHtml);
+  }
+
+  const foot = sh.querySelector('[data-out="fltfoot"]');
+  if (foot) {
+    let saveLbl = f.id ? 'احفظ التعديل' : (f.st === 'frozen' ? 'احفظها في المجمّد' : 'أضف للشغّال ✓');
+    if (f.kind === 'project' && f.st === 'active' && sys.activeProject && String(sys.activeProject.id) !== String(f.id || '')) {
+      saveLbl = 'جمّد القديم وشغّل ده ✓';
+    } else if (f.kind === 'task' && f.st === 'active' && sys.todayOpen.count >= TODAY_TASK_LIMIT) {
+      saveLbl = f.swapTaskId ? 'بدّل وأضف للنهاردة ✓' : 'احفظها في المجمّد لبعدين';
+    }
+    const footHtml = f.fromReview
+      ? `<div class="foot2"><button class="b-sec" type="button" data-act="grevback">رجوع للمراجعة</button>
+          <button class="b-pri" type="button" data-act="fltsave">${saveLbl}</button></div>`
+      : f.id
+        ? `<div class="foot2"><button class="b-sec" type="button" data-act="gdel" data-id="${esc(f.id)}">امسح</button>
+            <button class="b-pri" type="button" data-act="fltsave">${saveLbl}</button></div>`
+        : `<button class="b-pri" type="button" data-act="fltsave">${saveLbl}</button>`;
+    setHtml(foot, footHtml);
+  }
 }
 
-/** كارت «أهداف التركيز» جوه تبويبة اليوم (١ إلى ٣ أهداف فقط، بدون دوشة). */
-export function focusGoalsToday(s, gsum) {
-  if (!gsum?.focus?.length) return '';
-  const rows = gsum.focus.map((g) => {
-    const ev = gsum.evals.get(g.id);
-    return `<button type="button" class="f-item" data-act="gopen" data-id="${esc(g.id)}" aria-label="${esc(g.t)}: ${fmtNum(ev.pct)}٪">
-        <span class="f-top">
-          <span class="f-name"><i class="f-dot${ev.status === 'attn' ? ' attn' : ''}" aria-hidden="true"></i><span>${esc(g.t)}</span></span>
-          <span class="f-pct ${ev.status}">${fmtNum(ev.pct)}٪</span>
-        </span>
-        ${paceBarHtml(ev)}
-        <span class="pace-meta">
-          <span class="f-val">${goalValHtml(g, ev)}</span>
-          <span class="pace-tag ${ev.status}">${esc(ev.paceText)}</span>
-        </span>
-      </button>`;
-  }).join('');
-  return `<div class="sec"><b>أهداف التركيز</b><span class="mut">${fmtNum(gsum.active.length)} نشط</span></div>
-    <section class="ledger" aria-label="أهداف التركيز">
-      ${rows}
-      <button class="lnk" type="button" data-act="gplan">كل الأهداف${ic(P.chev)}</button>
-    </section>`;
+// ---------- شاشات حارس القواعد (تبديل المشروع الواحد + حد الـ ٣ مهام + المشروع التالي بعد الإنجاز) ----------
+export function projectSwapSheet(incoming, current) {
+  return {
+    label: 'قاعدة المشروع الواحد',
+    head: '<h2>مشروع واحد شغّال بس</h2>',
+    body: `<div class="guard-box">
+        <b>الشغّال دلوقتي: «${esc(current.t)}»</b>
+        <p>عشان تكمل وماتتشتتش، القاعدة إن يكون في مشروع كبير واحد بس شغّال. لو شغّلت <b>«${esc(incoming.t)}»</b>، القديم هيتجمّد (مش هيتمسح) وتقدر ترجعله في أي وقت.</p>
+      </div>
+      <div class="rev-decisions">
+        <button type="button" class="b-pri" data-act="gswapdo" data-id="${esc(incoming.id)}">جمّد «${esc(current.t)}» وشغّل ده ✓</button>
+        <button type="button" class="b-sec" type="button" data-close>سيب ده مجمّد دلوقتي</button>
+      </div>`,
+    foot: '',
+  };
 }
 
-// ---------- شاشة تفاصيل الهدف ----------
+export function taskLimitSheet(pending, openTasks) {
+  const label = pending.id ? 'نقل المهمة للنهاردة' : 'حد ٣ مهام للنهاردة';
+  return {
+    label,
+    head: `<h2>عندك ${fmtNum(openTasks.length)} مهام للنهاردة</h2>`,
+    body: `<div class="guard-box">
+        <b>«${esc(pending.t)}»</b>
+        <p>القاعدة ٣ مهام بالكتير للنهاردة عشان تنفّذهم فعلاً. تحب تجمّد دي لبعدين، ولا تجمّد واحدة من التلاتة وتحط دي مكانها؟</p>
+      </div>
+      <div class="blk">
+        <span class="lbl">بدّل مكان مهمة من النهاردة (هتتجمّد مش هتتمسح):</span>
+        <div class="list">${openTasks.map((t) => `<button type="button" class="srow srow-b" data-act="tswapdo" data-swap="${esc(t.id)}" style="width:100%;padding-inline:14px">
+          <span class="m"><b>جمّد: ${esc(t.t)}</b><span>ودخّل «${esc(pending.t)}» مكانها للنهاردة</span></span>
+        </button>`).join('')}</div>
+      </div>`,
+    foot: `<button type="button" class="b-pri" data-act="tswapfreeze">جمّد «${esc(pending.t)}» لبعدين</button>`,
+  };
+}
+
+export function nextProjectSheet(finishedTitle, frozenProjects) {
+  return {
+    label: 'اختار المشروع الجاي',
+    head: '<h2>عاش! المشروع خلص ✓</h2>',
+    body: `<p class="note" style="margin:0">خلّصت <b>«${esc(finishedTitle)}»</b>. تحب تفتح مشروع جديد من المجمّد دلوقتي، ولا تاخد راحة؟</p>
+      <div class="list">${frozenProjects.slice(0, 6).map(({ project: p, goal, area }) => `<button type="button" class="srow srow-b" data-act="gunfreeze" data-id="${esc(p.id)}" style="width:100%;padding-inline:14px">
+        <span class="g-med sm" style="margin-inline-end:8px">${ico(area.icon)}</span>
+        <span class="m"><b>${esc(p.t)}</b><span>${esc(area.name)}${goal ? ` ← ${esc(goal.t)}` : ''}</span></span>
+      </button>`).join('')}</div>`,
+    foot: '<button type="button" class="b-sec" type="button" data-close>هاخد راحة دلوقتي</button>',
+  };
+}
+
+// ---------- شاشة تفاصيل المشروع ----------
 export function goalDetailSheet(g) {
   return {
     label: g.t,
     head: `<h2>${esc(g.t)}</h2>`,
     body: `<div class="gdet" data-out="gdet" data-gid="${esc(g.id)}"></div>`,
-    foot: `<div class="foot2"><button class="b-sec" type="button" data-act="gform" data-id="${esc(g.id)}">تعديل</button>
+    foot: `<div class="foot2"><button class="b-sec" type="button" data-act="fltedit" data-id="${esc(g.id)}">تعديل</button>
       <button class="b-pri" type="button" data-close>تمام</button></div>`,
   };
 }
 
-export function updateGoalDetail(sh, g, ev, s) {
+export function updateGoalDetail(sh, g, sys, s) {
   const box = sh?.querySelector('[data-out="gdet"]');
-  if (!box || !g || !ev) return;
+  if (!box || !g) return;
   const id = esc(g.id);
+  const ev = sys.evals.get(g.id);
+  const parentGoal = g.parentId ? (s.goals || []).find((x) => String(x.id) === String(g.parentId)) : null;
   const steps = Array.isArray(g.steps) ? g.steps : [];
+  const linked = (s.tasks || []).filter((t) => String(t.goalId || '') === String(g.id));
+  const isFrz = itemStatus(g) === 'frozen';
 
-  const manualBox = g.m === 'manual' && !g.done ? `<div class="g-manrow">
-      <span>التقدّم الحالي</span>
-      <div class="g-manbtns">
-        <button type="button" class="wk-nav" data-act="gdec" data-id="${id}" aria-label="نقص واحد">−</button>
-        <b>${fmtNum(ev.cur)} ${esc(ev.unit)}</b>
-        <button type="button" class="wk-nav" data-act="ginc" data-id="${id}" aria-label="زوّد واحد">${ic(P.plus)}</button>
-      </div>
-    </div>` : '';
-
-  const stepsBox = g.m === 'steps' ? `<div class="blk">
-      <div class="blk-h"><h3>المراحل (Milestones)</h3><span>${fmtNum(steps.filter((x) => x.done).length)}/${fmtNum(steps.length)}</span></div>
+  const stepsBox = `<div class="blk">
+      <div class="blk-h"><h3>خطوات المشروع</h3><span>${fmtNum(steps.filter((x) => x.done).length)}/${fmtNum(steps.length)}</span></div>
       ${steps.length ? `<div class="list">${steps.map((st) => `<div class="tk${st.done ? ' done' : ''}">
         <button class="tk-c" type="button" data-act="gstog" data-gid="${id}" data-sid="${esc(st.id)}" aria-pressed="${!!st.done}" aria-label="${esc(st.t)}"><i>${st.done ? ic(P.check) : ''}</i></button>
         <div class="tk-m"><span class="tk-t">${esc(st.t)}</span></div>
-        <button class="ib" type="button" data-act="gsdel" data-gid="${id}" data-sid="${esc(st.id)}" aria-label="امسح المرحلة">${ic(P.close)}</button>
-      </div>`).join('')}</div>` : '<p class="hint">لسه مفيش مراحل — ضيف أول خطوة تحت.</p>'}
+        <button class="ib" type="button" data-act="gsdel" data-gid="${id}" data-sid="${esc(st.id)}" aria-label="امسح الخطوة">${ic(P.close)}</button>
+      </div>`).join('')}</div>` : '<p class="hint">لسه مفيش خطوات — ضيف أول خطوة واضحة تحت.</p>'}
       ${!g.done ? `<form class="addrow" data-act="gstepadd" data-gid="${id}">
-        <input class="fld" data-role="gstepin" placeholder="+ مرحلة جديدة…" aria-label="مرحلة جديدة" autocomplete="off" enterkeyhint="done">
-        <button class="addbtn" type="submit" aria-label="ضيف المرحلة">${ic(P.plus)}</button>
+        <input class="fld" data-role="gstepin" placeholder="+ خطوة جديدة في المشروع…" aria-label="خطوة جديدة" autocomplete="off" enterkeyhint="done">
+        <button class="addbtn" type="submit" aria-label="ضيف الخطوة">${ic(P.plus)}</button>
       </form>` : ''}
-    </div>` : '';
+    </div>`;
 
   const linkedBox = `<div class="blk">
-      <div class="blk-h"><h3>مهام مربوطة بالهدف</h3><span>${fmtNum(ev.linked.length)}</span></div>
-      ${ev.linked.length ? `<div class="list">${ev.linked.map((t) => `<div class="tk${t.done ? ' done' : ''}${t.pri && !t.done ? ' pri' : ''}">
+      <div class="blk-h"><h3>مهام المشروع</h3><span>${fmtNum(linked.length)}</span></div>
+      ${linked.length ? `<div class="list">${linked.map((t) => `<div class="tk${t.done ? ' done' : ''}${t.pri && !t.done ? ' pri' : ''}">
         <button class="tk-c" type="button" data-act="tdone" data-id="${esc(t.id)}" aria-pressed="${!!t.done}" aria-label="${esc(t.t)}"><i>${t.done ? ic(P.check) : ''}</i></button>
-        <div class="tk-m"><span class="tk-t">${esc(t.t)}</span>${isOverdue(t, s.today) ? `<span class="tk-s">${ic(P.clock)}متأخرة من ${shortDate(t.due)}</span>` : ''}</div>
-      </div>`).join('')}</div>` : '<p class="hint">مفيش مهام مربوطة لسه. أي مهمة تضيفها هنا هتظهر في «مهام النهارده».</p>'}
+        <div class="tk-m"><span class="tk-t">${esc(t.t)}</span><span class="tk-tags"><span class="tcat">${t.due ? (t.due <= s.today ? 'النهاردة' : shortDate(t.due)) : 'مجمّدة'}</span></span></div>
+      </div>`).join('')}</div>` : '<p class="hint">أي مهمة تضيفها هنا بتتربط بالمشروع (مع احترام حد ٣ مهام للنهاردة).</p>'}
       ${!g.done ? `<form class="addrow" data-act="gtaskadd" data-gid="${id}">
-        <input class="fld" data-role="gtaskin" placeholder="+ مهمة للنهارده جوه الهدف…" aria-label="مهمة جديدة للهدف" autocomplete="off" enterkeyhint="done">
+        <input class="fld" data-role="gtaskin" placeholder="+ مهمة للنهاردة في المشروع ده…" aria-label="مهمة جديدة" autocomplete="off" enterkeyhint="done">
         <button class="addbtn" type="submit" aria-label="ضيف المهمة">${ic(P.plus)}</button>
       </form>` : ''}
     </div>`;
 
-  const whyBox = g.why ? `<p class="g-ref"><b>ليه الهدف ده مهم:</b> ${esc(g.why)}</p>` : '';
-  const noteBox = g.done && g.note ? `<p class="g-ref"><b>الدرس المستفاد:</b> ${esc(g.note)}</p>` : '';
-
   const acts = `<div class="g-detacts">
-      ${!g.done ? `<button type="button" class="gh${g.f ? ' on' : ''}" data-act="gfocus" data-id="${id}">${g.f ? '★ مثبّت في تركيز اليوم' : '☆ ثبّته في تركيز اليوم'}</button>` : ''}
-      ${!g.done ? `<button type="button" class="gh" data-act="gtobacklog" data-id="${id}">اركنه في بنك الأهداف</button>` : ''}
-      ${g.done
-        ? `<button type="button" class="gh" data-act="greopen" data-id="${id}">رجّعه هدف نشط</button>`
-        : `<button type="button" class="gh done" data-act="garchopen" data-id="${id}">إقفال وأرشفة ✓</button>`}
-      <button type="button" class="gh" data-act="gdel" data-id="${id}">امسح الهدف</button>
+      ${!g.done && !isFrz ? `<button type="button" class="gh done" data-act="garchopen" data-id="${id}">خلّصت المشروع ✓</button>` : ''}
+      ${!g.done && !isFrz ? `<button type="button" class="gh" data-act="gfreeze" data-id="${id}">جمّده مؤقتاً</button>` : ''}
+      ${!g.done && isFrz ? `<button type="button" class="gh on" data-act="gunfreeze" data-id="${id}">شغّله دلوقتي</button>` : ''}
+      ${g.done ? `<button type="button" class="gh" data-act="gunfreeze" data-id="${id}">افتحه تاني</button>` : ''}
+      <button type="button" class="gh" data-act="gdel" data-id="${id}">امسح</button>
     </div>`;
 
   const html = `<div class="panel g-detsum">
-      <div class="gcard-h">
-        <span class="g-med">${ico(g.done ? 'trophy' : ev.pillar.icon)}</span>
-        <div class="g-main"><span class="g-src">${esc(ev.pillar.name)} · ${esc(ev.sourceLabel)}</span><span class="g-src">${esc(ev.horizonText)}${!g.done && ev.daysLeft > 0 ? ` · فاضل ${fmtDays(ev.daysLeft)}` : ''}</span></div>
-        <span class="g-pct ${ev.status}">${fmtNum(ev.pct)}٪</span>
-      </div>
-      ${paceBarHtml(ev, true)}
-      <div class="pace-meta">
-        <span class="pace-val">${goalValHtml(g, ev)}</span>
-        <span class="pace-tag ${ev.status}">${esc(ev.paceText)}</span>
-      </div>
+      ${chainCrumbs(ev.pillar, parentGoal)}
+      ${g.outcome ? `<p class="g-ref" style="margin:0"><b>النتيجة النهائية:</b> ${esc(g.outcome)}</p>` : ''}
+      ${parentGoal?.why ? `<p class="g-ref" style="margin:0"><b>ليه الهدف ده:</b> ${esc(parentGoal.why)}</p>` : ''}
+      ${projectProgressHtml(g, ev)}
     </div>
-    ${whyBox}${noteBox}${manualBox}${stepsBox}${linkedBox}${acts}`;
+    ${g.done && g.note ? `<p class="g-ref"><b>الدرس المستفاد:</b> ${esc(g.note)}</p>` : ''}
+    ${stepsBox}${linkedBox}${acts}`;
   setHtml(box, html);
 }
 
-// ---------- شاشة إقفال وأرشفة الهدف ----------
+// ---------- شاشة إنهاء المشروع وأرشفته ----------
 export function goalArchiveSheet(g) {
   return {
-    label: 'إقفال وأرشفة الهدف',
-    head: '<h2>إقفال وأرشفة الهدف</h2>',
+    label: 'إنهاء المشروع',
+    head: '<h2>خلّصت المشروع ✓</h2>',
     body: `<p class="note" style="margin:0"><b>${esc(g.t)}</b></p>
-      <label class="f"><span class="lbl">سطر للذكرى (اختياري): إيه اللي نجّح الهدف أو عطّله؟</span>
-        <textarea class="fld" rows="3" data-focus data-role="gnote" placeholder="مثلاً: تخصيص ساعة بعد الفجر كان أسهل بكتير…">${esc(g.note || '')}</textarea>
+      <label class="f"><span class="lbl">سطر للذكرى (اختياري): إيه اللي نجّح المشروع أو عطّله؟</span>
+        <textarea class="fld" rows="3" data-focus data-role="gnote" placeholder="مثلاً: تقسيمه لـ ٣ مهام يومية بس فرّق جداً…">${esc(g.note || '')}</textarea>
       </label>`,
     foot: `<div class="foot2"><button class="b-sec" type="button" data-close>إلغاء</button>
-      <button class="b-pri" type="button" data-act="garchsave" data-id="${esc(g.id)}">انقله للإنجازات ✓</button></div>`,
+      <button class="b-pri" type="button" data-act="garchsave" data-id="${esc(g.id)}">اتمّ المشروع ✓</button></div>`,
   };
 }
 
-// ---------- فورم هدف جديد / تعديل (يدعم «هدف نشط» و«بنك الأهداف») ----------
-export function goalFormSheet(f, s) {
-  const editing = !!f.id;
-  const isBacklog = f.st === 'backlog';
-  const showSwitch = !editing || f.wasBacklog;
-  const areas = activeLifeAreas(s?.settings);
-  const titleText = f.promoting
-    ? 'تفعيل الهدف من البنك'
-    : editing
-      ? (isBacklog ? 'عدّل فكرة الهدف' : 'عدّل الهدف')
-      : (isBacklog ? 'اركن فكرة هدف' : 'هدف جديد');
-
-  return {
-    label: titleText,
-    head: `<h2 data-out="gftitle">${titleText}</h2>`,
-    body: `${showSwitch ? `<div class="seg2" role="group" aria-label="حالة الهدف">
-        <button type="button" class="so" data-act="gfstate" data-v="active" data-keep aria-pressed="${!isBacklog}">ابدأه دلوقتي (نشط)</button>
-        <button type="button" class="so" data-act="gfstate" data-v="backlog" data-keep aria-pressed="${isBacklog}">اركنه في بنك الأهداف</button>
-      </div>` : ''}
-      <label class="f"><span class="lbl">اسم الهدف</span>
-        <input class="fld" data-role="gtitle" autocomplete="off" placeholder="مثلاً: أظبّط نومي قبل ١٢، أتعلم إنجليزي…" value="${esc(f.t)}">
-      </label>
-      <div><span class="lbl">جانب الحياة</span>
-        <div class="picks" role="group" aria-label="جانب الحياة">
-          ${areas.map((p) => `<button class="pk" type="button" data-act="gfpil" data-v="${esc(p.id)}" data-keep aria-pressed="false">${esc(p.name)}</button>`).join('')}
-        </div>
-      </div>
-      <div class="blk" data-out="gfbk">
-        <div class="topts">
-          <button class="opt" type="button" data-act="gfpri" data-keep aria-pressed="${!!f.pri}">أولوية عالية ⚑</button>
-          <span class="hint" style="margin:0">من غير تاريخ ولا ضغط — هيتراجع نهاية الفترة.</span>
-        </div>
-      </div>
-      <div class="blk" data-out="gfact">
-        <div><span class="lbl">يتقاس إزاي؟</span>
-          <div class="mode-grid" role="group" aria-label="طريقة القياس">
-            ${GOAL_MODES.map(([k, l, icon]) => `<button class="mopt" type="button" data-act="gfmode" data-v="${k}" data-keep aria-pressed="false">${ico(icon)}<span>${l}</span></button>`).join('')}
-          </div>
-          <p class="hint" data-out="gfdesc" style="margin-top:6px"></p>
-        </div>
-        <div class="blk" data-out="gfsrc"></div>
-        <div><span class="lbl">المدة</span>
-          <div class="picks" role="group" aria-label="المدة">
-            ${GOAL_HORIZONS.map(([k, l]) => `<button class="pk" type="button" data-act="gfhz" data-v="${k}" data-keep aria-pressed="false">${l}</button>`).join('')}
-          </div>
-          <div class="g2" data-out="gfdates" style="margin-top:8px" hidden>
-            <label class="f"><span class="lbl">من</span><input class="fld" type="date" data-role="gffrom" value="${esc(f.from)}"></label>
-            <label class="f"><span class="lbl">لحد</span><input class="fld" type="date" data-role="gfto" value="${esc(f.to)}"></label>
-          </div>
-        </div>
-        <div data-out="gfnums"></div>
-        <div class="srow" style="padding-inline:4px;min-height:48px">
-          <span class="m"><b>تثبيت في «أهداف التركيز»</b><span>يظهر في شاشة اليوم (يفضّل ١–٣ أهداف)</span></span>
-          <button class="sw" type="button" role="switch" data-act="gffoc" data-keep aria-checked="${!!f.f}" aria-label="تثبيت في أهداف التركيز"><i></i></button>
-        </div>
-      </div>
-      <label class="f"><span class="lbl">ليه مهم ليك؟ (اختياري — بيساعدك وقت المراجعة)</span>
-        <textarea class="fld" rows="2" data-role="gfwhy" placeholder="مثلاً: هيفرق في طاقتي الصبح وتركيزي في الشغل…">${esc(f.why || '')}</textarea>
-      </label>`,
-    foot: `<div data-out="gffoot"></div>`,
-  };
-}
-
-export function updateGoalForm(sh, f, s) {
-  if (!sh || !f) return;
-  const isBacklog = f.st === 'backlog';
-
-  const ttl = sh.querySelector('[data-out="gftitle"]');
-  if (ttl) {
-    ttl.textContent = f.promoting
-      ? 'تفعيل الهدف من البنك'
-      : f.id
-        ? (isBacklog ? 'عدّل فكرة الهدف' : 'عدّل الهدف')
-        : (isBacklog ? 'اركن فكرة هدف' : 'هدف جديد');
-  }
-
-  for (const b of sh.querySelectorAll('[data-act="gfstate"]')) {
-    const on = b.dataset.v === (isBacklog ? 'backlog' : 'active');
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-pressed', on);
-  }
-  for (const b of sh.querySelectorAll('[data-act="gfpil"]')) b.setAttribute('aria-pressed', b.dataset.v === f.p);
-  sh.querySelector('[data-act="gfpri"]')?.setAttribute('aria-pressed', !!f.pri);
-
-  const bkBox = sh.querySelector('[data-out="gfbk"]');
-  const actBox = sh.querySelector('[data-out="gfact"]');
-  if (bkBox) bkBox.hidden = !isBacklog;
-  if (actBox) actBox.hidden = isBacklog;
-
-  const foot = sh.querySelector('[data-out="gffoot"]');
-  if (foot) {
-    const saveLbl = f.promoting
-      ? 'ابدأ الهدف دلوقتي ✓'
-      : f.id
-        ? (isBacklog ? 'احفظ في البنك' : 'احفظ الهدف')
-        : (isBacklog ? 'اركنه في بنك الأهداف' : 'ضيف الهدف');
-    const footHtml = f.fromReview
-      ? `<div class="foot2"><button class="b-sec" type="button" data-act="grevback">رجوع للمراجعة</button>
-          <button class="b-pri" type="button" data-act="gfsave">${saveLbl}</button></div>`
-      : f.id && !f.promoting
-        ? `<div class="foot2"><button class="b-sec" type="button" data-act="gdel" data-id="${esc(f.id)}">امسح</button>
-            <button class="b-pri" type="button" data-act="gfsave">${saveLbl}</button></div>`
-        : `<button class="b-pri" type="button" data-act="gfsave">${saveLbl}</button>`;
-    setHtml(foot, footHtml);
-  }
-
-  if (isBacklog) return;
-
-  const desc = sh.querySelector('[data-out="gfdesc"]');
-  if (!desc) return;
-  for (const b of sh.querySelectorAll('[data-act="gfmode"]')) b.setAttribute('aria-pressed', b.dataset.v === f.m);
-  for (const b of sh.querySelectorAll('[data-act="gfhz"]')) b.setAttribute('aria-pressed', b.dataset.v === f.hz);
-  sh.querySelector('[data-act="gffoc"]')?.setAttribute('aria-checked', !!f.f);
-  desc.textContent = MODE_DESC[f.m] || '';
-
-  const dates = sh.querySelector('[data-out="gfdates"]');
-  if (dates) dates.hidden = f.hz !== 'custom';
-
-  // مصدر القياس حسب النوع
-  const srcBox = sh.querySelector('[data-out="gfsrc"]');
-  let srcHtml = '';
-  if (f.m === 'habit') {
-    const hKind = f.src.kind || 'days';
-    srcHtml = `<div><span class="lbl">نوع العادة</span><div class="picks">
-        <button class="pk" type="button" data-act="gfhkind" data-v="days" data-keep aria-pressed="${hKind === 'days'}">أيام التزام</button>
-        <button class="pk" type="button" data-act="gfhkind" data-v="sum" data-keep aria-pressed="${hKind === 'sum'}">رقم العادة (صفحات/دقايق)</button>
-        <button class="pk" type="button" data-act="gfhkind" data-v="salah" data-keep aria-pressed="${hKind === 'salah'}">الصلوات في وقتها</button>
-      </div></div>`;
-    if (hKind === 'days') {
-      srcHtml += `<div><span class="lbl">اختار العادة</span><div class="picks">${activeHabits(s.settings).map((h) => `<button class="pk" type="button" data-act="gfsrc" data-k="k" data-v="${esc(h.k)}" data-keep aria-pressed="${f.src.k === h.k}">${esc(h.n)}</button>`).join('')}</div></div>`;
-    } else if (hKind === 'sum') {
-      srcHtml += `<div><span class="lbl">اختار الرقم</span><div class="picks">${HABIT_NUMS.map(([k, l]) => `<button class="pk" type="button" data-act="gfsrc" data-k="k" data-v="${k}" data-keep aria-pressed="${f.src.k === k}">${l}</button>`).join('')}</div></div>`;
-    }
-  } else if (f.m === 'time') {
-    const tKind = f.src.kind || 'cat';
-    srcHtml = `<div><span class="lbl">المصدر</span><div class="picks">
-        <button class="pk" type="button" data-act="gftkind" data-v="cat" data-keep aria-pressed="${tKind === 'cat' || tKind === 'work'}">مجال وقت</button>
-        <button class="pk" type="button" data-act="gftkind" data-v="deep" data-keep aria-pressed="${tKind === 'deep'}">تركيز عميق</button>
-        <button class="pk" type="button" data-act="gftkind" data-v="proj" data-keep aria-pressed="${tKind === 'proj'}">مشروع محدد</button>
-      </div></div>`;
-    if (tKind === 'cat' || tKind === 'work') {
-      const curC = tKind === 'work' ? 'work' : (f.src.c || 'work');
-      srcHtml += `<div><span class="lbl">المجال</span><div class="picks">${activeTimeCats(s.settings).map((c) => `<button class="pk" type="button" data-act="gfsrc" data-k="c" data-v="${esc(c.id)}" data-keep aria-pressed="${curC === c.id}">${esc(c.name)}</button>`).join('')}</div></div>`;
-    } else if (tKind === 'proj') {
-      srcHtml += `<label class="f"><span class="lbl">اسم المشروع (نفس الاسم في الشغل)</span><input class="fld" data-role="gfproj" autocomplete="off" placeholder="مثلاً: ورقة اليوم" value="${esc(f.src.proj || '')}"></label>`;
-    }
-  } else if (f.m === 'metric') {
-    const mKind = f.src.kind || (s.metrics.length ? 'sum' : 'income');
-    srcHtml = `<div><span class="lbl">المصدر</span><div class="picks">
-        ${s.metrics.length ? `<button class="pk" type="button" data-act="gfmkind" data-v="sum" data-keep aria-pressed="${mKind === 'sum'}">مجموع مقياس</button>
-          <button class="pk" type="button" data-act="gfmkind" data-v="target" data-keep aria-pressed="${mKind === 'target'}">وصول لقيمة (زي الوزن)</button>` : ''}
-        <button class="pk" type="button" data-act="gfmkind" data-v="income" data-keep aria-pressed="${mKind === 'income'}">دخل الفلوس</button>
-        <button class="pk" type="button" data-act="gfmkind" data-v="exp_cap" data-keep aria-pressed="${mKind === 'exp_cap'}">سقف مصاريف</button>
-      </div></div>`;
-    if ((mKind === 'sum' || mKind === 'target') && s.metrics.length) {
-      srcHtml += `<div><span class="lbl">اختار المقياس</span><div class="picks">${s.metrics.map((m) => `<button class="pk" type="button" data-act="gfsrc" data-k="id" data-v="${esc(m.id)}" data-keep aria-pressed="${String(f.src.id) === String(m.id)}">${esc(m.n)}</button>`).join('')}</div></div>`;
-    } else if (mKind === 'exp_cap') {
-      srcHtml += `<div><span class="lbl">تصنيف المصاريف</span><div class="picks">
-          <button class="pk" type="button" data-act="gfsrc" data-k="cat" data-v="" data-keep aria-pressed="${!f.src.cat}">كل المصاريف</button>
-          ${(s.settings.expCats || []).map((c) => `<button class="pk" type="button" data-act="gfsrc" data-k="cat" data-v="${esc(c)}" data-keep aria-pressed="${f.src.cat === c}">${esc(c)}</button>`).join('')}
-        </div></div>`;
-    }
-  } else if (f.m === 'steps' && (!f.id || f.wasBacklog)) {
-    srcHtml = `<label class="f"><span class="lbl">الخطوات الأولية (كل خطوة في سطر — اختياري)</span>
-        <textarea class="fld" rows="3" data-role="gfsteps" placeholder="الخطوة الأولى&#10;الخطوة التانية&#10;الخطوة التالتة">${esc(f.stepsText || '')}</textarea>
-      </label>`;
-  }
-  setHtml(srcBox, srcHtml);
-
-  // خانات المستهدف والوحدة (إلا في المراحل)
-  const numBox = sh.querySelector('[data-out="gfnums"]');
-  let numHtml = '';
-  if (f.m !== 'steps') {
-    const isTarget = f.m === 'metric' && f.src.kind === 'target';
-    numHtml = `<div class="g2">
-        ${isTarget ? `<label class="f"><span class="lbl">البداية (الرقم الحالي)</span><input class="fld" data-role="gfstart" inputmode="decimal" autocomplete="off" placeholder="مثلاً ٨٤" value="${esc(f.start ?? '')}"></label>` : ''}
-        <label class="f"><span class="lbl">${f.m === 'metric' && f.src.kind === 'exp_cap' ? 'السقف الأقصى' : 'المستهدف'}</span><input class="fld" data-role="gftarget" inputmode="decimal" autocomplete="off" placeholder="مثلاً ٢٠" value="${esc(f.target ?? '')}"></label>
-        ${!isTarget ? `<label class="f"><span class="lbl">الوحدة</span><input class="fld" data-role="gfunit" autocomplete="off" placeholder="ساعة / يوم / ج" value="${esc(f.unit ?? '')}"></label>` : ''}
-      </div>`;
-  }
-  setHtml(numBox, numHtml);
-}
-
-// ---------- فورم جانب حياة جديد / تعديل ----------
+// ---------- فورم مجال حياة جديد / تعديل ----------
 export function lifeAreaFormSheet(f, canDelete) {
   const editing = !!f.origId;
   return {
-    label: editing ? 'تعديل جانب الحياة' : 'جانب حياة جديد',
-    head: `<h2>${editing ? 'تعديل جانب الحياة' : 'جانب حياة جديد'}</h2>`,
-    body: `<label class="f"><span class="lbl">اسم الجانب</span>
-        <input class="fld" data-role="laname" autocomplete="off" data-focus placeholder="مثلاً: العلاقات، المال، النفسية، المشاريع…" value="${esc(f.name || '')}">
+    label: editing ? 'تعديل المجال' : 'مجال جديد',
+    head: `<h2>${editing ? 'تعديل المجال' : 'مجال جديد'}</h2>`,
+    body: `<label class="f"><span class="lbl">اسم المجال</span>
+        <input class="fld" data-role="laname" autocomplete="off" data-focus placeholder="مثلاً: شغل، ديني، صحة، علاقات، تعلم…" value="${esc(f.name || '')}">
       </label>
-      <label class="f"><span class="lbl">سطر رؤية أو معيار للجانب ده (اختياري)</span>
+      <label class="f"><span class="lbl">سطر رؤية أو معيار للمجال (اختياري)</span>
         <input class="fld" data-role="lanote" autocomplete="off" placeholder="مثلاً: أحافظ على هدوئي ووقت حقيقي مع أهلي" value="${esc(f.note || '')}">
       </label>
       <div><span class="lbl">الأيقونة</span>
         <div class="picks">${LIFE_AREA_ICONS.map(([id, l]) => `<button class="bchip" type="button" data-act="laico" data-v="${id}" data-keep aria-pressed="${f.icon === id}"><span class="bic">${ico(id)}</span><span>${l}</span></button>`).join('')}</div>
       </div>`,
     foot: editing && canDelete
-      ? `<div class="foot2"><button class="b-sec" type="button" data-act="ladel">امسح الجانب</button>
+      ? `<div class="foot2"><button class="b-sec" type="button" data-act="ladel">امسح المجال</button>
           <button class="b-pri" type="button" data-act="lasave">احفظ</button></div>`
-      : '<button class="b-pri" type="button" data-act="lasave">احفظ الجانب</button>',
+      : '<button class="b-pri" type="button" data-act="lasave">احفظ المجال</button>',
   };
 }
 
-// ---------- جلسة مراجعة بنك الأهداف (بطاقة ورا بطاقة عند نهاية الفترة) ----------
-export function goalReviewSheet(rv, gsum, s) {
+// ---------- جلسة مراجعة المجمّد (نهاية الفترة) ----------
+export function goalReviewSheet(rv, sys, s) {
   const total = rv.ids.length;
-  const doneCount = rv.i;
-  const pct = total ? Math.min(100, Math.round((doneCount / total) * 100)) : 100;
+  const pct = total ? Math.min(100, Math.round((rv.i / total) * 100)) : 100;
 
   if (rv.i >= total) {
     const hasCurPeriod = !!periodOf(s.periods, s.today);
     const parts = [];
-    if (rv.stats.activated) parts.push(`فعّلت ${fmtNum(rv.stats.activated)}`);
-    if (rv.stats.period) parts.push(`للفترة الجاية ${fmtNum(rv.stats.period)}`);
-    if (rv.stats.kept) parts.push(`أجّلت ${fmtNum(rv.stats.kept)}`);
+    if (rv.stats.activated) parts.push(`شغّلت ${fmtNum(rv.stats.activated)}`);
+    if (rv.stats.kept) parts.push(`سبت مجمّد ${fmtNum(rv.stats.kept)}`);
     if (rv.stats.dropped) parts.push(`استبعدت ${fmtNum(rv.stats.dropped)}`);
     return {
       label: 'ملخص المراجعة',
       head: '<h2>خلصت المراجعة ✓</h2>',
       body: `<div class="panel rev-done">
           <span class="g-med ok">${ico('check')}</span>
-          <b>دماغك أصفى دلوقتي</b>
-          <p>${parts.length ? esc(parts.join(' · ')) : 'راجعت كل الأهداف اللي كانت في البنك.'}</p>
-          <p class="hint">أهدافك النشطة دلوقتي: <b>${fmtNum(gsum.active.length)}</b> · الباقي في البنك: <b>${fmtNum(gsum.backlog.length)}</b></p>
+          <b>المسار واضح دلوقتي</b>
+          <p>${parts.length ? esc(parts.join(' · ')) : 'راجعت كل اللي في المجمّد.'}</p>
+          <p class="hint">${sys.activeProject ? `المشروع الشغّال دلوقتي: <b>${esc(sys.activeProject.t)}</b>` : 'مفيش مشروع شغّال دلوقتي — اختار واحد لما تبقى جاهز.'}</p>
         </div>`,
       foot: !hasCurPeriod
         ? `<div class="foot2"><button class="b-sec" type="button" data-close>تمام</button>
@@ -781,38 +885,40 @@ export function goalReviewSheet(rv, gsum, s) {
   const g = (s.goals || []).find((x) => String(x.id) === String(gid));
   if (!g) {
     return {
-      label: 'مراجعة بنك الأهداف',
-      head: '<h2>مراجعة بنك الأهداف</h2>',
-      body: '<p class="hint">الهدف ده اتنقل أو اتمسح.</p>',
+      label: 'مراجعة المجمّد',
+      head: '<h2>مراجعة المجمّد</h2>',
+      body: '<p class="hint">العنصر ده اتنقل أو اتمسح.</p>',
       foot: '<button class="b-pri" type="button" data-act="grevkeep">اللي بعده</button>',
     };
   }
-  const ev = gsum.evals.get(g.id);
-  const areaEntry = (gsum.areas || []).find((x) => x.area.id === ev.pillar.id);
-  const areaActive = areaEntry ? areaEntry.active.length : 0;
+  const ev = sys.evals.get(g.id);
+  const kind = itemKind(g);
+  const parentGoal = g.parentId ? (s.goals || []).find((x) => String(x.id) === String(g.parentId)) : null;
   const age = backlogAgeText(g.at, s.today, s.settings?.dayStart);
 
   return {
-    label: 'مراجعة بنك الأهداف',
-    head: `<h2>مراجعة بنك الأهداف <small class="rev-step">${fmtNum(rv.i + 1)} من ${fmtNum(total)}</small></h2>`,
+    label: 'مراجعة المجمّد',
+    head: `<h2>مراجعة المجمّد <small class="rev-step">${fmtNum(rv.i + 1)} من ${fmtNum(total)}</small></h2>`,
     body: `<div class="pace-bar" aria-hidden="true"><div class="pace-fill" style="width:${pct}%"></div></div>
       <div class="panel rev-card">
         <div class="rev-meta">
           <span class="apill on">${ico(ev.pillar.icon)}<span>${esc(ev.pillar.name)}</span></span>
+          <span class="apill">${kind === 'goal' ? 'هدف (ليه)' : 'مشروع'}</span>
           ${age ? `<span class="apill">${esc(age)}</span>` : ''}
           ${g.pri ? '<span class="apill attn">أولوية ⚑</span>' : ''}
         </div>
+        ${parentGoal ? `<span class="g-src">تبع هدف: <b>${esc(parentGoal.t)}</b></span>` : ''}
         <h3 class="rev-title">${esc(g.t)}</h3>
+        ${g.outcome ? `<p class="g-ref"><b>النتيجة:</b> ${esc(g.outcome)}</p>` : ''}
         ${g.why ? `<p class="g-ref"><b>ليه كنت عايز ده:</b> ${esc(g.why)}</p>` : ''}
-        <p class="rev-ctx">${areaActive
-          ? `عندك ${goalsWord(areaActive)} نشط في «${esc(ev.pillar.name)}» · الإجمالي النشط: ${fmtNum(gsum.active.length)}`
-          : `مفيش أهداف نشطة في «${esc(ev.pillar.name)}» دلوقتي · الإجمالي النشط: ${fmtNum(gsum.active.length)}`}</p>
+        <p class="rev-ctx">${sys.activeProject
+          ? `المشروع الشغّال حالياً: «${esc(sys.activeProject.t)}»${kind === 'project' ? ' (لو شغّلت ده، القديم هيتجمّد)' : ''}`
+          : 'مفيش مشروع شغّال دلوقتي — المساحة فاضية لـ ١ مشروع.'}</p>
       </div>
       <div class="rev-decisions">
-        <button type="button" class="b-pri" data-act="grevact" data-id="${esc(g.id)}">ابدأه كهدف نشط ←</button>
-        <button type="button" class="b-accent" data-act="grevperiod" data-id="${esc(g.id)}">اجعله هدف الفترة الجاية</button>
+        <button type="button" class="b-pri" data-act="grevact" data-id="${esc(g.id)}">${kind === 'goal' ? 'فعّل الهدف دلوقتي ←' : (sys.activeProject ? 'جمّد الحالي وشغّل ده ←' : 'شغّله كمشروعك الواحد ←')}</button>
         <div class="foot2">
-          <button type="button" class="b-sec" data-act="grevkeep" data-id="${esc(g.id)}">سيبه لبعدين</button>
+          <button type="button" class="b-sec" data-act="grevkeep" data-id="${esc(g.id)}">سيبه مجمّد</button>
           <button type="button" class="gh rev-drop" data-act="grevdrop" data-id="${esc(g.id)}">مش مستاهل</button>
         </div>
       </div>`,

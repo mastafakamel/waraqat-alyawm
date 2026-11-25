@@ -3,7 +3,7 @@
 import { lineTarget, parseExpense, guessExpCat, fmtNum, activeLifeAreas } from '../logic.js';
 import { esc, ic, P, setHtml } from '../ui.js';
 
-export const MODES = [['idea', 'فكرة'], ['goal', 'فكرة هدف'], ['task', 'مهمة'], ['exp', 'مصروف'], ['line', 'سطر لليوم']];
+export const MODES = [['filter', 'بالفلتر'], ['task', 'مهمة'], ['idea', 'فكرة'], ['exp', 'مصروف'], ['line', 'سطر لليوم']];
 
 export function dockHtml() {
   return `<div class="dock-in">
@@ -19,9 +19,9 @@ export function dockHtml() {
 }
 
 function placeholder(mode, dayStart) {
+  if (mode === 'filter') return 'عادة أو هدف أو مشروع جه في بالك…';
   if (mode === 'idea') return 'اكتب الفكرة…';
-  if (mode === 'goal') return 'هدف جه في بالك (هيتحفظ في بنك الأهداف)…';
-  if (mode === 'task') return 'مهمة للنهارده…';
+  if (mode === 'task') return 'مهمة للنهارده (حد أقصى ٣)…';
   if (mode === 'exp') return 'المبلغ وعلى إيه، مثلاً: ٧٥ غدا';
   return `عملت إيه ${lineTarget(new Date().getHours(), dayStart).label}؟`;
 }
@@ -59,7 +59,7 @@ export function updateDock(root, ui, away, settings) {
   if (ui.qmode === 'exp') {
     cats.hidden = false;
     setHtml(cats, expCats.map((c) => `<button class="cat" type="button" data-qcat="${esc(c)}" aria-pressed="${c === ui.qcat}">${esc(c)}</button>`).join(''));
-  } else if (ui.qmode === 'goal') {
+  } else if (ui.qmode === 'filter') {
     cats.hidden = false;
     setHtml(cats, areas.map((a) => `<button class="cat" type="button" data-qarea="${esc(a.id)}" aria-pressed="${a.id === ui.qarea}">${esc(a.name)}</button>`).join(''));
   } else {
@@ -76,9 +76,9 @@ export function updateDock(root, ui, away, settings) {
       hint.textContent = 'اكتب المبلغ رقم، زي ٧٥ غدا';
       hint.classList.add('err');
     }
-  } else if (ui.qmode === 'goal' && v) {
+  } else if (ui.qmode === 'filter' && v) {
     const aName = areas.find((a) => a.id === ui.qarea)?.name || '';
-    hint.innerHTML = `هيتحفظ في <b>بنك الأهداف</b>${aName ? ` · ${esc(aName)}` : ''}`;
+    hint.innerHTML = `هيعدّي على <b>الفلتر</b>${aName ? ` · مجال ${esc(aName)}` : ''}`;
   } else if (ui.qmode === 'line' && v) {
     hint.textContent = `هيتضاف لـ "${lineTarget(new Date().getHours(), ds).label}"${where}`;
   } else {

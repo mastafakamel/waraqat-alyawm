@@ -13,7 +13,8 @@ import {
   suggestTimes, lastWith, readDuration, recentValues,
   fmtHour, hourSpan, hoursWord, fmtHours, timeByCat, sleepHourList, sleepHoursSplit,
   goalRange, goalTimeProgress, evalGoal, goalsSummary, goalDigestLines,
-  DEFAULT_LIFE_AREAS, activeLifeAreas, lifeAreaMap, isBacklogGoal, backlogAgeText, periodReviewState,
+  DEFAULT_LIFE_AREAS, TODAY_TASK_LIMIT, activeLifeAreas, lifeAreaMap, isBacklogGoal, backlogAgeText, periodReviewState,
+  itemKind, itemStatus, todayOpenTasks, canAddTodayTask, systemState, activeHabitGroups,
   DEFAULT_SETTINGS, normalizeSettings, periodsFor, periodHoursFor,
   prayersState, togglePrayer, guessExpCat, incomeTotal, evalPeriodGoal, periodGoalDigestLines,
 } from '../js/logic.js';
@@ -769,7 +770,7 @@ test('بنك الأهداف + خريطة جوانب الحياة القابلة 
   });
   assert.equal(customCfg.lifeAreas.length, 3);
   assert.equal(lifeAreaMap(customCfg).get('rel').name, 'العلاقات والعائلة');
-  assert.equal(lifeAreaMap(customCfg).get('work').name, 'الشغل والمال'); // fallback للافتراضي
+  assert.equal(lifeAreaMap(customCfg).get('work').name, 'شغل'); // fallback للافتراضي
 
   // ٢. فصل بنك الأهداف عن النشطة + خريطة الجوانب + عدم تلويث متوسط التقدّم
   const goals = [
@@ -828,4 +829,65 @@ test('بنك الأهداف + خريطة جوانب الحياة القابلة 
   assert.equal(periodReviewState([p], [goals[0]], '2026-11-22').due, false);
   // بعد ما تتعلّم إنها اتراجعت ← مفيش تنبيه
   assert.equal(periodReviewState([{ ...p, reviewedAt: Date.now() }], goals, '2026-11-22').due, false);
+});
+
+test('نظام الفلتر والربط الموحّد: المجال ← هدف ← مشروع واحد شغّال ← ٣ مهام للنهاردة + عادات مباشرة', () => {
+  assert.equal(TODAY_TASK_LIMIT, 3);
+  assert.deepEqual(DEFAULT_LIFE_AREAS.map((a) => a.name), ['شغل', 'ديني', 'صحة', 'علاقات', 'تعلم']);
+
+  const settings = normalizeSettings({
+    habits: [
+      ...DEFAULT_SETTINGS.habits.map((h) => (h.k === 'tech' ? { ...h, on: false } : h)), // عادة مجمّدة
+      { k: 'h_rel1', n: 'مكالمة أهلي', g: 'life', on: true }, // عادة في مجال علاقات
+    ],
+  });
+  // العادة المضافة في مجال علاقات تظهر تلقائياً في activeHabitGroups
+  assert.equal(activeHabitGroups(settings).some((g) => g.id === 'life' && g.keys.includes('h_rel1')), true);
+
+  const items = [
+    { id: 'goal1', kind: 'goal', p: 'work', t: 'الاستقرار المادي', why: 'راحة بالي', st: 'active', done: false, at: 10 },
+    { id: 'goal2', kind: 'goal', p: 'health', t: 'لياقة عالية', st: 'frozen', done: false, at: 20 },
+    { id: 'proj1', kind: 'project', p: 'work', parentId: 'goal1', t: 'إطلاق المتجر', outcome: 'أول ١٠ مبيعات', st: 'active', f: true, m: 'steps', steps: [{ id: 's1', t: 'تجهيز الصفحة', done: false }], done: false, at: 30 },
+    { id: 'proj2', kind: 'project', p: 'health', parentId: 'goal2', t: 'برنامج جري شهر', outcome: '٥ كيلو متواصل', st: 'frozen', pri: true, m: 'steps', done: false, at: 40 },
+    { id: 'projDone', kind: 'project', p: 'work', parentId: 'goal1', t: 'تسجيل الدومين', st: 'active', done: true, dAt: 50 },
+  ];
+  assert.equal(itemKind(items[0]), 'goal');
+  assert.equal(itemKind(items[2]), 'project');
+  assert.equal(itemStatus(items[2]), 'active');
+  assert.equal(itemStatus(items[3]), 'frozen');
+  assert.equal(itemStatus(items[4]), 'done');
+
+  const tasks = [
+    { id: 't1', t: 'تصميم الهيدر', due: '2026-11-25', goalId: 'proj1', done: false, at: 1 },
+    { id: 't2', t: 'ربط الدفع', due: '2026-11-25', goalId: 'proj1', done: false, at: 2 },
+    { id: 't3', t: 'اختبار الطلب', due: '2026-11-25', goalId: 'proj1', done: false, at: 3 },
+    { id: 't4', t: 'مهمة مجمّدة لبعدين', due: '', goalId: 'proj2', done: false, at: 4 },
+    { id: 't5', t: 'مهمة خلصت النهاردة', due: '2026-11-25', goalId: 'proj1', done: true, dAt: new Date('2026-11-25T14:00:00').getTime(), at: 5 },
+  ];
+  assert.equal(todayOpenTasks(tasks, '2026-11-25').length, 3);
+  assert.equal(canAddTodayTask(tasks, '2026-11-25').ok, false); // وصلنا حد الـ ٣ مهام!
+  assert.equal(canAddTodayTask(tasks, '2026-11-25', 't1').ok, true); // لو بنعدّل مهمة من التلاتة مسموح
+
+  const sys = systemState(items, tasks, settings, { today: '2026-11-25' });
+  assert.equal(sys.activeProject.id, 'proj1');
+  assert.equal(sys.activeChain.area.name, 'شغل');
+  assert.equal(sys.activeChain.goal.t, 'الاستقرار المادي');
+  assert.equal(sys.activeChain.nextStep, 'تجهيز الصفحة');
+  assert.equal(sys.frozenProjects.length, 1);
+  assert.equal(sys.frozenGoals.length, 1);
+  assert.equal(sys.frozenHabits.length, 1);
+  assert.equal(sys.frozenTasks.length, 1);
+  assert.equal(sys.frozenTotal, 4);
+  assert.equal(sys.todayOpen.count, 3);
+  assert.equal(sys.todayOpen.atLimit, true);
+  assert.equal(sys.completedProjects.length, 1);
+
+  // شجرة المجال بتربط الهدف بمشاريعه والعادات مباشرة بالمجال
+  const workArea = sys.areas.find((x) => x.area.id === 'work');
+  assert.equal(workArea.hasActiveProject, true);
+  assert.equal(workArea.goals.length, 1);
+  assert.equal(workArea.goals[0].projects.length, 1);
+  assert.equal(workArea.goals[0].projects[0].project.id, 'proj1');
+  const lifeArea = sys.areas.find((x) => x.area.id === 'life');
+  assert.equal(lifeArea.activeHabits.some((h) => h.k === 'h_rel1'), true);
 });
