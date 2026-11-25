@@ -222,8 +222,10 @@ create table if not exists public.push_subs (
 alter table public.push_subs enable row level security;
 drop policy if exists "own push subs" on public.push_subs;
 create policy "own push subs" on public.push_subs for all to authenticated
-  using (user_id = auth.uid()) with check (user_id = auth.uid());
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 grant select, insert, update, delete on public.push_subs to authenticated;
+grant select, delete on public.push_subs to service_role;
+grant select on public.docs to service_role;
 
 -- سجل منع تكرار نفس التذكير مرتين في نفس اليوم (للسيرفر بس)
 create table if not exists public.push_log (
@@ -234,6 +236,7 @@ create table if not exists public.push_log (
   primary key (user_id, day, kind)
 );
 alter table public.push_log enable row level security;
+grant select, insert on public.push_log to service_role;
 
 -- جدولة دالة notify كل ٥ دقايق تلقائياً
 create extension if not exists pg_cron;
