@@ -1,7 +1,7 @@
 // views/settings.js — شاشة الإعدادات المنظّمة (أقسام بتتفتح وتتقفل) + إدارة الفترات وهدف الفترة + العادات والتصنيفات.
 
 import {
-  STAR_ITEMS, PERIOD_GOAL_KINDS, TIME_CAT_COLORS, periodsFor, activeHabits,
+  STAR_ITEMS, PERIOD_GOAL_KINDS, TIME_CAT_COLORS, periodsFor, activeHabits, activeLifeAreas, isBacklogGoal,
   periodOf, periodDay, periodLabel, evalPeriodGoal, groupMetrics, metricDesc,
   fmtNum, fmt12, fmtDays,
 } from '../logic.js';
@@ -147,12 +147,19 @@ export function updatePeriodDetail(sh, p, ev, s) {
       <p>دوس «تعديل» تحت وحدد هدف واحد تقيس عليه نجاح الفترة.</p></div>`;
   }
 
+  const backlogCnt = (s.goals || []).filter(isBacklogGoal).length;
+  const nearEnd = s.today >= p.to;
+  const revBtn = backlogCnt && nearEnd
+    ? `<button type="button" class="gh on" data-act="grevstart" data-pid="${id}">راجع بنك الأهداف (${fmtNum(backlogCnt)}) للفترة الجاية</button>`
+    : '';
+
   const html = `<p class="note" style="margin:0">${rangeStr}</p>
     ${goalHtml}
     <label class="f"><span class="lbl">ملخص / درس الفترة (إيه اللي ساعدني أو عطلني؟)</span>
       <textarea class="fld" rows="3" data-role="pnote" data-pid="${id}" placeholder="اكتب سطر أو اتنين آخر الفترة…">${esc(p.note || '')}</textarea>
     </label>
     <div class="g-detacts">
+      ${revBtn}
       <button type="button" class="gh" data-act="pform">ابدأ فترة جديدة بهدف جديد</button>
     </div>`;
   const active = document.activeElement;
@@ -190,7 +197,10 @@ export function periodFormSheet(pf) {
     foot: editing
       ? `<div class="foot2"><button class="b-sec" type="button" data-act="pdel" data-id="${esc(pf.id)}">امسح</button>
           <button class="b-pri" type="button" data-act="pfsave">احفظ الفترة</button></div>`
-      : '<button class="b-pri" type="button" data-act="pfsave">ابدأ الفترة</button>',
+      : pf.fromReview
+        ? `<div class="foot2"><button class="b-sec" type="button" data-act="grevback">رجوع للمراجعة</button>
+            <button class="b-pri" type="button" data-act="pfsave">ابدأ الفترة</button></div>`
+        : '<button class="b-pri" type="button" data-act="pfsave">ابدأ الفترة</button>',
   };
 }
 
@@ -283,6 +293,9 @@ export function habitFormSheet(hf, s) {
       </div>
       <label class="f"><span class="lbl">وحدة الرقم التفصيلي (اختياري — زي دقيقة أو صفحة)</span>
         <input class="fld" data-role="hfunit" autocomplete="off" placeholder="سيبها فاضية لو عادة بلمسة واحدة بس" value="${esc(hf.numU || '')}">
+      </label>
+      <label class="f"><span class="lbl">ميعاد التذكير اليومي (اختياري)</span>
+        <input class="fld" type="time" data-role="hfrem" value="${esc(hf.rem || '')}">
       </label>`,
     foot: editing
       ? `<div class="foot2"><button class="b-sec" type="button" data-act="hfdel">امسح</button>
@@ -361,6 +374,36 @@ function syncCard(s, sx) {
   }[s.sync] || '';
   return `<div class="pad"><b>داخل بـ <bdi>${esc(sx.email)}</bdi></b><span>${line}</span>
     <div class="btns"><button type="button" data-act="ssync">زامن دلوقتي</button><button type="button" data-act="sout">اخرج</button></div></div>`;
+}
+
+function pushCard(s, ps) {
+  if (!ps) {
+    return '<div class="pad"><b>إشعارات الخلفية (والتطبيق مقفول)</b><span>جاري التحقق من حالة الجهاز…</span></div>';
+  }
+  if (!ps.notifSupported) {
+    return '<div class="pad"><b>الإشعارات مش مدعومة هنا</b><span>افتح التطبيق من Chrome على أندرويد عشان تفعّل الإشعارات.</span></div>';
+  }
+  if (!ps.hasVapid) {
+    return `<div class="pad"><b>إشعارات مواعيد العادات (والتطبيق مقفول)</b>
+      <span>لسه محتاجة إعداد سريع مرة واحدة في Supabase (مفتاح VAPID + دالة notify، الخطوات في README). إشعار «مهام النهارده» فوق شغّال دلوقتي على طول.</span>
+      <div class="btns"><button type="button" data-act="nlocaltest">جرّب إشعار محلي</button></div></div>`;
+  }
+  if (!ps.syncConfigured || s.sync === 'signedout' || s.sync === 'off') {
+    return `<div class="pad"><b>إشعارات الخلفية محتاجة تسجيل دخول</b>
+      <span>سجّل دخولك في قسم «المزامنة» تحت الأول عشان السيرفر يبعتلك تذكير العادات والتطبيق مقفول.</span>
+      <div class="btns"><button type="button" data-act="nlocaltest">جرّب إشعار محلي</button></div></div>`;
+  }
+  if (ps.perm === 'denied') {
+    return '<div class="pad"><b>الإشعارات مقفولة من الموبايل</b><span>افتح إعدادات الموقع في Chrome (أو إعدادات تطبيق ورقة اليوم) واسمح بالإشعارات، وبعدين ارجع هنا.</span></div>';
+  }
+  if (ps.subscribed) {
+    return `<div class="pad"><b>إشعارات الخلفية شغالة على الجهاز ده ✓</b>
+      <span>هتوصلك في ميعاد كل عادة (لو لسه ماعملتهاش) + ملخص الصبح وقفلة اليوم، وتقدر تعلّم منها من برّه التطبيق.</span>
+      <div class="btns"><button class="pri" type="button" data-act="nremotetest">جرّب إشعار من السيرفر</button><button type="button" data-act="npushoff">وقف على الجهاز ده</button></div></div>`;
+  }
+  return `<div class="pad"><b>إشعارات أوقات العادات والملخص</b>
+    <span>فعّلها على موبايلك عشان التطبيق ينبّهك في وقت كل عادة حتى وهو مقفول، ومعاها زرار «✓ عملتها» من برّه التطبيق.</span>
+    <div class="btns"><button class="pri" type="button" data-act="npushon">فعّل إشعارات الموبايل</button><button type="button" data-act="nlocaltest">جرّب محلي</button></div></div>`;
 }
 
 function accSection(id, title, sub, body, openSet) {
@@ -450,7 +493,7 @@ export function updateSettings(root, s, ui, sx = { configured: false }, days = [
         const list = cfg.habits.filter((h) => h.g === g.id);
         return `<div class="grp"><span>${esc(g.name)}</span><span>${fmtNum(list.filter((x) => x.on !== false).length)}/${fmtNum(list.length)}</span></div>
           <div class="card">${list.map((h) => `<div class="srow${h.on === false ? ' off' : ''}">
-            <button class="srow-b" type="button" data-act="hform" data-k="${esc(h.k)}"><span class="m"><b>${esc(h.n)}</b><span>${h.workout ? 'نوع + وقت + أرقام' : h.numU ? `مع رقم (${esc(h.numU)})` : 'تم / جزئي'}</span></span></button>
+            <button class="srow-b" type="button" data-act="hform" data-k="${esc(h.k)}"><span class="m"><b>${esc(h.n)}</b><span>${h.workout ? 'نوع + وقت + أرقام' : h.numU ? `مع رقم (${esc(h.numU)})` : 'تم / جزئي'}${h.rem ? ` · تذكير ${fmt12(h.rem)}` : ''}</span></span></button>
             <button class="sw" type="button" role="switch" data-act="htoggle" data-k="${esc(h.k)}" aria-checked="${h.on !== false}" aria-label="${esc(h.n)}"><i></i></button>
           </div>`).join('') || '<p class="empty-s">مفيش عادات في الركن ده.</p>'}</div>`;
       }).join('')}
@@ -517,11 +560,72 @@ export function updateSettings(root, s, ui, sx = { configured: false }, days = [
       <div class="card">${syncCard(s, sx)}</div>
     </div>`;
 
+  // ٣أ. جوانب الحياة (خريطة الأهداف وبنك الأهداف)
+  const areasList = activeLifeAreas(cfg);
+  const areasHtml = `<div class="blk">
+      <p class="hint">خصّص جوانب حياتك اللي بتوزّع عليها أهدافك وبنك الأهداف (تقدر تعدّلهم كمان من «الخطة ← جوانب حياتي»).</p>
+      <div class="card">${areasList.map((a) => `<button class="srow srow-b" type="button" data-act="laform" data-id="${esc(a.id)}" style="width:100%;padding-inline:14px">
+        <span class="g-med sm" style="margin-inline-end:10px">${ico(a.icon)}</span>
+        <span class="m"><b>${esc(a.name)}</b><span>${a.note ? esc(a.note) : 'دوس للتعديل'}</span></span>
+      </button>`).join('')}</div>
+      <button type="button" class="gh" data-act="laform">+ جانب حياة جديد</button>
+    </div>`;
+
+  // ٨. التنبيهات والتفاعل
+  const nc = cfg.notify || {};
+  const actHabits = activeHabits(cfg);
+  const remCount = actHabits.filter((h) => h.rem).length;
+  const notifySub = [
+    nc.tasksPin ? 'المهام في الستارة' : '',
+    ui.push?.subscribed ? 'إشعارات الخلفية شغالة' : '',
+    remCount ? `${fmtNum(remCount)} عادات ليهم ميعاد` : '',
+  ].filter(Boolean).join(' · ') || 'قائمة المهام في الستارة + أوقات العادات';
+  const notifyHtml = `<div class="blk">
+      <div class="card">
+        <div class="srow">
+          <span class="m"><b>قائمة مهام النهارده في الإشعارات</b><span>تفضل مهامك ظاهرة في الستارة وتقدر تشطب أول مهمة من غير ما تفتح التطبيق</span></span>
+          <button class="sw" type="button" role="switch" data-act="ntaskspin" aria-checked="${!!nc.tasksPin}" aria-label="قائمة مهام النهارده في الإشعارات"><i></i></button>
+        </div>
+        ${nc.tasksPin ? `<div class="pad" style="padding-top:0"><div class="btns" style="margin-top:0">
+          <button type="button" data-act="ntasksrefresh">حدّث القائمة في الستارة</button>
+          <button type="button" data-act="nlocaltest">جرّب إشعار</button>
+        </div></div>` : ''}
+        <div class="srow">
+          <span class="m"><b>رقم المهام على الأيقونة (Badge)</b><span>يعرض عدد مهام النهارده المفتوحة برّه على أيقونة التطبيق</span></span>
+          <button class="sw" type="button" role="switch" data-act="ntoggle" data-k="badge" aria-checked="${nc.badge !== false}" aria-label="رقم المهام على الأيقونة"><i></i></button>
+        </div>
+        <div class="srow">
+          <span class="m"><b>اهتزاز خفيف عند التعليم</b><span>إحساس لمسي بسيط لما تشطب مهمة أو عادة</span></span>
+          <button class="sw" type="button" role="switch" data-act="ntoggle" data-k="haptic" aria-checked="${nc.haptic !== false}" aria-label="اهتزاز خفيف"><i></i></button>
+        </div>
+      </div>
+
+      <div class="card">${pushCard(s, ui.push)}</div>
+
+      <div class="grp"><span>التلخيص اليومي التلقائي</span><span>سيبه فاضي عشان تقفله</span></div>
+      <div class="g2">
+        <label class="f"><span class="lbl">ملخص مهام الصبح</span><input class="fld" type="time" data-ncfg="morning" value="${esc(nc.morning || '')}"></label>
+        <label class="f"><span class="lbl">تذكير قفلة اليوم</span><input class="fld" type="time" data-ncfg="evening" value="${esc(nc.evening || '')}"></label>
+      </div>
+
+      <div class="grp"><span>مواعيد تذكير العادات</span><span>${fmtNum(remCount)}/${fmtNum(actHabits.length)}</span></div>
+      <p class="hint" style="margin:0">الإشعار بيجيلك بس لو العادة لسه ماتعملتش النهارده، ومعاه زرار «✓ عملتها».</p>
+      <div class="card">${actHabits.map((h) => `<div class="srow">
+        <span class="m"><b>${esc(h.n)}</b><span>${h.rem ? `تذكير يومي ${fmt12(h.rem)}` : 'بدون تذكير'}</span></span>
+        <span class="rem-ctrl">
+          <input class="fld rem-in" type="time" data-hrem="${esc(h.k)}" value="${esc(h.rem || '')}" aria-label="ميعاد تذكير ${esc(h.n)}">
+          ${h.rem ? `<button class="ib" type="button" data-act="hremclr" data-k="${esc(h.k)}" aria-label="الغِ تذكير ${esc(h.n)}">${ic(P.close)}</button>` : ''}
+        </span>
+      </div>`).join('')}</div>
+    </div>`;
+
   const enabledStars = STAR_ITEMS.filter((st) => cfg.stars[st.k]?.on !== false).length;
   const html = [
     accSection('targets', 'اليوم والأهداف', `بداية ${fmtNum(cfg.dayStart)} ص · نوم ${fmtNum(cfg.sleepTarget)} س · شغل ${fmtNum(cfg.workTarget)} س`, targetsHtml, openSet),
+    accSection('notify', 'التنبيهات والتفاعل', notifySub, notifyHtml, openSet),
     accSection('period', 'الفترة وهدف الفترة', curP ? (curEv ? `${curEv.title} (${fmtNum(curEv.pct)}٪)` : periodLabel(curP)) : 'مفيش فترة حالية', periodHtml, openSet),
-    accSection('habits', 'العادات والأركان', `${fmtNum(activeHabits(cfg).length)} عادة في ${fmtNum(cfg.habitGroups.length)} أركان`, habitsHtml, openSet),
+    accSection('areas', 'جوانب الحياة (خريطة الأهداف)', `${fmtNum(areasList.length)} جوانب قابلة للتخصيص`, areasHtml, openSet),
+    accSection('habits', 'العادات والأركان', `${fmtNum(actHabits.length)} عادة في ${fmtNum(cfg.habitGroups.length)} أركان`, habitsHtml, openSet),
     accSection('cats', 'المشاريع والتصنيفات', `${fmtNum(cfg.projects.length)} مشروع · وقت · فلوس · أفكار`, catsHtml, openSet),
     accSection('stars', 'البنود الأساسية ★', `${fmtNum(enabledStars)} من ٨ مفعّلين`, starsHtml, openSet),
     accSection('metrics', 'مقاييسي', `${fmtNum((s.metrics || []).length)} مقياس`, metricsHtml, openSet),

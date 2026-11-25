@@ -56,11 +56,11 @@ function err(msg, extra) {
   return Object.assign(new Error(msg), extra);
 }
 
-async function api(path, { method = 'GET', body, auth = true } = {}) {
+async function api(path, { method = 'GET', body, auth = true, headers: extra = {} } = {}) {
   const q = useQuota(await meta('quota'), keyOf(new Date()), QUOTA);
   await setMeta('quota', q.meta);
   if (!q.ok) throw err('quota', { capped: true });
-  const headers = { apikey: KEY, 'Content-Type': 'application/json' };
+  const headers = { apikey: KEY, 'Content-Type': 'application/json', ...extra };
   if (auth) headers.Authorization = `Bearer ${await accessToken()}`;
   const res = await fetch(`${URL_}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) {
@@ -73,7 +73,9 @@ async function api(path, { method = 'GET', body, auth = true } = {}) {
     } catch { /* مش JSON */ }
     throw err(msg, { status: res.status, code: String(code) });
   }
-  return res.status === 204 ? null : res.json();
+  if (res.status === 204) return null;
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : null;
 }
 
 // ---------- الجلسة ----------
@@ -144,6 +146,25 @@ export async function signOut() {
 export async function callFunction(name, body) {
   if (!configured()) throw err('sync off', { code: 'off' });
   return api(`/functions/v1/${name}`, { method: 'POST', body });
+}
+
+/** يحفظ اشتراك إشعارات Web Push للجهاز ده على Supabase (RLS يخص المستخدم بس). */
+export async function savePushSub({ endpoint, p256dh, auth, userAgent = '' }) {
+  if (!configured()) throw err('sync off', { code: 'off' });
+  return api('/rest/v1/push_subs?on_conflict=endpoint', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: { endpoint, p256dh, auth, user_agent: userAgent.slice(0, 180) },
+  });
+}
+
+/** يمسح اشتراك الجهاز ده من Supabase. */
+export async function removePushSub(endpoint) {
+  if (!configured()) throw err('sync off', { code: 'off' });
+  return api(`/rest/v1/push_subs?endpoint=eq.${encodeURIComponent(endpoint)}`, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=minimal' },
+  });
 }
 
 // ---------- الرفع والسحب ----------
@@ -234,6 +255,7 @@ export function schedule(ms = 3000) {
 
 export async function initSync() {
   if (!configured()) return set('off');
+  await setMeta('supa', { url: URL_, key: KEY });
   window.addEventListener('online', () => syncNow());
   document.addEventListener('visibilitychange', () => {
     // لما التطبيق يرجع قدامك، لو آخر مزامنة من أكتر من دقيقة

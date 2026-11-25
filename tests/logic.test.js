@@ -13,6 +13,7 @@ import {
   suggestTimes, lastWith, readDuration, recentValues,
   fmtHour, hourSpan, hoursWord, fmtHours, timeByCat, sleepHourList, sleepHoursSplit,
   goalRange, goalTimeProgress, evalGoal, goalsSummary, goalDigestLines,
+  DEFAULT_LIFE_AREAS, activeLifeAreas, lifeAreaMap, isBacklogGoal, backlogAgeText, periodReviewState,
   DEFAULT_SETTINGS, normalizeSettings, periodsFor, periodHoursFor,
   prayersState, togglePrayer, guessExpCat, incomeTotal, evalPeriodGoal, periodGoalDigestLines,
 } from '../js/logic.js';
@@ -754,4 +755,77 @@ test('ترتيب المتغيرات (الأجزاء ١–٦): الإعدادات
   assert.match(dig, /أولوية بكرة: تقفيل الميزة/);
   assert.match(dig, /هدف الفترة الحالية/);
   assert.equal(periodGoalDigestLines([pBuild], { days: pDays, today: '2026-11-17' }).length, 1);
+});
+
+test('بنك الأهداف + خريطة جوانب الحياة القابلة للتخصيص + مراجعة نهاية الفترة', () => {
+  // ١. جوانب الحياة القابلة للتخصيص في الإعدادات
+  assert.equal(activeLifeAreas().length, DEFAULT_LIFE_AREAS.length);
+  const customCfg = normalizeSettings({
+    lifeAreas: [
+      { id: 'deen', name: 'الدين', icon: 'star', note: 'محافظة على الفجر' },
+      { id: 'rel', name: 'العلاقات والعائلة', icon: 'users', note: 'صلة رحم أسبوعياً' },
+      { id: 'money', name: 'المال والاستثمار', icon: 'wallet' },
+    ],
+  });
+  assert.equal(customCfg.lifeAreas.length, 3);
+  assert.equal(lifeAreaMap(customCfg).get('rel').name, 'العلاقات والعائلة');
+  assert.equal(lifeAreaMap(customCfg).get('work').name, 'الشغل والمال'); // fallback للافتراضي
+
+  // ٢. فصل بنك الأهداف عن النشطة + خريطة الجوانب + عدم تلويث متوسط التقدّم
+  const goals = [
+    { id: 'g1', t: 'ورد يومي', p: 'deen', m: 'manual', cur: 5, target: 10, from: '2026-11-15', to: '2026-11-25', f: true, done: false },
+    { id: 'b1', st: 'backlog', t: 'أصلح علاقتي بأخويا', p: 'rel', pri: false, why: 'مهم لراحة بالي', done: false, at: new Date('2026-11-10T12:00:00').getTime() },
+    { id: 'b2', st: 'backlog', t: 'أبني صندوق طوارئ', p: 'money', pri: true, why: 'أمان مالي', done: false, at: new Date('2026-11-18T12:00:00').getTime() },
+    { id: 'd1', t: 'هدف قديم خلص', p: 'deen', m: 'manual', cur: 10, target: 10, done: true, dAt: 1000 },
+  ];
+  assert.equal(isBacklogGoal(goals[0]), false);
+  assert.equal(isBacklogGoal(goals[1]), true);
+  assert.equal(backlogAgeText('2026-11-20', '2026-11-20'), 'النهارده');
+  assert.equal(backlogAgeText('2026-11-19', '2026-11-20'), 'من امبارح');
+  assert.equal(backlogAgeText('2026-11-15', '2026-11-20'), 'من ٥ أيام');
+
+  const sum = goalsSummary(goals, { days: [], tasks: [], metrics: [], today: '2026-11-20', settings: customCfg });
+  assert.equal(sum.active.length, 1);
+  assert.equal(sum.backlog.length, 2);
+  assert.equal(sum.backlog[0].id, 'b2'); // الأولوية العالية فوق
+  assert.equal(sum.archived.length, 1);
+  assert.equal(sum.avgPct, 50); // بنك الأهداف ما أثرش على متوسط التقدّم (٥٠٪ بس من g1)
+  assert.equal(sum.focus.length, 1);
+  assert.equal(sum.evals.get('b1').isBacklog, true);
+  assert.equal(sum.evals.get('b1').pillar.name, 'العلاقات والعائلة');
+
+  // خريطة الجوانب
+  const deenArea = sum.areas.find((x) => x.area.id === 'deen');
+  const relArea = sum.areas.find((x) => x.area.id === 'rel');
+  const moneyArea = sum.areas.find((x) => x.area.id === 'money');
+  assert.equal(deenArea.active.length, 1);
+  assert.equal(deenArea.avgPct, 50);
+  assert.equal(deenArea.archived.length, 1);
+  assert.equal(relArea.active.length, 0);
+  assert.equal(relArea.backlog.length, 1);
+  assert.equal(moneyArea.backlog.length, 1);
+
+  // ملخص الـ AI مايحسبش بنك الأهداف كأهداف نشطة
+  const digLines = goalDigestLines(goals, { days: [], tasks: [], metrics: [], today: '2026-11-20', settings: customCfg });
+  assert.equal(digLines.some((l) => l.includes('ورد يومي')), true);
+  assert.equal(digLines.some((l) => l.includes('أبني صندوق طوارئ')), false);
+  assert.equal(digLines.some((l) => l.includes('بنك الأهداف') && l.includes('2')), true);
+
+  // ٣. حالة مراجعة نهاية الفترة
+  const p = { id: 'p1', name: 'سبرنت نوفمبر', from: '2026-11-10', to: '2026-11-20' };
+  // في نص الفترة ← مش وقت المراجعة
+  assert.equal(periodReviewState([p], goals, '2026-11-15').due, false);
+  // آخر يوم في الفترة + فيه أهداف في البنك ← وقت المراجعة
+  const rLast = periodReviewState([p], goals, '2026-11-20');
+  assert.equal(rLast.due, true);
+  assert.equal(rLast.reason, 'last_day');
+  assert.equal(rLast.count, 2);
+  // بعد ما الفترة انتهت ومفيش فترة جديدة ← وقت المراجعة
+  const rEnd = periodReviewState([p], goals, '2026-11-22');
+  assert.equal(rEnd.due, true);
+  assert.equal(rEnd.reason, 'ended');
+  // لو بنك الأهداف فاضي ← مفيش تنبيه
+  assert.equal(periodReviewState([p], [goals[0]], '2026-11-22').due, false);
+  // بعد ما تتعلّم إنها اتراجعت ← مفيش تنبيه
+  assert.equal(periodReviewState([{ ...p, reviewedAt: Date.now() }], goals, '2026-11-22').due, false);
 });

@@ -82,7 +82,7 @@ export function updateTasks(root, s, ui) {
   inp.placeholder = ui.twhen === 'today' ? 'مهمة للنهارده…' : ui.twhen === 'tomorrow' ? 'مهمة لبكرة…' : ui.twhen === 'date' ? 'مهمة للتاريخ المختار…' : 'مهمة لبعدين…';
 
   // ربط بهدف
-  const activeGoals = (s.goals || []).filter((g) => !g.done);
+  const activeGoals = (s.goals || []).filter((g) => !g.done && g.st !== 'backlog');
   const gpick = root.querySelector('[data-out="tgoalpick"]');
   if (gpick) {
     gpick.hidden = !activeGoals.length;

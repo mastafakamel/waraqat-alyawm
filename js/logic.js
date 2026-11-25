@@ -76,10 +76,29 @@ const LEGACY_HABIT_LABELS = {
   fajr: 'الفجر', walk: 'مشي', meals: 'أكل منتظم', nojunk: 'بلا جانك', said: 'قلت اللي حسيته', wed: 'الفرح/الشقة',
 };
 
+export const DEFAULT_LIFE_AREAS = [
+  { id: 'deen',   name: 'الدين والروح',    icon: 'star',  note: '' },
+  { id: 'health', name: 'الصحة والجسم',    icon: 'heart', note: '' },
+  { id: 'work',   name: 'الشغل والمال',    icon: 'brief', note: '' },
+  { id: 'growth', name: 'التعلم والتطوير',  icon: 'book',  note: '' },
+  { id: 'life',   name: 'شخصي وحياة',      icon: 'home',  note: '' },
+];
+
 export const EXP_CATS = ['أكل', 'مواصلات', 'بيت', 'شخصي', 'شغل', 'صحة', 'تعلم', 'اشتراكات'];
 export const IDEA_CATS = ['مشروع', 'شغل', 'شخصي', 'تعلم', 'تاني'];
 
 export const STAR_DUE = { sleep: 0, habits: 0, work: 2, money: 2, screen: 3, mood: 3, post: 3, top: 3 };
+
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+export const DEFAULT_NOTIFY = {
+  tasksPin: false,
+  morning: '08:30',
+  evening: '22:00',
+  badge: true,
+  haptic: true,
+  tz: 'Africa/Cairo',
+};
 
 /** الإعدادات الافتراضية لكل المتغيرات القابلة للتخصيص (تتحفظ في list/settings). */
 export const DEFAULT_SETTINGS = {
@@ -95,10 +114,12 @@ export const DEFAULT_SETTINGS = {
   projects: [],
   habits: DEFAULT_HABIT_LIST,
   habitGroups: DEFAULT_HABIT_GROUP_LIST,
+  lifeAreas: DEFAULT_LIFE_AREAS,
   timeCats: DEFAULT_TIME_CAT_LIST,
   expCats: EXP_CATS,
   ideaCats: IDEA_CATS,
   stars: Object.fromEntries(Object.entries(STAR_DUE).map(([k, due]) => [k, { on: true, due }])),
+  notify: { ...DEFAULT_NOTIFY },
 };
 
 /** يطبّع الإعدادات ويملا أي قيمة ناقصة من الافتراضي بأمان. */
@@ -115,15 +136,36 @@ export function normalizeSettings(raw) {
   }
   const habits = Array.isArray(s.habits) && s.habits.length ? s.habits : DEFAULT_HABIT_LIST;
   const habitGroups = Array.isArray(s.habitGroups) && s.habitGroups.length ? s.habitGroups : DEFAULT_HABIT_GROUP_LIST;
+  const cleanAreas = Array.isArray(s.lifeAreas)
+    ? s.lifeAreas
+      .filter((a) => a && typeof a.id === 'string' && a.id.trim() && typeof a.name === 'string' && a.name.trim())
+      .map((a) => ({
+        id: a.id.trim(),
+        name: a.name.trim(),
+        icon: a.icon || 'target',
+        ...(a.note && String(a.note).trim() ? { note: String(a.note).trim() } : {}),
+      }))
+    : [];
+  const lifeAreas = cleanAreas.length ? cleanAreas : DEFAULT_LIFE_AREAS;
   const timeCats = Array.isArray(s.timeCats) && s.timeCats.length ? s.timeCats : DEFAULT_TIME_CAT_LIST;
   const expCats = Array.isArray(s.expCats) && s.expCats.length ? s.expCats : EXP_CATS;
   const ideaCats = Array.isArray(s.ideaCats) && s.ideaCats.length ? s.ideaCats : IDEA_CATS;
   const projects = Array.isArray(s.projects) ? s.projects.filter((x) => typeof x === 'string' && x.trim()) : [];
+  const rn = s.notify && typeof s.notify === 'object' ? s.notify : {};
+  const optTime = (v, def) => (v === '' || v === null ? '' : (typeof v === 'string' && HHMM_RE.test(v) ? v : def));
+  const notify = {
+    tasksPin: rn.tasksPin !== undefined ? !!rn.tasksPin : DEFAULT_NOTIFY.tasksPin,
+    morning: optTime(rn.morning, DEFAULT_NOTIFY.morning),
+    evening: optTime(rn.evening, DEFAULT_NOTIFY.evening),
+    badge: rn.badge !== undefined ? !!rn.badge : DEFAULT_NOTIFY.badge,
+    haptic: rn.haptic !== undefined ? !!rn.haptic : DEFAULT_NOTIFY.haptic,
+    tz: typeof rn.tz === 'string' && rn.tz.trim() ? rn.tz.trim() : DEFAULT_NOTIFY.tz,
+  };
   return {
     dayStart,
     sleepTarget: +s.sleepTarget > 0 ? +s.sleepTarget : DEFAULT_SETTINGS.sleepTarget,
-    sleepBed: typeof s.sleepBed === 'string' && /^\d{2}:\d{2}$/.test(s.sleepBed) ? s.sleepBed : DEFAULT_SETTINGS.sleepBed,
-    sleepWake: typeof s.sleepWake === 'string' && /^\d{2}:\d{2}$/.test(s.sleepWake) ? s.sleepWake : DEFAULT_SETTINGS.sleepWake,
+    sleepBed: typeof s.sleepBed === 'string' && HHMM_RE.test(s.sleepBed) ? s.sleepBed : DEFAULT_SETTINGS.sleepBed,
+    sleepWake: typeof s.sleepWake === 'string' && HHMM_RE.test(s.sleepWake) ? s.sleepWake : DEFAULT_SETTINGS.sleepWake,
     autoFillSleep: s.autoFillSleep !== undefined ? !!s.autoFillSleep : DEFAULT_SETTINGS.autoFillSleep,
     workTarget: +s.workTarget > 0 ? +s.workTarget : DEFAULT_SETTINGS.workTarget,
     deepTarget: +s.deepTarget > 0 ? +s.deepTarget : DEFAULT_SETTINGS.deepTarget,
@@ -132,10 +174,12 @@ export function normalizeSettings(raw) {
     projects,
     habits,
     habitGroups,
+    lifeAreas,
     timeCats,
     expCats,
     ideaCats,
     stars,
+    notify,
   };
 }
 
@@ -1200,14 +1244,8 @@ export const HABIT_NUMS = [
   ['techm', 'تعلم تقني', 'دقيقة'], ['caf', 'قهوة/شاي', 'كوباية'], ['relm', 'وقت بدون موبايل', 'دقيقة'],
 ];
 
-// ---------- نظام الأهداف المتكامل (list/goals) ----------
-export const GOAL_PILLARS = [
-  { id: 'work',   name: 'الشغل والمال',     icon: 'brief' },
-  { id: 'health', name: 'الصحة والجسم',     icon: 'heart' },
-  { id: 'growth', name: 'التعلم والتطوير',   icon: 'book' },
-  { id: 'deen',   name: 'الدين والروح',      icon: 'star' },
-  { id: 'life',   name: 'شخصي وحياة',       icon: 'home' },
-];
+// ---------- نظام الأهداف المتكامل وبنك الأهداف وخريطة جوانب الحياة (list/goals) ----------
+export const GOAL_PILLARS = DEFAULT_LIFE_AREAS;
 export const GOAL_MODES = [
   ['habit',  'عادة يومية',   'check'],
   ['time',   'وقت / شغل',    'clock'],
@@ -1222,8 +1260,55 @@ export const GOAL_HORIZONS = [
   ['custom', 'تاريخ محدد'],
 ];
 
-const GOAL_PILLAR_MAP = new Map(GOAL_PILLARS.map((x) => [x.id, x]));
 const HABIT_NUM_MAP = new Map(HABIT_NUMS.map(([k, l, u]) => [k, { l, u }]));
+
+/** جوانب الحياة القابلة للتخصيص من الإعدادات. */
+export function activeLifeAreas(settings) {
+  return normalizeSettings(settings).lifeAreas;
+}
+
+/** خريطة id ← جانب حياة (بتحتفظ بالافتراضي كاحتياطي لأي هدف قديم). */
+export function lifeAreaMap(settings) {
+  const m = new Map();
+  for (const a of DEFAULT_LIFE_AREAS) m.set(a.id, a);
+  for (const a of activeLifeAreas(settings)) m.set(a.id, a);
+  return m;
+}
+
+/** هل الهدف في «بنك الأهداف» (في الانتظار للمراجعة)؟ */
+export function isBacklogGoal(g) {
+  return !!g && !g.done && g.st === 'backlog';
+}
+
+/** عمر فكرة الهدف في بنك الأهداف (قاعدة التبريد): النهارده / من امبارح / من ٥ أيام. */
+export function backlogAgeText(at, today = dayKeyAt(), dayStart = DAY_START) {
+  if (!at) return '';
+  const k = typeof at === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(at) ? at : dayKeyAt(at, dayStart);
+  const diff = daysBetween(k, today);
+  if (diff <= 0) return 'النهارده';
+  if (diff === 1) return 'من امبارح';
+  return `من ${fmtDays(diff)}`;
+}
+
+/**
+ * حالة «مراجعة نهاية الفترة» لبنك الأهداف:
+ * بتتنبه لما يكون عندك أهداف في الانتظار + إما النهارده آخر يوم في الفترة الحالية أو آخر فترة انتهت ولسه ماتراجعتش.
+ */
+export function periodReviewState(periods, goals, today = dayKeyAt()) {
+  const count = (goals || []).filter(isBacklogGoal).length;
+  const cur = periodOf(periods, today);
+  const ended = (periods || [])
+    .filter((p) => p?.to && p.to < today)
+    .sort((a, b) => b.to.localeCompare(a.to))[0] || null;
+  if (!count) return { due: false, reason: null, period: cur || ended || null, count: 0 };
+  if (cur && cur.to === today && !cur.reviewedAt) {
+    return { due: true, reason: 'last_day', period: cur, count };
+  }
+  if (!cur && ended && !ended.reviewedAt) {
+    return { due: true, reason: 'ended', period: ended, count };
+  }
+  return { due: false, reason: null, period: cur || ended || null, count };
+}
 
 /** نطاق التواريخ الفعلي للهدف حسب الإطار الزمني المختار. */
 export function goalRange(hz, today, periods = [], customFrom = '', customTo = '') {
@@ -1297,7 +1382,19 @@ export function goalSourceLabel(g, metrics = [], settings) {
 
 export function evalGoal(g, { days = [], tasks = [], metrics = [], today = dayKeyAt(), settings } = {}) {
   const cfg = normalizeSettings(settings);
-  const pillar = GOAL_PILLAR_MAP.get(g.p) || GOAL_PILLARS[0];
+  const aMap = lifeAreaMap(cfg);
+  const pillar = aMap.get(g.p) || cfg.lifeAreas[0] || DEFAULT_LIFE_AREAS[0];
+  if (isBacklogGoal(g)) {
+    return {
+      cur: 0, target: 0, unit: '', pct: 0,
+      timePct: 0, daysTotal: 0, daysPassed: 0, daysLeft: 0, overdue: false,
+      isCap: false, isTargetMetric: false, isBacklog: true,
+      status: 'wait', isBehind: false,
+      paceText: backlogAgeText(g.at, today, cfg.dayStart),
+      sourceLabel: 'في بنك الأهداف',
+      horizonText: '', pillar, segs: null, nextText: '', linked: [],
+    };
+  }
   const tp = goalTimeProgress(g, today);
   const horizonText = g.from && g.to ? periodLabel({ from: g.from, to: g.to }) : '';
   const sourceLabel = goalSourceLabel(g, metrics, cfg);
@@ -1451,15 +1548,18 @@ export function evalGoal(g, { days = [], tasks = [], metrics = [], today = dayKe
   }
 
   return {
-    cur, target, unit, pct, ...tp, isCap, isTargetMetric, status, isBehind,
+    cur, target, unit, pct, ...tp, isCap, isTargetMetric, isBacklog: false, status, isBehind,
     paceText, sourceLabel, horizonText, pillar, segs, nextText, linked,
   };
 }
 
-/** تقييم كل الأهداف مرة واحدة للشاشات وبطاقة الملخص. */
+/** تقييم كل الأهداف وبنك الأهداف وخريطة جوانب الحياة مرة واحدة. */
 export function goalsSummary(goals, ctx) {
   const list = goals || [];
-  const active = list.filter((g) => !g.done);
+  const active = list.filter((g) => !g.done && g.st !== 'backlog');
+  const backlog = list
+    .filter(isBacklogGoal)
+    .sort((a, b) => (b.pri ? 1 : 0) - (a.pri ? 1 : 0) || (b.at || 0) - (a.at || 0));
   const archived = list.filter((g) => g.done).sort((a, b) => (b.dAt || 0) - (a.dAt || 0));
   const evals = new Map();
   for (const g of list) evals.set(g.id, evalGoal(g, ctx));
@@ -1471,21 +1571,41 @@ export function goalsSummary(goals, ctx) {
   const pinned = active.filter((g) => g.f);
   const focus = (pinned.length ? pinned : active.slice(0, 2)).slice(0, 3);
   const linkedHabits = new Set(active.filter((g) => g.m === 'habit' && g.src?.kind !== 'salah' && g.src?.k).map((g) => g.src.k));
-  return { active, archived, focus, evals, avgPct, onTrack, needPush, linkedHabits };
+
+  const areasList = activeLifeAreas(ctx?.settings);
+  const areaIds = new Set(areasList.map((a) => a.id));
+  const fallbackId = areasList[0]?.id || 'life';
+  const belong = (g) => (g.p && areaIds.has(g.p) ? g.p : fallbackId);
+  const areas = areasList.map((area) => {
+    const act = active.filter((g) => belong(g) === area.id);
+    const bak = backlog.filter((g) => belong(g) === area.id);
+    const arc = archived.filter((g) => belong(g) === area.id);
+    const areaAvg = act.length ? Math.round(act.reduce((sum, g) => sum + (evals.get(g.id)?.pct || 0), 0) / act.length) : null;
+    const areaPush = act.filter((g) => evals.get(g.id)?.isBehind).length;
+    return { area, active: act, backlog: bak, archived: arc, avgPct: areaAvg, needPush: areaPush };
+  });
+
+  return { active, backlog, archived, focus, evals, avgPct, onTrack, needPush, linkedHabits, areas };
 }
 
 /** سطور مختصرة لأهدافك النشطة عشان تتبعت لتقرير الذكاء الاصطناعي. */
 export function goalDigestLines(goals, ctx) {
-  const active = (goals || []).filter((g) => !g.done);
-  if (!active.length) return [];
-  const lines = ['الأهداف النشطة:'];
-  for (const g of active.slice(0, 8)) {
-    const ev = evalGoal(g, ctx);
-    const val = ev.isTargetMetric
-      ? `${ev.cur ?? '—'} من أصل ${g.start ?? 0} → ${ev.target} ${ev.unit}`.trim()
-      : `${ev.cur}/${ev.target}${ev.unit ? ` ${ev.unit}` : ''}`;
-    const stateWord = ev.pct >= 100 && !ev.isCap ? 'مكتمل' : ev.isBehind ? 'محتاج دفعة' : 'على المسار';
-    lines.push(`- ${clip(g.t, 80)}${g.f ? ' [تركيز]' : ''}: ${ev.pct}% (${val}، عدّى ${ev.timePct}% من الوقت، ${stateWord})`);
+  const active = (goals || []).filter((g) => !g.done && g.st !== 'backlog');
+  const backlog = (goals || []).filter(isBacklogGoal);
+  const lines = [];
+  if (active.length) {
+    lines.push('الأهداف النشطة:');
+    for (const g of active.slice(0, 8)) {
+      const ev = evalGoal(g, ctx);
+      const val = ev.isTargetMetric
+        ? `${ev.cur ?? '—'} من أصل ${g.start ?? 0} → ${ev.target} ${ev.unit}`.trim()
+        : `${ev.cur}/${ev.target}${ev.unit ? ` ${ev.unit}` : ''}`;
+      const stateWord = ev.pct >= 100 && !ev.isCap ? 'مكتمل' : ev.isBehind ? 'محتاج دفعة' : 'على المسار';
+      lines.push(`- ${clip(g.t, 80)}${g.f ? ' [تركيز]' : ''}: ${ev.pct}% (${val}، عدّى ${ev.timePct}% من الوقت، ${stateWord})`);
+    }
+  }
+  if (backlog.length) {
+    lines.push(`بنك الأهداف (في الانتظار للمراجعة): ${backlog.length} هدف`);
   }
   return lines;
 }
@@ -1788,5 +1908,132 @@ export function reportBlocks(text) {
     } else if (/[:：]$/.test(line) && line.length <= 40) out.push({ h: line.replace(/[:：]$/, '') });
     else out.push({ p: line });
   }
+  return out;
+}
+
+// ---------- التنبيهات والتفاعل ----------
+
+/** يبني محتوى إشعار «قائمة مهام النهارده» المفتوحة (أو null لو مفيش مهام مفتوحة النهارده). */
+export function buildTasksNotification(tasks, today) {
+  const open = groupTasks(tasks, today).today;
+  if (!open.length) return null;
+  const shown = open.slice(0, 5);
+  const lines = shown.map((t) => `${t.pri ? '⚑' : '•'} ${t.t}`);
+  if (open.length > shown.length) lines.push(`+${fmtNum(open.length - shown.length)} مهام تانية`);
+  return {
+    count: open.length,
+    firstId: open[0].id,
+    firstTitle: open[0].t,
+    title: `مهام النهارده (${fmtNum(open.length)})`,
+    body: lines.join('\n'),
+    actions: [
+      { action: 'done-task', title: '✓ خلّصت أول مهمة' },
+      { action: 'open-tasks', title: 'افتح المهام' },
+    ],
+  };
+}
+
+/** هل الوقت الحالي (HH:MM) داخل نافذة التنبيه بعد الميعاد المطلوب بـ windowMin دقيقة؟ */
+export function timeWindowMatch(targetHHMM, nowHHMM, windowMin = 15) {
+  if (!HHMM_RE.test(String(targetHHMM || '')) || !HHMM_RE.test(String(nowHHMM || ''))) return false;
+  const toM = (s) => (+s.slice(0, 2)) * 60 + (+s.slice(3, 5));
+  const diff = (toM(nowHHMM) - toM(targetHHMM) + 1440) % 1440;
+  return diff >= 0 && diff < windowMin;
+}
+
+/** التنبيهات المستحقة دلوقتي لمستخدم واحد (العادات الناقصة + ملخص الصبح + قفلة اليوم). */
+export function dueReminders({ settings, day = {}, tasks = [], today, nowHHMM, sent = new Set(), windowMin = 15 }) {
+  const cfg = normalizeSettings(settings);
+  const out = [];
+  const openTasks = groupTasks(tasks, today).today;
+  const badgeCount = openTasks.length;
+
+  // ١. تنبيهات العادات اللي جه وقتها ولسه ماتسجلتش النهارده
+  for (const h of activeHabits(cfg)) {
+    if (!h.rem || !timeWindowMatch(h.rem, nowHHMM, windowMin)) continue;
+    const key = `habit:${h.k}`;
+    if (sent.has(key) || +day[h.k] > 0) continue;
+    out.push({
+      key,
+      payload: {
+        kind: 'habit',
+        k: h.k,
+        today,
+        badgeCount,
+        title: `وقت ${h.n}`,
+        body: 'لسه ماتسجلتش النهارده — تقدر تعلّمها من هنا على طول.',
+        tag: `habit-${h.k}`,
+        url: './?open=day',
+        actions: [
+          { action: 'done-habit', title: '✓ عملتها' },
+          { action: 'open-app', title: 'افتح اليوم' },
+        ],
+      },
+    });
+  }
+
+  // ٢. ملخص الصبح بالمهام
+  if (cfg.notify.morning && timeWindowMatch(cfg.notify.morning, nowHHMM, windowMin) && !sent.has('morning')) {
+    const tn = buildTasksNotification(tasks, today);
+    out.push({
+      key: 'morning',
+      payload: tn
+        ? {
+            kind: 'tasks',
+            today,
+            badgeCount,
+            firstId: tn.firstId,
+            title: tn.title,
+            body: tn.body,
+            tag: 'today-tasks',
+            url: './?open=tasks',
+            actions: tn.actions,
+          }
+        : {
+            kind: 'morning',
+            today,
+            badgeCount: 0,
+            title: 'صباح الخير · ورقة اليوم',
+            body: 'مفيش مهام متسجلة للنهارده لسه — ضيف أهم حاجة تبدأ بيها يومك.',
+            tag: 'morning-empty',
+            url: './?open=newtask',
+            actions: [{ action: 'open-newtask', title: '+ مهمة جديدة' }],
+          },
+    });
+  }
+
+  // ٣. تذكير قفلة اليوم (العادات والمهام المتبقية)
+  if (cfg.notify.evening && timeWindowMatch(cfg.notify.evening, nowHHMM, windowMin) && !sent.has('evening')) {
+    const leftHabits = activeHabits(cfg).filter((h) => !(+day[h.k] > 0));
+    let body = '';
+    if (!leftHabits.length && !openTasks.length) {
+      body = 'عاش! خلّصت كل عاداتك ومهامك النهارده — فاضل بس تقفل يومك في ورقة اليوم.';
+    } else {
+      const parts = [];
+      if (leftHabits.length) {
+        const names = leftHabits.slice(0, 3).map((h) => h.n).join('، ');
+        parts.push(`${fmtNum(leftHabits.length)} عادات (${names}${leftHabits.length > 3 ? '…' : ''})`);
+      }
+      if (openTasks.length) parts.push(`${fmtNum(openTasks.length)} مهام مفتوحة`);
+      body = `باقي ${parts.join(' و')} — خلّص اللي تقدر عليه وقفل ورقتك.`;
+    }
+    out.push({
+      key: 'evening',
+      payload: {
+        kind: 'evening',
+        today,
+        badgeCount,
+        title: 'قفلة اليوم · ورقة اليوم',
+        body,
+        tag: 'evening-wrap',
+        url: './?open=day',
+        actions: [
+          ...(openTasks.length ? [{ action: 'open-tasks', title: 'افتح المهام' }] : []),
+          { action: 'open-app', title: 'افتح اليوم' },
+        ],
+      },
+    });
+  }
+
   return out;
 }

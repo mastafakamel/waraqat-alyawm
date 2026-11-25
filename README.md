@@ -185,3 +185,78 @@ curl.exe -i -X OPTIONS https://omeswcfoouwyqodjhhrk.supabase.co/functions/v1/rep
 المفروض أول سطر فيه `200`، وتحت `access-control-allow-origin: https://mastafakamel.github.io`. وبعدها من التطبيق: **اليوم ← تقرير اليوم**.
 
 **الحدود:** ٦ تقارير في اليوم من الـ SQL (والتقرير اللي بيفشل من Groq بيتحسب برضه، عشان أي غلطة بتكرر الطلب ماتعدّيش الحد). ولو Groq نفسه وصل حده المجاني، بيرجّع 429 من غير أي فلوس، والتطبيق بيقول "جرّب كمان دقيقة".
+
+## التنبيهات والتفاعل (إشعارات الموبايل)
+
+التطبيق فيه مستويين من التفاعل على أندرويد (من **الإعدادات ← التنبيهات والتفاعل**):
+- **شغّال فوراً من غير أي إعداد:** قائمة مهام النهارده في ستارة الإشعارات بزرار **`✓ خلّصت أول مهمة`**، ورقم المهام المفتوحة على الأيقونة (Badge)، واختصارات الدوسة الطويلة على الأيقونة، والاهتزاز الخفيف.
+- **إشعارات أوقات العادات وملخص الصبح وقفلة اليوم (والتطبيق مقفول — Web Push):** محتاجة الخطوات السريعة دي مرة واحدة في Supabase:
+
+### تنبيهات ١: توليد مفاتيح VAPID و CRON_SECRET
+شغّل على جهازك مرة واحدة:
+
+```powershell
+node tools/make-vapid.mjs
+```
+
+هيطبعلك ٣ قيم:
+1. حط `VAPID_PUBLIC_KEY` في `js/config.js` (المفتاح العام بس).
+2. شغّل `node tools/stamp-sw.mjs` واعمل commit وpush.
+3. **ماتحطش `VAPID_PRIVATE_KEY` ولا `CRON_SECRET` في أي ملف في الريبو.** مكانهم الوحيد Supabase Secrets.
+
+### تنبيهات ٢: جداول الإشعارات والجدولة (SQL Editor ← New query ← الصق ← Run)
+استبدل `<CRON_SECRET>` تحت بنفس القيمة اللي طلعها السكربت:
+
+```sql
+-- اشتراكات إشعارات الأجهزة (كل مستخدم يشوف ويدير أجهزته بس)
+create table if not exists public.push_subs (
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  endpoint text not null,
+  p256dh text not null,
+  auth text not null,
+  user_agent text not null default '',
+  updated_at timestamptz not null default now(),
+  primary key (user_id, endpoint),
+  unique (endpoint)
+);
+alter table public.push_subs enable row level security;
+drop policy if exists "own push subs" on public.push_subs;
+create policy "own push subs" on public.push_subs for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+grant select, insert, update, delete on public.push_subs to authenticated;
+
+-- سجل منع تكرار نفس التذكير مرتين في نفس اليوم (للسيرفر بس)
+create table if not exists public.push_log (
+  user_id uuid not null references auth.users on delete cascade,
+  day date not null,
+  kind text not null,
+  sent_at timestamptz not null default now(),
+  primary key (user_id, day, kind)
+);
+alter table public.push_log enable row level security;
+
+-- جدولة دالة notify كل ٥ دقايق تلقائياً
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+select cron.unschedule('waraqa-notify') where exists (select 1 from cron.job where jobname = 'waraqa-notify');
+select cron.schedule(
+  'waraqa-notify',
+  '*/5 * * * *',
+  $$
+  select net.http_post(
+    url := 'https://omeswcfoouwyqodjhhrk.supabase.co/functions/v1/notify',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-cron-secret', '<CRON_SECRET>'
+    ),
+    body := '{}'::jsonb
+  );
+  $$
+);
+```
+
+### تنبيهات ٣: رفع الدالة والأسرار
+1. **Edge Functions ← Deploy a new function ← Via Editor**، الاسم بالظبط: `notify`. الصق محتوى [`supabase/functions/notify/index.ts`](supabase/functions/notify/index.ts) ← **Deploy**.
+2. من صفحة الدالة `notify`: اقفل **Verify JWT** واحفظ (الدالة بتتحقق بنفسها من الجلسة أو من `x-cron-secret`).
+3. **Edge Functions ← Secrets**: ضيف الـ ٣ أسرار: `VAPID_PUBLIC_KEY` و `VAPID_PRIVATE_KEY` و `CRON_SECRET`.
+4. افتح التطبيق على موبايلك ← **الإعدادات ← التنبيهات والتفاعل** ← **فعّل إشعارات الموبايل** ← **جرّب إشعار من السيرفر**.

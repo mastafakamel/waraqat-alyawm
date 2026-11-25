@@ -281,7 +281,7 @@ export function expEditSheet(item, idx, s) {
 }
 
 export function taskEditSheet(t, tf, s) {
-  const activeGoals = (s.goals || []).filter((g) => !g.done);
+  const activeGoals = (s.goals || []).filter((g) => !g.done && g.st !== 'backlog');
   return {
     label: 'تعديل المهمة',
     head: '<h2>تعديل المهمة</h2>',

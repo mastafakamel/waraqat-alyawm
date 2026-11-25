@@ -5,3 +5,7 @@
 
 export const SUPABASE_URL = 'https://omeswcfoouwyqodjhhrk.supabase.co';
 export const SUPABASE_KEY = 'sb_publishable_6WJiQFxiv9ME-MvmXTai9w_6t2VeBH2';
+
+// مفتاح الإشعارات العام (Web Push VAPID public key — فاضي = إشعارات الخلفية مقفولة لحد ما يتولّد).
+// بيتولّد مرة واحدة بـ  node tools/make-vapid.mjs  (والمفتاح السري بيتحط في Supabase Secrets بس، مش هنا أبداً).
+export const VAPID_PUBLIC_KEY = 'BOV0GcavxqoQPeFU4RTtWiLiAobQHVfQ0czvEsOwbBk97nu7fpN_O2lxS8nLk1bJ0OuQ-3UwD-VkIABbr9zC7cs';

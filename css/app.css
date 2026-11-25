@@ -372,8 +372,8 @@ input[type="search"].fld { -webkit-appearance: none; appearance: none; }
 /* ---------- التسجيل السريع ---------- */
 .dock { position: fixed; inset-inline: 0; bottom: calc(var(--sab) + 59px); z-index: 5; background: var(--glass); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border-top: 1px solid var(--line); padding: 8px 12px; }
 .dock-in { max-width: 540px; margin: 0 auto; }
-.modes { display: flex; gap: 6px; margin-bottom: 7px; }
-.md { flex: 1; height: 44px; border-radius: 11px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); font-size: 13.5px; font-weight: 500; white-space: nowrap; padding: 0 4px; }
+.modes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 7px; }
+.md { flex: 1 1 auto; min-width: 64px; height: 44px; border-radius: 11px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); font-size: 13px; font-weight: 500; white-space: nowrap; padding: 0 10px; }
 .md[aria-pressed="true"] { border: 2px solid var(--pri); background: var(--surf2); color: var(--ink); font-weight: 700; }
 .qcats { margin-bottom: 7px; }
 .qrow { display: flex; gap: 7px; }
@@ -914,7 +914,70 @@ h3.blk-h { display: block; }
 .sacc.open .sacc-ic { transform: rotate(180deg); color: var(--ink); }
 .sacc-b { padding: 4px 12px 14px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; background: var(--bg); }
 .cdot { width: 12px; height: 12px; border-radius: 50%; background: var(--tc); flex: none; }
+.rem-ctrl { display: flex; align-items: center; gap: 4px; flex: none; }
+.rem-in { width: auto; min-width: 108px; min-height: 38px; padding: 6px 8px; font-size: 13.5px; text-align: center; }
+
+/* ---------- بنك الأهداف + خريطة جوانب الحياة + جلسة مراجعة نهاية الفترة ---------- */
+.gp-btn { border: 0; border-inline-start: 1px solid var(--line); background: none; font: inherit; width: 100%; min-height: 44px; transition: background-color .14s ease; }
+.gp-btn:active { background: var(--surf2); }
+.g-med.attn { background: var(--attn-w); color: var(--attn); }
+.g-med.ok { background: var(--done-w); color: var(--done); }
+
+/* شريط تذكير مراجعة نهاية الفترة */
+.rev-ban { background: var(--attn-w); border: 1px solid rgba(216, 178, 110, .34); border-radius: 20px; padding: 14px 15px; display: flex; flex-direction: column; gap: 11px; }
+.rev-ban-h { display: flex; align-items: flex-start; gap: 11px; }
+.rev-ban-m { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.rev-ban-m b { font-size: 14px; font-weight: 700; color: var(--ink); line-height: 1.35; }
+.rev-ban-m span { font-size: 12.5px; color: var(--ink); opacity: .88; line-height: 1.45; }
+.rev-ban-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rev-ban-acts .g-act { flex: 1 1 150px; justify-content: center; background: var(--surf); border-color: var(--line2); color: var(--ink); }
+.rev-skip { flex: none; min-height: 44px; padding: 0 12px; border: 0; border-radius: 12px; background: none; color: var(--ink); font-size: 12.5px; font-weight: 600; opacity: .85; }
+
+/* بنك الأهداف */
+.bk-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+.bk-bar .g-act:first-child { flex: 1 1 180px; justify-content: center; }
+.bk-bar .g-act .ico { width: 16px; height: 16px; }
+.sub-filt { margin-top: -2px; }
+.bkcard.pri { border-color: rgba(216, 178, 110, .38); }
+.bk-why { margin: 0; padding: 9px 12px; border-radius: 12px; background: var(--bg); font-size: 13px; color: var(--muted); line-height: 1.5; }
+.bk-link { min-height: 44px; padding: 0 10px; border: 0; border-radius: 10px; background: none; color: var(--muted); font-size: 13px; font-weight: 600; }
+
+/* خريطة جوانب الحياة */
+.area-sub { font-size: 12px; color: var(--muted); }
+.area-empty-line { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.acard-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.acard-pills { display: flex; flex-wrap: wrap; gap: 5px; flex: 1; min-width: 0; }
+.apill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 9px; background: var(--surf2); color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.apill .ico { width: 14px; height: 14px; }
+.apill.on { color: var(--ink); }
+.apill.done { background: var(--done-w); color: var(--done); }
+.apill.attn { background: var(--attn-w); color: var(--ink); }
+.acard-open { flex: none; min-height: 44px; padding: 0 10px; border: 0; border-radius: 10px; background: none; color: var(--muted); font-size: 12.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.acard-open .ic { width: 15px; height: 15px; }
+.acard-open.done { color: var(--done); }
+.acard-open.attn { color: var(--attn); }
+
+/* شاشة تفاصيل جانب الحياة */
+.adet-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.adet-back, .adet-ed { min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surf); color: var(--ink); font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.adet-back .ic, .adet-ed .ic { width: 15px; height: 15px; color: var(--muted); }
+.adet-hero { display: flex; flex-direction: column; gap: 12px; }
+.adet-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.adet-acts .g-act { justify-content: center; width: 100%; }
+
+/* جلسة مراجعة بنك الأهداف */
+.rev-step { font: 600 13px var(--disp); color: var(--muted); margin-inline-start: 6px; }
+.rev-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.rev-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rev-title { margin: 0; font: 700 17px/1.45 var(--disp); color: var(--ink); }
+.rev-ctx { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.rev-decisions { display: flex; flex-direction: column; gap: 9px; }
+.b-accent { width: 100%; min-height: 50px; padding: 0 16px; border-radius: 15px; border: 1.5px solid var(--attn); background: var(--attn-w); color: var(--ink); font-size: 14.5px; font-weight: 700; }
+.rev-drop { min-height: 50px; border-radius: 15px; }
+.rev-done { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 22px 16px; }
+.rev-done b { font: 700 17px var(--disp); color: var(--ink); }
+.rev-done p { margin: 0; font-size: 13.5px; color: var(--muted); line-height: 1.55; }
 
 @media (prefers-reduced-motion: reduce) {
-  .dring-fg, .pm-line i, .pil-segs i, .tstack i, .hp, .ps, .ps5, .tab, .wk-nav, .wd, .pil-med, .pace-fill, .m-segs i, .seg-top button, .g-act, .f-item, .sacc-ic { transition: none; }
+  .dring-fg, .pm-line i, .pil-segs i, .tstack i, .hp, .ps, .ps5, .tab, .wk-nav, .wd, .pil-med, .pace-fill, .m-segs i, .seg-top button, .g-act, .f-item, .sacc-ic, .gp-btn { transition: none; }
 }

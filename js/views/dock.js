@@ -1,9 +1,9 @@
 // views/dock.js — شريط التسجيل السريع (يدعم التصنيفات الديناميكية والتخمين الذكي لتصنيف المصروف وبداية اليوم).
 
-import { lineTarget, parseExpense, guessExpCat, fmtNum } from '../logic.js';
+import { lineTarget, parseExpense, guessExpCat, fmtNum, activeLifeAreas } from '../logic.js';
 import { esc, ic, P, setHtml } from '../ui.js';
 
-export const MODES = [['idea', 'فكرة'], ['task', 'مهمة'], ['exp', 'مصروف'], ['line', 'سطر لليوم']];
+export const MODES = [['idea', 'فكرة'], ['goal', 'فكرة هدف'], ['task', 'مهمة'], ['exp', 'مصروف'], ['line', 'سطر لليوم']];
 
 export function dockHtml() {
   return `<div class="dock-in">
@@ -20,6 +20,7 @@ export function dockHtml() {
 
 function placeholder(mode, dayStart) {
   if (mode === 'idea') return 'اكتب الفكرة…';
+  if (mode === 'goal') return 'هدف جه في بالك (هيتحفظ في بنك الأهداف)…';
   if (mode === 'task') return 'مهمة للنهارده…';
   if (mode === 'exp') return 'المبلغ وعلى إيه، مثلاً: ٧٥ غدا';
   return `عملت إيه ${lineTarget(new Date().getHours(), dayStart).label}؟`;
@@ -31,12 +32,14 @@ export function updateDock(root, ui, away, settings) {
   const ds = settings?.dayStart || 4;
   const expCats = settings?.expCats || [];
   if (expCats.length && !expCats.includes(ui.qcat)) ui.qcat = expCats[0];
+  const areas = activeLifeAreas(settings);
+  if (areas.length && !areas.some((a) => a.id === ui.qarea)) ui.qarea = areas[0].id;
 
   for (const b of root.querySelectorAll('[data-qmode]')) b.setAttribute('aria-pressed', b.dataset.qmode === ui.qmode);
   root.querySelector('[data-modes]').hidden = !ui.qmenu;
   const mb = root.querySelector('[data-act="qmenu"]');
   mb.setAttribute('aria-expanded', !!ui.qmenu);
-  const label = MODES.find(([k]) => k === ui.qmode)[1];
+  const label = (MODES.find(([k]) => k === ui.qmode) || MODES[0])[1];
   root.querySelector('[data-qlabel]').textContent = label;
   mb.setAttribute('aria-label', `نوع التسجيل: ${label}، دوس عشان تغيّره`);
 
@@ -53,8 +56,15 @@ export function updateDock(root, ui, away, settings) {
   }
 
   const cats = root.querySelector('[data-qcats]');
-  cats.hidden = ui.qmode !== 'exp';
-  setHtml(cats, expCats.map((c) => `<button class="cat" type="button" data-qcat="${esc(c)}" aria-pressed="${c === ui.qcat}">${esc(c)}</button>`).join(''));
+  if (ui.qmode === 'exp') {
+    cats.hidden = false;
+    setHtml(cats, expCats.map((c) => `<button class="cat" type="button" data-qcat="${esc(c)}" aria-pressed="${c === ui.qcat}">${esc(c)}</button>`).join(''));
+  } else if (ui.qmode === 'goal') {
+    cats.hidden = false;
+    setHtml(cats, areas.map((a) => `<button class="cat" type="button" data-qarea="${esc(a.id)}" aria-pressed="${a.id === ui.qarea}">${esc(a.name)}</button>`).join(''));
+  } else {
+    cats.hidden = true;
+  }
 
   const hint = root.querySelector('[data-qhint]');
   const where = away ? ' في النهارده' : '';
@@ -66,6 +76,9 @@ export function updateDock(root, ui, away, settings) {
       hint.textContent = 'اكتب المبلغ رقم، زي ٧٥ غدا';
       hint.classList.add('err');
     }
+  } else if (ui.qmode === 'goal' && v) {
+    const aName = areas.find((a) => a.id === ui.qarea)?.name || '';
+    hint.innerHTML = `هيتحفظ في <b>بنك الأهداف</b>${aName ? ` · ${esc(aName)}` : ''}`;
   } else if (ui.qmode === 'line' && v) {
     hint.textContent = `هيتضاف لـ "${lineTarget(new Date().getHours(), ds).label}"${where}`;
   } else {

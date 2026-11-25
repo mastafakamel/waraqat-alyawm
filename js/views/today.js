@@ -8,7 +8,7 @@ import {
 } from '../logic.js';
 import { esc, ic, ico, P, setHtml } from '../ui.js';
 import { timeStackBar } from './time.js';
-import { focusGoalsToday } from './goals.js';
+import { focusGoalsToday, reviewBannerHtml } from './goals.js';
 import { periodCardToday } from './settings.js';
 import { metricsSection } from './metrics.js';
 import { aiSection } from './ai.js';
@@ -411,6 +411,7 @@ export function renderToday(s, ctx = {}) {
   const tb = timeByCat(s.day, s.settings);
   return `${summary(s, split, ctx, tb)}
     ${periodCardToday(ctx.curPeriod, ctx.periodEv, s)}
+    ${s.cur === s.today ? reviewBannerHtml(ctx.review) : ''}
     ${focusGoalsToday(s, ctx.gsum)}
     ${timeSummary(tb, s.settings)}
     ${pillarsSection(s, miss, ctx.gsum?.linkedHabits)}
