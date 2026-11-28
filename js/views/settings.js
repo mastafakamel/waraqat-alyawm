@@ -281,20 +281,23 @@ export function updatePeriodForm(sh, pf, s) {
 // ---------- فورم عادة جديدة / تعديل عادة ----------
 export function habitFormSheet(hf, s) {
   const editing = !!hf.origK;
-  const groups = s.settings.habitGroups || [];
+  const areaMap = new Map();
+  for (const a of activeLifeAreas(s.settings)) areaMap.set(a.id, a);
+  for (const g of s.settings.habitGroups || []) if (!areaMap.has(g.id)) areaMap.set(g.id, g);
+  const groups = [...areaMap.values()];
   return {
     label: editing ? 'تعديل العادة' : 'عادة جديدة',
     head: `<h2>${editing ? 'تعديل العادة' : 'عادة جديدة'}</h2>`,
     body: `<label class="f"><span class="lbl">اسم العادة</span>
-        <input class="fld" data-role="hfname" autocomplete="off" data-focus placeholder="مثلاً: قيام ليل، قراءة تقنية…" value="${esc(hf.n || '')}">
+        <input class="fld" data-role="hfname" autocomplete="off" data-focus placeholder="مثلاً: مراجعة القرآن، حفظ القرآن، إنجليزي…" value="${esc(hf.n || '')}">
       </label>
-      <div><span class="lbl">الركن</span>
+      <div><span class="lbl">المجال</span>
         <div class="picks">${groups.map((g) => `<button class="pk" type="button" data-act="hfgrp" data-v="${esc(g.id)}" data-keep aria-pressed="${hf.g === g.id}">${esc(g.name)}</button>`).join('')}</div>
       </div>
-      <label class="f"><span class="lbl">وحدة الرقم التفصيلي (اختياري — زي دقيقة أو صفحة)</span>
+      <label class="f"><span class="lbl">وحدة الرقم التفصيلي (اختياري — زي دقيقة أو صفحة أو آية)</span>
         <input class="fld" data-role="hfunit" autocomplete="off" placeholder="سيبها فاضية لو عادة بلمسة واحدة بس" value="${esc(hf.numU || '')}">
       </label>
-      <label class="f"><span class="lbl">ميعاد التذكير اليومي (اختياري)</span>
+      <label class="f"><span class="lbl">وقت العادة والتنبيه اليومي (اختياري)</span>
         <input class="fld" type="time" data-role="hfrem" value="${esc(hf.rem || '')}">
       </label>`,
     foot: editing

@@ -431,8 +431,8 @@ html.typing-page .app { padding-bottom: 24px; }
 .fld { width: 100%; font-size: 16px; line-height: 1.5; background: var(--surf); border: 1.5px solid var(--line); border-radius: 6px; padding: 10px 13px; min-height: 48px; outline: none; resize: none; }
 .fld::placeholder { color: var(--muted); }
 .fld:focus { border-color: var(--pri); }
-input[type="time"].fld { direction: ltr; text-align: right; }
-.g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+input[type="time"].fld, input[type="date"].fld { direction: ltr; text-align: right; }
+.g2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .note { margin: -6px 2px 0; font-size: 13px; color: var(--muted); }
 .note b { color: var(--ink); font-family: var(--disp); }
 /* تقرير الذكاء الاصطناعي */
@@ -637,7 +637,10 @@ h3.blk-h { display: block; }
 .pil-segs i.v2 { background: var(--done); }
 .pil-segs i.v1 { background: var(--done); opacity: .42; }
 .habits2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.habits2 .hp span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.habits2 .hp-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.habits2 .hp-txt > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hp-rem { font: 500 12px/1.2 var(--disp); color: var(--muted); white-space: nowrap; }
+.hp.v2 .hp-rem { color: var(--ink); opacity: .78; }
 .pillar .pseg { grid-template-columns: repeat(5, 44px); gap: 5px; }
 .gh.full { width: 100%; border-radius: 4px; border-color: var(--line2); }
 
@@ -802,6 +805,11 @@ h3.blk-h { display: block; }
 .grow-r2 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
 .grow-r2 > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g-incsm { flex: none; width: 44px; height: 44px; border-radius: 6px; border: 1px solid var(--line2); background: var(--surf2); color: var(--ink); font: 700 14px var(--disp); display: grid; place-items: center; }
+.g-incsm.done { background: var(--done-w); border-color: rgba(91, 192, 156, .38); color: var(--done); }
+.g-incsm .ic { width: 16px; height: 16px; }
+.tgoal-list { padding: 0; overflow: hidden; }
+.tgoal-in { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 6px; background: var(--bg); border: 1px solid var(--line); }
+.tgoal-in .pace-wrap { flex: 1; min-width: 0; }
 
 /* كارت أهداف التركيز في تاب اليوم */
 .f-item { width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 7px; padding: 13px 14px; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: right; transition: background-color .14s ease; }
@@ -1049,9 +1057,11 @@ h3.blk-h { display: block; }
 .hab-overview { display: flex; flex-direction: column; gap: 11px; padding: 14px; }
 .hab-ov-grp { display: flex; flex-direction: column; gap: 7px; }
 .hab-ov-chips { display: flex; flex-wrap: wrap; gap: 7px; }
-.hchip { display: inline-flex; align-items: center; gap: 4px; padding-inline-start: 11px; padding-inline-end: 2px; min-height: 44px; border-radius: 6px; background: var(--surf2); color: var(--ink); font-size: 13px; font-weight: 600; }
+.hchip { display: inline-flex; align-items: center; gap: 0; padding: 0; min-height: 44px; border-radius: 6px; background: var(--surf2); color: var(--ink); font-size: 13px; font-weight: 600; }
+.hchip-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding-inline-start: 11px; padding-inline-end: 8px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; }
+.hchip-t { font: 600 12px/1 var(--disp); color: var(--muted); }
 .hchip.muted { padding-inline: 11px; border: 1px dashed var(--line2); background: none; color: var(--muted); }
-.hchip-frz { min-height: 44px; min-width: 44px; padding: 0 9px; border: 0; border-radius: 6px; background: none; color: var(--muted); font-size: 12px; font-weight: 600; }
+.hchip-frz { min-height: 44px; min-width: 44px; padding: 0 9px; border: 0; border-inline-start: 1px solid var(--line); border-radius: 0 0 0 6px; background: none; color: var(--muted); font-size: 12px; font-weight: 600; }
 .hab-frz-row { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding-top: 8px; border-top: 1px solid var(--line); }
 
 .acard.has-now { border-color: rgba(91, 192, 156, .34); }

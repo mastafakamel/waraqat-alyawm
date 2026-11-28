@@ -15,7 +15,7 @@ import {
   weekKeys, satWeekKeys, dayStatus, dayProgress, baselineFor, starSplit,
   hourSpan, sleepHoursSplit, fmtHour, fmtHours, togglePrayer, setPrayerScore, activeHabits, activeHabitGroups, activeTimeCats,
   activeLifeAreas, isBacklogGoal, periodReviewState,
-  TODAY_TASK_LIMIT, itemKind, itemStatus, canAddTodayTask, systemState,
+  TODAY_TASK_LIMIT, itemKind, itemStatus, hasGoalTarget, canAddTodayTask, systemState,
   HABIT_NUMS, goalRange, goalsSummary, evalPeriodGoal,
 } from './logic.js';
 import { monthSheet, updateMonth, shiftMonth } from './views/month.js';
@@ -55,7 +55,7 @@ const ui = {
   mf: null, mfFrom: null,
   accOpen: new Set(['period']),
   pf: null, pfFrom: null, pdet: null,
-  hbf: null, grf: null, tcf: null,
+  hbf: null, hbfFrom: null, grf: null, tcf: null,
   ee: null, te: null, ie: null,
   sf: { email: '' },
   push: null,
@@ -733,10 +733,11 @@ function deleteMetric() {
 
 // ---------- إدارة العادات والأركان ومجالات الوقت في الإعدادات ----------
 function openHabitForm(k) {
+  ui.hbfFrom = sheetEl()?.querySelector('[data-out="sroot"]') ? 'settings' : null;
   const h = k ? state.settings.habits.find((x) => x.k === k) : null;
   ui.hbf = h
     ? { origK: h.k, n: h.n, g: h.g, numU: h.numU || '', rem: h.rem || '' }
-    : { origK: '', n: '', g: state.settings.habitGroups[0]?.id || 'deen', numU: '', rem: '' };
+    : { origK: '', n: '', g: activeLifeAreas(state.settings)[0]?.id || 'deen', numU: '', rem: '' };
   openSheet({ ...habitFormSheet(ui.hbf, state), onClose: () => { ui.hbf = null; } });
 }
 function saveHabitForm() {
@@ -768,14 +769,15 @@ function saveHabitForm() {
       else delete it.rem;
     }
     patchSettings({ habits: list });
-    toast('اتحفظ تعديل العادة');
+    toast('اتحفظ تعديل العادة ✓');
   } else {
     const k = `h_${uid().slice(-5)}`;
     list.push({ k, n, g: f.g, on: true, ...(numU ? { numK: `hn_${k}`, numU } : {}), ...(rem ? { rem } : {}) });
     patchSettings({ habits: list });
     toast(`اتضافت عادة «${n}»`);
   }
-  openSettings('habits');
+  if (ui.hbfFrom === 'settings') openSettings('habits');
+  else requestClose();
 }
 function deleteHabitForm() {
   if (!ui.hbf?.origK) return;
@@ -783,7 +785,8 @@ function deleteHabitForm() {
   const next = before.filter((x) => x.k !== ui.hbf.origK);
   if (!next.length) return toastErr('لازم تفضل عادة واحدة على الأقل');
   patchSettings({ habits: next });
-  openSettings('habits');
+  if (ui.hbfFrom === 'settings') openSettings('habits');
+  else requestClose();
   return toast('اتمسحت العادة', 'رجّع', () => patchSettings({ habits: before }));
 }
 
@@ -1256,6 +1259,11 @@ function openFilterSheet(prefill = {}) {
     newGoal: false,
     newGoalTitle: '',
     unit: '',
+    rem: prefill.rem || '',
+    track: 'none',
+    src: {},
+    target: '',
+    from: state.today,
     stepsText: '',
     pri: !!prefill.pri,
     linkActive: !!sys.activeProject,
@@ -1280,6 +1288,7 @@ function openFilterEdit(id) {
   const areas = activeLifeAreas(state.settings);
   const p = areas.some((a) => a.id === g.p) ? g.p : (areas[0]?.id || 'work');
   const kind = itemKind(g);
+  const tracked = kind === 'goal' && hasGoalTarget(g) && ['habit', 'time', 'manual'].includes(g.m);
   ui.gdet = null;
   ui.flt = {
     id: g.id,
@@ -1292,7 +1301,12 @@ function openFilterEdit(id) {
     parentId: g.parentId || '',
     newGoal: false,
     newGoalTitle: '',
-    unit: '',
+    unit: tracked ? (g.unit || '') : '',
+    rem: '',
+    track: tracked ? g.m : 'none',
+    src: tracked && g.src ? structuredClone(g.src) : {},
+    target: tracked && g.target != null ? String(g.target) : '',
+    from: g.from || state.today,
     stepsText: '',
     pri: !!g.pri,
     linkActive: false,
@@ -1303,7 +1317,24 @@ function openFilterEdit(id) {
     ...filterSheet(ui.flt, sys, state),
     onClose: () => { ui.flt = null; },
   });
-  updateFilterSheet(sheetEl(), ui.flt, sys, state);
+  updateFilterSheet(sheetEl(), ui.flt, sys, state, true);
+}
+
+function defaultHabitTrack(areaId) {
+  const hs = activeHabits(state.settings);
+  const h = hs.find((x) => x.g === areaId && x.numK) || hs.find((x) => x.g === areaId) || hs[0];
+  if (!h) return { src: {}, unit: '' };
+  if (h.numK && h.numU === 'دقيقة') return { src: { kind: 'sum', k: h.numK, div: 60 }, unit: 'ساعة' };
+  if (h.numK) return { src: { kind: 'sum', k: h.numK }, unit: h.numU || '' };
+  return { src: { kind: 'days', k: h.k }, unit: 'يوم' };
+}
+
+function defaultTimeTrack(areaId) {
+  const cats = activeTimeCats(state.settings);
+  const map = { growth: 'learn', work: 'work', deen: 'deen', health: 'health' };
+  const pref = map[areaId];
+  const c = cats.find((x) => x.id === pref)?.id || cats[0]?.id || 'learn';
+  return { src: { kind: c === 'work' ? 'work' : 'cat', c }, unit: 'ساعة' };
 }
 
 function saveFilterSheet() {
@@ -1319,9 +1350,14 @@ function saveFilterSheet() {
   // ١. عادة صغيرة ← تخدم المجال مباشرة
   if (f.kind === 'habit') {
     const unit = (sh?.querySelector('[data-role="fltunit"]')?.value ?? f.unit ?? '').trim();
+    const rem = (sh?.querySelector('[data-role="fltrem"]')?.value ?? f.rem ?? '').trim();
     const k = `h_${uid().slice(-5)}`;
     const list = structuredClone(state.settings.habits);
-    list.push({ k, n: t, g: f.p, on: f.st === 'active', ...(unit ? { numK: `hn_${k}`, numU: unit } : {}) });
+    list.push({
+      k, n: t, g: f.p, on: f.st === 'active',
+      ...(unit ? { numK: `hn_${k}`, numU: unit } : {}),
+      ...(rem ? { rem } : {}),
+    });
     patchSettings({ habits: list });
     requestClose();
     return toast(f.st === 'active' ? `اتضافت عادة «${t}» للمجال ✓` : `اتحفظت عادة «${t}» في المجمّد`);
@@ -1356,10 +1392,31 @@ function saveFilterSheet() {
     return toast('اتضافت لمهام النهاردة ✓');
   }
 
-  // ٣. هدف (ليه؟)
+  // ٣. هدف (ليه؟) — اختيارياً بقياس تقدّم تلقائي أو عدّاد يدوي
   if (f.kind === 'goal') {
     const why = (sh?.querySelector('[data-role="fltwhy"]')?.value ?? f.why ?? '').trim();
     const payload = { kind: 'goal', p: f.p, t, why: why || undefined, st: f.st, done: false };
+    if (f.track && f.track !== 'none') {
+      const target = readNumber(sh?.querySelector('[data-role="flttarget"]')?.value ?? f.target);
+      if (!target || target <= 0) {
+        toastErr('اكتب الرقم المستهدف للهدف');
+        return sh?.querySelector('[data-role="flttarget"]')?.focus();
+      }
+      const unit = (sh?.querySelector('[data-role="fltunit"]')?.value ?? f.unit ?? '').trim();
+      const from = (sh?.querySelector('[data-role="fltfrom"]')?.value ?? f.from ?? state.today).trim() || state.today;
+      if (f.track === 'habit') {
+        const src = f.src?.k ? f.src : defaultHabitTrack(f.p).src;
+        Object.assign(payload, { m: 'habit', src, target, unit: unit || undefined, from, cur: undefined });
+      } else if (f.track === 'time') {
+        const src = f.src?.c ? f.src : defaultTimeTrack(f.p).src;
+        Object.assign(payload, { m: 'time', src, target, unit: 'ساعة', from, cur: undefined });
+      } else {
+        const prevCur = f.id ? (+(findGoal(f.id)?.cur) || 0) : 0;
+        Object.assign(payload, { m: 'manual', src: undefined, target, unit: unit || undefined, from: undefined, cur: prevCur });
+      }
+    } else if (f.id) {
+      Object.assign(payload, { m: undefined, src: undefined, target: undefined, unit: undefined, from: undefined, cur: undefined });
+    }
     if (f.id) {
       patchItem('goals', f.id, payload);
       requestClose();
@@ -1695,13 +1752,23 @@ function openGoalArchive(id) {
   const ta = sheetEl()?.querySelector('[data-role="gnote"]');
   if (ta) ta.focus({ preventScroll: true });
 }
+function incrementGoal(id, delta = 1) {
+  const g = findGoal(id);
+  if (!g) return;
+  const next = Math.max(0, (+g.cur || 0) + delta);
+  const reached = +g.target > 0 && next >= +g.target;
+  haptic(reached ? 'done' : 'tap');
+  patchItem('goals', id, { cur: next });
+  if (reached) toast(`عاش! وصلت لـ ${fmtNum(next)} ${g.unit || ''} — تقدر تأرشف «${g.t}» ✓`);
+}
 function saveGoalArchive(id) {
   const g = findGoal(id);
+  const isGoal = itemKind(g) === 'goal';
   const note = (sheetEl()?.querySelector('[data-role="gnote"]')?.value || '').trim();
   patchItem('goals', id, { done: true, f: false, st: 'active', dAt: Date.now(), ...(note ? { note } : {}) });
   haptic('done');
   const nextFrozen = sysNow().frozenProjects;
-  if (nextFrozen.length) {
+  if (!isGoal && nextFrozen.length) {
     openSheet(nextProjectSheet(g?.t || 'المشروع', nextFrozen));
     toast('عاش! المشروع خلص ✓');
     return;
@@ -1709,7 +1776,7 @@ function saveGoalArchive(id) {
   requestClose();
   ui.planView = 'now';
   render();
-  toast('عاش! المشروع خلص ✓');
+  toast(isGoal ? 'عاش! الهدف خلص ✓' : 'عاش! المشروع خلص ✓');
 }
 function deleteGoal(id) {
   const r = removeItem('goals', id);
@@ -2014,6 +2081,42 @@ document.addEventListener('click', async (e) => {
     case 'fltlinkp':
       if (ui.flt) { ui.flt.linkActive = !ui.flt.linkActive; updateFilterSheet(sheetEl(), ui.flt, sysNow(), state, true); }
       return undefined;
+    case 'flttrack':
+      if (ui.flt) {
+        const tr = b.dataset.v || 'none';
+        ui.flt.track = tr;
+        if (tr === 'habit') {
+          const def = defaultHabitTrack(ui.flt.p);
+          ui.flt.src = def.src;
+          ui.flt.unit = def.unit;
+        } else if (tr === 'time') {
+          const def = defaultTimeTrack(ui.flt.p);
+          ui.flt.src = def.src;
+          ui.flt.unit = def.unit;
+        } else if (tr === 'manual') {
+          ui.flt.src = {};
+        } else {
+          ui.flt.src = {};
+        }
+        updateFilterSheet(sheetEl(), ui.flt, sysNow(), state, true);
+      }
+      return undefined;
+    case 'flthsrc':
+      if (ui.flt) {
+        const div = +b.dataset.div || 1;
+        ui.flt.src = { kind: b.dataset.sk || 'days', k: b.dataset.k, ...(div > 1 ? { div } : {}) };
+        ui.flt.unit = b.dataset.u || '';
+        updateFilterSheet(sheetEl(), ui.flt, sysNow(), state, true);
+      }
+      return undefined;
+    case 'flttcat':
+      if (ui.flt) {
+        const c = b.dataset.v || 'learn';
+        ui.flt.src = { kind: c === 'work' ? 'work' : 'cat', c };
+        ui.flt.unit = 'ساعة';
+        updateFilterSheet(sheetEl(), ui.flt, sysNow(), state, true);
+      }
+      return undefined;
     case 'fltswap':
       if (ui.flt) {
         ui.flt.swapTaskId = String(ui.flt.swapTaskId) === String(id) ? '' : id;
@@ -2023,6 +2126,7 @@ document.addEventListener('click', async (e) => {
     case 'fltsave': return saveFilterSheet();
     // تفاصيل وتجميد وإلغاء تجميد المشاريع والأهداف والعادات والمهام
     case 'gopen': return openGoalDetail(id);
+    case 'ginc': return incrementGoal(id, 1);
     case 'gfreeze': return freezeGoal(id);
     case 'gunfreeze': return unfreezeGoal(id);
     case 'gswapdo': return doProjectSwap(id);
@@ -2420,6 +2524,9 @@ document.addEventListener('input', (e) => {
   if (ui.flt) {
     if (role === 'flttitle') { ui.flt.t = el.value; return undefined; }
     if (role === 'fltunit') { ui.flt.unit = el.value; return undefined; }
+    if (role === 'fltrem') { ui.flt.rem = el.value; return undefined; }
+    if (role === 'flttarget') { ui.flt.target = el.value; return undefined; }
+    if (role === 'fltfrom') { ui.flt.from = el.value; return undefined; }
     if (role === 'fltwhy') { ui.flt.why = el.value; return undefined; }
     if (role === 'fltnewg') { ui.flt.newGoalTitle = el.value; return undefined; }
     if (role === 'fltout') { ui.flt.outcome = el.value; return undefined; }
@@ -2487,6 +2594,9 @@ document.addEventListener('change', (e) => {
   }
   if (role === 'importfile') doImport(el);
   if (role === 'tdate') ui.tdate = el.value;
+  if (ui.flt && role === 'fltrem') ui.flt.rem = el.value;
+  if (ui.flt && role === 'fltfrom') ui.flt.from = el.value;
+  if (ui.hbf && role === 'hfrem') ui.hbf.rem = el.value;
   if (ui.gf && role === 'gffrom') ui.gf.from = el.value;
   if (ui.gf && role === 'gfto') ui.gf.to = el.value;
   if (ui.pf && role === 'pffrom') ui.pf.from = el.value;
@@ -2498,7 +2608,7 @@ document.addEventListener('keydown', (e) => {
   const el = e.target;
   if (e.key !== 'Enter' || e.isComposing || !el.matches?.('input.fld') || el.form || !el.closest('.sheet')) return;
   e.preventDefault();
-  const all = [...sheetEl().querySelectorAll('input.fld:not([type="time"]), textarea.fld')].filter((x) => x.getClientRects().length);
+  const all = [...sheetEl().querySelectorAll('input.fld:not([type="time"]):not([type="date"]), textarea.fld')].filter((x) => x.getClientRects().length);
   const next = all[all.indexOf(el) + 1];
   if (next) next.focus();
   else if (ui.flt) saveFilterSheet();

@@ -3,7 +3,8 @@
 // والعادات الصغيرة بتخدم المجال مباشرة من غير هدف تحتها، والباقي مجمّد مش ممسوح.
 
 import {
-  TODAY_TASK_LIMIT, activeLifeAreas, itemKind, itemStatus, isBacklogGoal, backlogAgeText,
+  TODAY_TASK_LIMIT, activeLifeAreas, activeTimeCats, itemKind, itemStatus,
+  isBacklogGoal, backlogAgeText, hasGoalTarget, fmtRemTime,
   fmtNum, fmtDays, isOverdue, shortDate, periodOf,
 } from '../logic.js';
 import { esc, ic, ico, P, setHtml } from '../ui.js';
@@ -253,19 +254,51 @@ function renderNowView(s, sys) {
     </div>
     ${todayDoneBox}`;
 
-  // ٣. العادات الصغيرة الشغّالة (تخدم المجال مباشرة)
+  // ٣. أهداف بقياس (تتحدّث تلقائي من العادات/الوقت أو عدّاد يدوي — من غير ما تكسر قاعدة المشروع الواحد)
+  const trackedSection = sys.trackedGoals.length
+    ? `<div class="sec"><b>أهداف بقياس</b><span class="mut">${fmtNum(sys.trackedGoals.length)} · تتحدّث من يومك</span></div>
+      <section class="panel tgoal-list" aria-label="أهداف بقياس">
+        ${sys.trackedGoals.map(({ goal: g, area, ev }) => {
+          const gid = esc(g.id);
+          const isMan = g.m === 'manual';
+          const canDone = ev.pct >= 100;
+          return `<div class="grow">
+            <span class="g-med sm${canDone ? ' ok' : ''}">${ico(area.icon)}</span>
+            <button type="button" class="grow-m" data-act="fltedit" data-id="${gid}">
+              <span class="grow-r1">
+                <b>${esc(g.t)}</b>
+                <span class="${ev.status}">${fmtNum(ev.pct)}٪</span>
+              </span>
+              <div class="pace-bar" aria-hidden="true"><div class="pace-fill${ev.status === 'attn' ? ' attn' : ''}" style="width:${ev.pct}%"></div></div>
+              <span class="grow-r2">
+                <span>${fmtNum(ev.cur)} / ${fmtNum(ev.target)} ${esc(ev.unit || '')}</span>
+                <span>${esc(ev.sourceLabel)}</span>
+              </span>
+            </button>
+            ${isMan ? `<button type="button" class="g-incsm" data-act="ginc" data-id="${gid}" aria-label="زوّد ١ على ${esc(g.t)}">+١</button>` : ''}
+            ${canDone ? `<button type="button" class="g-incsm done" data-act="garchopen" data-id="${gid}" aria-label="أرشف الهدف المكتمل ${esc(g.t)}">${ic(P.check)}</button>` : ''}
+          </div>`;
+        }).join('')}
+      </section>` : '';
+
+  // ٤. العادات الصغيرة الشغّالة (تخدم المجال مباشرة)
   const areasWithHabits = sys.areas.filter((a) => a.activeHabits.length > 0);
   const totalActHabits = areasWithHabits.reduce((sum, a) => sum + a.activeHabits.length, 0);
-  const habitsSection = `<div class="sec"><b>العادات الصغيرة الشغّالة</b><span class="mut">${fmtNum(totalActHabits)} · تخدم المجال مباشرة</span></div>
+  const habitsSection = `<div class="sec"><b>العادات الصغيرة الشغّالة</b><span class="mut">${fmtNum(totalActHabits)} · دوس لتعديل الميعاد</span></div>
     ${areasWithHabits.length ? `<section class="panel hab-overview">
       ${areasWithHabits.map(({ area, activeHabits: hs }) => `<div class="hab-ov-grp">
         <div class="hab-ov-h"><span class="apill on">${ico(area.icon)}<span>${esc(area.name)}</span></span></div>
-        <div class="hab-ov-chips">${hs.map((h) => `<span class="hchip"><span>${esc(h.n)}</span><button type="button" class="hchip-frz" data-act="hfreeze" data-k="${esc(h.k)}" aria-label="جمّد عادة ${esc(h.n)}">جمّد</button></span>`).join('')}</div>
+        <div class="hab-ov-chips">${hs.map((h) => habitChipHtml(h)).join('')}</div>
       </div>`).join('')}
       <button type="button" class="lnk" data-act="fltform" data-kind="habit" data-st="active">${ic(P.plus)} عادة صغيرة جديدة${ic(P.chev)}</button>
     </section>` : `<div class="list"><p class="empty-s">مفيش عادات شغّالة دلوقتي. <button type="button" class="bk-link" data-act="fltform" data-kind="habit" data-st="active">+ ضيف عادة</button></p></div>`}`;
 
-  return `${projSection}${extraWarn}${tasksSection}${habitsSection}`;
+  return `${projSection}${extraWarn}${tasksSection}${trackedSection}${habitsSection}`;
+}
+
+function habitChipHtml(h) {
+  const rem = h.rem ? `<small class="hchip-t">${fmtRemTime(h.rem)}</small>` : '';
+  return `<span class="hchip"><button type="button" class="hchip-btn" data-act="hform" data-k="${esc(h.k)}" aria-label="عدّل عادة ${esc(h.n)}"><span>${esc(h.n)}</span>${rem}</button><button type="button" class="hchip-frz" data-act="hfreeze" data-k="${esc(h.k)}" aria-label="جمّد عادة ${esc(h.n)}">جمّد</button></span>`;
 }
 
 // ---------- شاشة ٢: «المجمّد» (مش ممسوح — بيتفتح لما حاجة تخلص) ----------
@@ -274,13 +307,14 @@ function renderFrozenView(s, ui, sys, rev) {
   const ftype = ui.ftype || 'all';
   const farea = ui.farea || 'all';
 
+  const doneTotal = sys.completedProjects.length + sys.completedGoals.length;
   const typeTabs = [
     ['all', `الكل (${fmtNum(sys.frozenTotal)})`],
     ['project', `مشاريع (${fmtNum(sys.frozenProjects.length)})`],
     ['goal', `أهداف (${fmtNum(sys.frozenGoals.length)})`],
     ['task', `مهام (${fmtNum(sys.frozenTasks.length)})`],
     ['habit', `عادات (${fmtNum(sys.frozenHabits.length)})`],
-    ...(sys.completedProjects.length ? [['done', `المكتمل (${fmtNum(sys.completedProjects.length)})`]] : []),
+    ...(doneTotal ? [['done', `المكتمل (${fmtNum(doneTotal)})`]] : []),
   ];
   const curType = typeTabs.some(([k]) => k === ftype) ? ftype : 'all';
 
@@ -295,8 +329,7 @@ function renderFrozenView(s, ui, sys, rev) {
     </div>`;
 
   if (curType === 'done') {
-    const doneHtml = `<div class="sec"><b>مشاريع خلصتها</b><span>${fmtNum(sys.completedProjects.length)}</span></div>
-      <div class="pillars">${sys.completedProjects.map(({ project: p, goal, area }) => `<article class="gcard done">
+    const projCards = sys.completedProjects.map(({ project: p, goal, area }) => `<article class="gcard done">
         ${chainCrumbs(area, goal)}
         <div class="gcard-h">
           <span class="g-med ok">${ico('trophy')}</span>
@@ -307,7 +340,23 @@ function renderFrozenView(s, ui, sys, rev) {
           <span class="g-pct done">خلص ✓</span>
         </div>
         ${p.note ? `<p class="g-ref"><b>الدرس المستفاد:</b> ${esc(p.note)}</p>` : ''}
-      </article>`).join('')}</div>`;
+      </article>`).join('');
+    const goalCards = sys.completedGoals.map((g) => {
+      const ev = sys.evals.get(g.id);
+      return `<article class="gcard done">
+        <div class="gcard-h">
+          <span class="g-med ok">${ico('trophy')}</span>
+          <button type="button" class="g-main" data-act="fltedit" data-id="${esc(g.id)}">
+            <span class="g-title">${esc(g.t)}</span>
+            <span class="g-src">${esc(ev?.pillar?.name || '')}${hasGoalTarget(g) ? ` · ${fmtNum(g.target)} ${esc(ev?.unit || g.unit || '')}` : ''}</span>
+          </button>
+          <span class="g-pct done">تم ✓</span>
+        </div>
+        ${g.note ? `<p class="g-ref"><b>ملحوظة:</b> ${esc(g.note)}</p>` : ''}
+      </article>`;
+    }).join('');
+    const doneHtml = `<div class="sec"><b>اللي خلصته</b><span>${fmtNum(doneTotal)}</span></div>
+      <div class="pillars">${projCards}${goalCards}</div>`;
     return `${topBar}${doneHtml}`;
   }
 
@@ -431,7 +480,7 @@ function renderAreasMap(sys) {
     <button type="button" class="gh full" data-act="laform">${ic(P.plus)} أضف مجال جديد</button>`;
 }
 
-function renderAreaTree(entry) {
+function renderAreaTree(entry, sys) {
   const { area, activeHabits, frozenHabits, goals, standaloneProjects, completedProjects } = entry;
   const aid = esc(area.id);
 
@@ -457,7 +506,7 @@ function renderAreaTree(entry) {
   // ١. العادات (تخدم المجال مباشرة من غير هدف تحتها)
   const habBlock = `<div class="sec"><b>عادات المجال (مباشرة)</b><span>${fmtNum(activeHabits.length)} شغّالة</span></div>
     <section class="panel hab-overview">
-      ${activeHabits.length ? `<div class="hab-ov-chips">${activeHabits.map((h) => `<span class="hchip"><span>${esc(h.n)}</span><button type="button" class="hchip-frz" data-act="hfreeze" data-k="${esc(h.k)}">جمّد</button></span>`).join('')}</div>`
+      ${activeHabits.length ? `<div class="hab-ov-chips">${activeHabits.map((h) => habitChipHtml(h)).join('')}</div>`
         : '<p class="hint" style="margin:0">مفيش عادات شغّالة في المجال ده لسه.</p>'}
       ${frozenHabits.length ? `<div class="hab-frz-row"><span class="hint" style="margin:0">مجمّدة:</span>${frozenHabits.map((h) => `<button type="button" class="hchip muted" data-act="hunfreeze" data-k="${esc(h.k)}">${esc(h.n)} ↺</button>`).join('')}</div>` : ''}
     </section>`;
@@ -484,6 +533,19 @@ function renderAreaTree(entry) {
   if (goals.length) {
     goalsBlock += `<div class="pillars">${goals.map(({ goal: g, projects }) => {
       const isFrz = itemStatus(g) === 'frozen';
+      const tracked = !isFrz && hasGoalTarget(g);
+      const ev = tracked ? sys?.evals?.get(g.id) : null;
+      const trackHtml = ev ? `<div class="tgoal-in">
+          <div class="pace-wrap">
+            <div class="pace-bar" aria-hidden="true"><div class="pace-fill${ev.status === 'attn' ? ' attn' : ''}" style="width:${ev.pct}%"></div></div>
+            <div class="pace-meta">
+              <span class="pace-val">${fmtNum(ev.cur)} <small>/ ${fmtNum(ev.target)} ${esc(ev.unit || '')}</small></span>
+              <span class="pace-tag ${ev.status}">${fmtNum(ev.pct)}٪ · ${esc(ev.sourceLabel)}</span>
+            </div>
+          </div>
+          ${g.m === 'manual' ? `<button type="button" class="g-incsm" data-act="ginc" data-id="${esc(g.id)}" aria-label="زوّد ١ على ${esc(g.t)}">+١</button>` : ''}
+          ${ev.pct >= 100 ? `<button type="button" class="g-incsm done" data-act="garchopen" data-id="${esc(g.id)}" aria-label="أرشف الهدف المكتمل">${ic(P.check)}</button>` : ''}
+        </div>` : '';
       return `<article class="gcard tree-goal">
           <div class="gcard-h">
             <span class="g-med sm">${ico('compass')}</span>
@@ -493,7 +555,8 @@ function renderAreaTree(entry) {
             </button>
             <button type="button" class="g-act sm" data-act="${isFrz ? 'gunfreeze' : 'gfreeze'}" data-id="${esc(g.id)}">${isFrz ? 'فعّل' : 'جمّد'}</button>
           </div>
-          ${projects.length ? `<div class="tree-children">${projects.map(projRow).join('')}</div>` : '<p class="hint" style="margin:0">لسه مفيش مشروع مربوط بالهدف ده.</p>'}
+          ${trackHtml}
+          ${projects.length ? `<div class="tree-children">${projects.map(projRow).join('')}</div>` : (!tracked ? '<p class="hint" style="margin:0">لسه مفيش مشروع مربوط بالهدف ده.</p>' : '')}
           <button type="button" class="lnk" data-act="fltform" data-kind="project" data-p="${aid}" data-parent="${esc(g.id)}">${ic(P.plus)} مشروع يحقق الهدف ده${ic(P.chev)}</button>
         </article>`;
     }).join('')}</div>`;
@@ -544,7 +607,7 @@ export function renderPlan(s, ui, sys, rev = null) {
   if (view.startsWith('area:')) {
     const aid = view.slice(5);
     const entry = sys.areas.find((x) => x.area.id === aid);
-    if (entry) return `${head}${renderAreaTree(entry)}`;
+    if (entry) return `${head}${renderAreaTree(entry, sys)}`;
   }
   if (view === 'frozen') return `${head}${ban}${pulse}${renderFrozenView(s, ui, sys, rev)}`;
   if (view === 'areas') return `${head}${ban}${pulse}${renderAreasMap(sys)}`;
@@ -590,6 +653,19 @@ export function filterSheet(f, sys, s) {
   };
 }
 
+function habitTrackOptions(settings) {
+  const hs = (settings?.habits || []).filter((h) => h.on !== false);
+  return hs.map((h) => {
+    if (h.numK && h.numU === 'دقيقة') {
+      return { kind: 'sum', k: h.numK, div: 60, u: 'ساعة', label: `${h.n} (ساعات)` };
+    }
+    if (h.numK) {
+      return { kind: 'sum', k: h.numK, div: 1, u: h.numU || '', label: `${h.n} (${h.numU || 'أرقام'})` };
+    }
+    return { kind: 'days', k: h.k, div: 1, u: 'يوم', label: `${h.n} (أيام)` };
+  });
+}
+
 export function updateFilterSheet(sh, f, sys, s, forceFields = false) {
   if (!sh || !f) return;
   for (const b of sh.querySelectorAll('[data-act="fltp"]')) b.setAttribute('aria-pressed', b.dataset.v === f.p);
@@ -614,18 +690,81 @@ export function updateFilterSheet(sh, f, sys, s, forceFields = false) {
     let html = '';
     if (f.kind === 'habit') {
       html = `<label class="f"><span class="lbl">اسم العادة الصغيرة</span>
-          <input class="fld" data-role="flttitle" autocomplete="off" placeholder="مثلاً: ١٠ دقايق قراءة، مشي ١٥ دقيقة، ورد صفحتين…" value="${esc(f.t)}">
+          <input class="fld" data-role="flttitle" autocomplete="off" placeholder="مثلاً: مراجعة القرآن، حفظ القرآن، إنجليزي، قراءة…" value="${esc(f.t)}">
         </label>
-        <label class="f"><span class="lbl">وحدة الرقم التفصيلي (اختياري)</span>
-          <input class="fld" data-role="fltunit" autocomplete="off" placeholder="سيبها فاضية لو عادة بلمسة واحدة بس" value="${esc(f.unit || '')}">
-        </label>`;
+        <div class="g2">
+          <label class="f"><span class="lbl">وحدة الرقم (اختياري)</span>
+            <input class="fld" data-role="fltunit" autocomplete="off" placeholder="صفحة / دقيقة…" value="${esc(f.unit || '')}">
+          </label>
+          <label class="f"><span class="lbl">وقت وتنبيه يومي</span>
+            <input class="fld" type="time" data-role="fltrem" value="${esc(f.rem || '')}">
+          </label>
+        </div>
+        <p class="hint" style="margin:0">لو حدّدت وقت للعادة هيظهر جنبها في «اليوم» ويبعتلك إشعار لما تكون إشعارات الخلفية شغّالة.</p>`;
     } else if (f.kind === 'goal') {
+      const tr = f.track || 'none';
+      const trackModes = [
+        ['none', 'اتجاه بس'],
+        ['habit', 'تلقائي من عادة'],
+        ['time', 'تلقائي من الوقت'],
+        ['manual', 'عدّاد يدوي (+١)'],
+      ];
+      let trackHtml = '';
+      if (tr === 'habit') {
+        const opts = habitTrackOptions(s.settings);
+        trackHtml = `<div><span class="lbl">يتحسب تلقائياً من أنهي عادة؟</span>
+            <div class="picks">${opts.map((o) => {
+              const on = f.src?.k === o.k && (f.src?.kind || 'days') === o.kind && (+(f.src?.div || 1) === o.div);
+              return `<button class="pk" type="button" data-act="flthsrc" data-sk="${o.kind}" data-k="${esc(o.k)}" data-div="${o.div}" data-u="${esc(o.u)}" data-keep aria-pressed="${on}">${esc(o.label)}</button>`;
+            }).join('')}</div>
+          </div>
+          <div class="g2">
+            <label class="f"><span class="lbl">المستهدف (الرقم)</span>
+              <input class="fld" data-role="flttarget" inputmode="decimal" autocomplete="off" placeholder="مثلاً ٣٠ أو ٢٠٠" value="${esc(f.target || '')}">
+            </label>
+            <label class="f"><span class="lbl">الوحدة</span>
+              <input class="fld" data-role="fltunit" autocomplete="off" placeholder="ساعة / صفحة" value="${esc(f.unit || '')}">
+            </label>
+          </div>
+          <label class="f"><span class="lbl">بداية الحساب من يوم</span>
+            <input class="fld" type="date" data-role="fltfrom" value="${esc(f.from || s.today)}">
+          </label>`;
+      } else if (tr === 'time') {
+        const cats = activeTimeCats(s.settings);
+        trackHtml = `<div><span class="lbl">يتحسب من أنهي مجال في تاب «الوقت»؟</span>
+            <div class="picks">${cats.map((c) => `<button class="pk" type="button" data-act="flttcat" data-v="${esc(c.id)}" data-keep aria-pressed="${f.src?.c === c.id}">${esc(c.name)}</button>`).join('')}</div>
+          </div>
+          <div class="g2">
+            <label class="f"><span class="lbl">عدد الساعات المستهدف</span>
+              <input class="fld" data-role="flttarget" inputmode="decimal" autocomplete="off" placeholder="مثلاً ٥٠" value="${esc(f.target || '')}">
+            </label>
+            <label class="f"><span class="lbl">من يوم</span>
+              <input class="fld" type="date" data-role="fltfrom" value="${esc(f.from || s.today)}">
+            </label>
+          </div>`;
+      } else if (tr === 'manual') {
+        trackHtml = `<div class="g2">
+            <label class="f"><span class="lbl">المستهدف (مثلاً عدد الدروس)</span>
+              <input class="fld" data-role="flttarget" inputmode="decimal" autocomplete="off" placeholder="مثلاً ٢٠" value="${esc(f.target || '')}">
+            </label>
+            <label class="f"><span class="lbl">الوحدة</span>
+              <input class="fld" data-role="fltunit" autocomplete="off" placeholder="درس / فصل / كتاب" value="${esc(f.unit || '')}">
+            </label>
+          </div>`;
+      }
       html = `<label class="f"><span class="lbl">الهدف</span>
-          <input class="fld" data-role="flttitle" autocomplete="off" placeholder="مثلاً: أكون مستقر مادياً، جسمي قوي ونشيط…" value="${esc(f.t)}">
+          <input class="fld" data-role="flttitle" autocomplete="off" placeholder="مثلاً: ٣٠ ساعة إنجليزي، أخلص كتاب X، أخلص كورس Y…" value="${esc(f.t)}">
         </label>
         <label class="f"><span class="lbl">ليه الهدف ده مهم ليك؟ (اختياري)</span>
           <textarea class="fld" rows="2" data-role="fltwhy" placeholder="السبب الحقيقي اللي بيخلّيك عايز تحققه…">${esc(f.why || '')}</textarea>
-        </label>`;
+        </label>
+        <div class="blk">
+          <span class="lbl">قياس التقدّم (اختياري)</span>
+          <div class="picks" role="group" aria-label="طريقة قياس الهدف">
+            ${trackModes.map(([k, l]) => `<button class="pk" type="button" data-act="flttrack" data-v="${k}" data-keep aria-pressed="${tr === k}">${l}</button>`).join('')}
+          </div>
+          ${trackHtml}
+        </div>`;
     } else if (f.kind === 'project') {
       const areaGoals = (s.goals || []).filter((g) => itemKind(g) === 'goal' && !g.done && g.p === f.p);
       html = `<label class="f"><span class="lbl">اسم المشروع (له نتيجة ونهاية)</span>
@@ -818,17 +957,19 @@ export function updateGoalDetail(sh, g, sys, s) {
   setHtml(box, html);
 }
 
-// ---------- شاشة إنهاء المشروع وأرشفته ----------
+// ---------- شاشة إنهاء المشروع أو الهدف وأرشفته ----------
 export function goalArchiveSheet(g) {
+  const isGoal = itemKind(g) === 'goal';
+  const noun = isGoal ? 'الهدف' : 'المشروع';
   return {
-    label: 'إنهاء المشروع',
-    head: '<h2>خلّصت المشروع ✓</h2>',
+    label: `إنهاء ${noun}`,
+    head: `<h2>خلّصت ${noun} ✓</h2>`,
     body: `<p class="note" style="margin:0"><b>${esc(g.t)}</b></p>
-      <label class="f"><span class="lbl">سطر للذكرى (اختياري): إيه اللي نجّح المشروع أو عطّله؟</span>
-        <textarea class="fld" rows="3" data-focus data-role="gnote" placeholder="مثلاً: تقسيمه لـ ٣ مهام يومية بس فرّق جداً…">${esc(g.note || '')}</textarea>
+      <label class="f"><span class="lbl">سطر للذكرى (اختياري): إيه اللي فرّق معاك في إنجاز ${noun}؟</span>
+        <textarea class="fld" rows="3" data-focus data-role="gnote" placeholder="مثلاً: الالتزام اليومي الصغير فرّق جداً…">${esc(g.note || '')}</textarea>
       </label>`,
     foot: `<div class="foot2"><button class="b-sec" type="button" data-close>إلغاء</button>
-      <button class="b-pri" type="button" data-act="garchsave" data-id="${esc(g.id)}">اتمّ المشروع ✓</button></div>`,
+      <button class="b-pri" type="button" data-act="garchsave" data-id="${esc(g.id)}">اتمّ ${noun} ✓</button></div>`,
   };
 }
 

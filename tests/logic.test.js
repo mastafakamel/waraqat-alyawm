@@ -14,7 +14,7 @@ import {
   fmtHour, hourSpan, hoursWord, fmtHours, timeByCat, sleepHourList, sleepHoursSplit,
   goalRange, goalTimeProgress, evalGoal, goalsSummary, goalDigestLines,
   DEFAULT_LIFE_AREAS, TODAY_TASK_LIMIT, activeLifeAreas, lifeAreaMap, isBacklogGoal, backlogAgeText, periodReviewState,
-  itemKind, itemStatus, todayOpenTasks, canAddTodayTask, systemState, activeHabitGroups,
+  itemKind, itemStatus, hasGoalTarget, fmtRemTime, todayOpenTasks, canAddTodayTask, systemState, activeHabitGroups, dueReminders,
   DEFAULT_SETTINGS, normalizeSettings, periodsFor, periodHoursFor,
   prayersState, togglePrayer, prayerSummary, setPrayerScore, guessExpCat, incomeTotal, evalPeriodGoal, periodGoalDigestLines,
 } from '../js/logic.js';
@@ -925,4 +925,81 @@ test('تقييم الصلوات الخمس (١–٥ خشوع واستعداد) +
   const dig = dayDigest('2026-11-26', d, {});
   assert.match(dig, /فجر 5\/5/);
   assert.match(dig, /متوسط الخشوع 4\.5\/5/);
+});
+
+test('الأهداف بقياس (ساعات إنجليزي، كتاب، كورس) + فصل حفظ ومراجعة القرآن + أوقات وتنبيهات العادات', () => {
+  assert.equal(fmtRemTime('06:30'), '٦:٣٠ ص');
+  assert.equal(fmtRemTime('21:05'), '٩:٠٥ م');
+  assert.equal(fmtRemTime('00:15'), '١٢:١٥ ص');
+  assert.equal(fmtRemTime(''), '');
+
+  const settings = normalizeSettings({
+    habits: [
+      { k: 'wird', n: 'مراجعة القرآن', g: 'deen', on: true, numK: 'wirdp', numU: 'صفحة', rem: '05:30' },
+      { k: 'hifz', n: 'حفظ القرآن', g: 'deen', on: true, numK: 'hifzp', numU: 'صفحة', rem: '06:00' },
+      { k: 'read', n: 'قراءة', g: 'growth', on: true, numK: 'readp', numU: 'صفحة', rem: '22:00' },
+      { k: 'eng', n: 'إنجليزي', g: 'growth', on: true, numK: 'engm', numU: 'دقيقة', rem: '08:00' },
+      { k: 'tech', n: 'تعلم تقني', g: 'growth', on: true, numK: 'techm', numU: 'دقيقة' }, // بدون ميعاد
+    ],
+  });
+
+  const days = [
+    { key: '2026-11-25', data: { engm: '45', readp: '4', hifzp: '1', wirdp: '5' } },
+    { key: '2026-11-26', data: { engm: '45', readp: '6', hifzp: '0.5', wirdp: '5' } },
+  ];
+
+  const items = [
+    { id: 'gDir', kind: 'goal', p: 'work', t: 'استقرار مادي', st: 'active', done: false, at: 1 },
+    { id: 'pIncome', kind: 'project', p: 'work', parentId: 'gDir', t: 'عطور البداية', st: 'active', f: true, m: 'steps', done: false, at: 2 },
+    { id: 'gEng', kind: 'goal', p: 'growth', t: '٣٠ ساعة إنجليزي', st: 'active', m: 'habit', src: { kind: 'sum', k: 'engm', div: 60 }, target: 30, unit: 'ساعة', from: '2026-11-25', done: false, at: 3 },
+    { id: 'gBook', kind: 'goal', p: 'growth', t: 'كتاب العادات الذرية', st: 'active', m: 'habit', src: { kind: 'sum', k: 'readp' }, target: 200, unit: 'صفحة', from: '2026-11-25', done: false, at: 4 },
+    { id: 'gCourse', kind: 'goal', p: 'growth', t: 'كورس Node.js', st: 'active', m: 'manual', cur: 6, target: 20, unit: 'درس', done: false, at: 5 },
+    { id: 'gHifz', kind: 'goal', p: 'deen', t: 'حفظ جزء عمّ', st: 'active', m: 'habit', src: { kind: 'sum', k: 'hifzp' }, target: 20, unit: 'صفحة', from: '2026-11-25', done: false, at: 6 },
+  ];
+
+  assert.equal(hasGoalTarget(items[0]), false);
+  assert.equal(hasGoalTarget(items[2]), true);
+
+  const sys = systemState(items, [], settings, { days, today: '2026-11-26' });
+  // قاعدة المشروع الواحد سليمة، والأهداف بقياس تتتبع لوحدها
+  assert.equal(sys.activeProject.id, 'pIncome');
+  assert.equal(sys.trackedGoals.length, 4);
+
+  const evEng = sys.evals.get('gEng');
+  assert.equal(evEng.cur, 1.5); // 90 دقيقة / 60 = 1.5 ساعة
+  assert.equal(evEng.unit, 'ساعة');
+  assert.equal(evEng.pct, 5);
+  assert.match(evEng.sourceLabel, /ساعات «إنجليزي»/);
+
+  const evBook = sys.evals.get('gBook');
+  assert.equal(evBook.cur, 10);
+  assert.equal(evBook.pct, 5);
+
+  const evCourse = sys.evals.get('gCourse');
+  assert.equal(evCourse.cur, 6);
+  assert.equal(evCourse.pct, 30);
+
+  const evHifz = sys.evals.get('gHifz');
+  assert.equal(evHifz.cur, 1.5);
+  assert.match(evHifz.sourceLabel, /حفظ القرآن/);
+
+  // linkedHabits بترجع مفاتيح العادات المرتبطة بالأهداف بقياس
+  assert.equal(sys.gsum.linkedHabits.has('eng'), true);
+  assert.equal(sys.gsum.linkedHabits.has('read'), true);
+  assert.equal(sys.gsum.linkedHabits.has('hifz'), true);
+
+  // ترتيب العادات زمنياً حسب وقت التذكير (اللي ليه وقت قبل اللي من غير وقت)
+  const growthArea = sys.areas.find((a) => a.area.id === 'growth');
+  assert.deepEqual(growthArea.activeHabits.map((h) => h.k), ['eng', 'read', 'tech']);
+  const growthGrp = activeHabitGroups(settings).find((g) => g.id === 'growth');
+  assert.deepEqual(growthGrp.keys, ['eng', 'read', 'tech']);
+
+  // تنبيهات العادات تشتغل في وقت كل عادة منفصلة (مراجعة vs حفظ) وتختفي لو اتسجلت
+  const r1 = dueReminders({ settings, day: {}, tasks: [], today: '2026-11-26', nowHHMM: '05:35' });
+  assert.equal(r1.some((x) => x.key === 'habit:wird'), true);
+  assert.equal(r1.some((x) => x.key === 'habit:hifz'), false);
+  const r2 = dueReminders({ settings, day: { hifz: 2 }, tasks: [], today: '2026-11-26', nowHHMM: '06:05' });
+  assert.equal(r2.some((x) => x.key === 'habit:hifz'), false); // اتسجلت فمايتبعتش تاني
+  const r3 = dueReminders({ settings, day: {}, tasks: [], today: '2026-11-26', nowHHMM: '06:05' });
+  assert.equal(r3.some((x) => x.key === 'habit:hifz'), true);
 });

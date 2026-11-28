@@ -2,7 +2,7 @@
 
 import {
   PRAYERS, KHUSHU_LABELS, SLEEP_QUAL, STRESS_OPTS, TODAY_TASK_LIMIT, activeHabits, activeHabitGroups,
-  habitGroupStats, prayerSummary, dateTitle, fmtNum, fmtHM, fmtHour, habitsDone, todayTasks, groupTasks, has,
+  habitGroupStats, prayerSummary, dateTitle, fmtNum, fmtHM, fmtHour, fmtRemTime, habitsDone, todayTasks, groupTasks, has,
   periodOf, periodDay, isOverdue, shortDate, dayStatus, dayProgress, satWeekKeys, weekNumber,
   dayNums, compareTo, fmtDiff, timeByCat, fmtHours, hoursWord,
 } from '../logic.js';
@@ -321,7 +321,8 @@ function habitsSection(s, linkedHabits) {
         </div>
         <div class="habits2">${g.items.map((h) => {
           const dot = linkedHabits?.has(h.k) ? '<span class="hp-gdot" aria-hidden="true"></span>' : '';
-          return `<button class="hp" type="button" data-tri="${esc(h.k)}" data-label="${esc(h.n)}"><i></i><span>${esc(h.n)}</span>${dot}</button>`;
+          const remTag = h.rem ? `<small class="hp-rem">${fmtRemTime(h.rem)}</small>` : '';
+          return `<button class="hp" type="button" data-tri="${esc(h.k)}" data-label="${esc(h.n)}"><i></i><span class="hp-txt"><span>${esc(h.n)}</span>${remTag}</span>${dot}</button>`;
         }).join('')}</div>
         ${wkStrip}
       </div>`;

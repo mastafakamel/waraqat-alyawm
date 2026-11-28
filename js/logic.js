@@ -204,16 +204,25 @@ export const TIME_CATS = DEFAULT_TIME_CAT_LIST;
 export function activeHabits(settings) {
   return normalizeSettings(settings).habits.filter((h) => h.on !== false);
 }
+function sortHabitsByRem(hs, dayStart = DAY_START) {
+  const startMin = (dayStart || DAY_START) * 60;
+  const rank = (h) => {
+    const m = mins(h.rem);
+    return m == null ? 9999 : ((m - startMin + 1440) % 1440);
+  };
+  return [...hs].sort((a, b) => rank(a) - rank(b));
+}
 export function activeHabitGroups(settings) {
   const cfg = normalizeSettings(settings);
-  const hs = cfg.habits.filter((h) => h.on !== false);
+  const hs = sortHabitsByRem(cfg.habits.filter((h) => h.on !== false), cfg.dayStart);
   const seen = new Set();
   const base = cfg.habitGroups.map((g) => {
     seen.add(g.id);
+    const items = hs.filter((h) => h.g === g.id);
     return {
       ...g,
-      items: hs.filter((h) => h.g === g.id),
-      keys: hs.filter((h) => h.g === g.id).map((h) => h.k),
+      items,
+      keys: items.map((h) => h.k),
     };
   });
   for (const a of cfg.lifeAreas || []) {
@@ -1444,14 +1453,34 @@ export function goalTimeProgress(g, today) {
   return { timePct, daysTotal, daysPassed, daysLeft, overdue: false };
 }
 
+/** هل الهدف له قياس/رقم مستهدف (مثل عدد ساعات إنجليزي أو صفحات كتاب أو دروس كورس)؟ */
+export function hasGoalTarget(g) {
+  return !!g && !!g.m && +g.target > 0;
+}
+
+/** تنسيق ميعاد تذكير العادة: "06:30" → "٦:٣٠ ص" ، "21:00" → "٩:٠٠ م". */
+export function fmtRemTime(hhmm) {
+  const m = mins(hhmm);
+  if (m == null) return '';
+  const h24 = Math.floor(m / 60) % 24;
+  const h12 = h24 % 12 || 12;
+  const suf = h24 < 12 ? 'ص' : 'م';
+  return `${arDigits(`${h12}:${String(m % 60).padStart(2, '0')}`)} ${suf}`;
+}
+
 /** وصف بشري مختصر لمصدر قياس الهدف. */
 export function goalSourceLabel(g, metrics = [], settings) {
   const s = g.src || {};
-  const tMap = allTimeCatMap(settings);
+  const cfg = normalizeSettings(settings);
+  const tMap = allTimeCatMap(cfg);
   if (g.m === 'habit') {
     if (s.kind === 'salah') return 'تلقائي من الصلوات في وقتها';
-    if (s.kind === 'sum') return `تلقائي من أرقام «${HABIT_NUM_MAP.get(s.k)?.l || s.k || ''}»`;
-    return `تلقائي من عادة «${allHabitLabel(s.k, settings)}»`;
+    if (s.kind === 'sum') {
+      const customH = cfg.habits.find((h) => h.numK === s.k);
+      const lbl = customH?.n || HABIT_NUM_MAP.get(s.k)?.l || s.k || '';
+      return +s.div === 60 ? `تلقائي من ساعات «${lbl}»` : `تلقائي من أرقام «${lbl}»`;
+    }
+    return `تلقائي من عادة «${allHabitLabel(s.k, cfg)}»`;
   }
   if (g.m === 'time') {
     if (s.kind === 'deep') return 'تلقائي من التركيز العميق';
@@ -1505,8 +1534,11 @@ export function evalGoal(g, { days = [], tasks = [], metrics = [], today = dayKe
       cur = inRange.reduce((a, { data }) => a + (+data.salah || 0), 0);
       unit = unit || 'صلاة';
     } else if (s.kind === 'sum') {
-      cur = r1(inRange.reduce((a, { data }) => a + (numOf(data[s.k]) || 0), 0));
-      unit = unit || HABIT_NUM_MAP.get(s.k)?.u || '';
+      const raw = inRange.reduce((a, { data }) => a + (numOf(data[s.k]) || 0), 0);
+      const div = +s.div > 0 ? +s.div : 1;
+      cur = r1(raw / div);
+      const customH = cfg.habits.find((h) => h.numK === s.k);
+      unit = unit || (div === 60 ? 'ساعة' : (customH?.numU || HABIT_NUM_MAP.get(s.k)?.u || ''));
     } else {
       cur = r1(inRange.reduce((a, { data }) => a + (data[s.k] === 2 ? 1 : data[s.k] === 1 ? 0.5 : 0), 0));
       unit = unit || 'يوم';
@@ -1660,7 +1692,17 @@ export function goalsSummary(goals, ctx) {
   const needPush = actEvals.filter((x) => x.isBehind).length;
   const pinned = actProjects.filter((g) => g.f);
   const focus = (pinned.length ? pinned : actProjects.slice(0, 2)).slice(0, 3);
-  const linkedHabits = new Set(actProjects.filter((g) => g.m === 'habit' && g.src?.kind !== 'salah' && g.src?.k).map((g) => g.src.k));
+  const cfg = normalizeSettings(ctx?.settings);
+  const linkedHabits = new Set();
+  for (const g of active) {
+    if (g.m === 'habit' && g.src?.kind !== 'salah' && g.src?.k) {
+      linkedHabits.add(g.src.k);
+      if (g.src.kind === 'sum') {
+        const mh = cfg.habits.find((h) => h.numK === g.src.k);
+        if (mh) linkedHabits.add(mh.k);
+      }
+    }
+  }
 
   const areasList = activeLifeAreas(ctx?.settings);
   const areaIds = new Set(areasList.map((a) => a.id));
@@ -1713,13 +1755,20 @@ export function systemState(goals, tasks, settings, ctx = {}) {
     .sort((a, b) => (b.dAt || 0) - (a.dAt || 0));
 
   const activeGoals = allGoals.filter((g) => itemStatus(g) === 'active');
+  const trackedGoals = activeGoals
+    .filter(hasGoalTarget)
+    .map((goal) => ({
+      goal,
+      area: areaMap.get(resolveArea(goal.p)) || areasList[0] || DEFAULT_LIFE_AREAS[0],
+      ev: gsum.evals.get(goal.id),
+    }));
   const frozenGoals = allGoals
     .filter((g) => itemStatus(g) === 'frozen')
     .sort((a, b) => (b.pri ? 1 : 0) - (a.pri ? 1 : 0) || (b.at || 0) - (a.at || 0));
   const completedGoals = allGoals.filter((g) => itemStatus(g) === 'done');
 
   const allHabits = cfg.habits || [];
-  const actHabits = allHabits.filter((h) => h.on !== false);
+  const actHabits = sortHabitsByRem(allHabits.filter((h) => h.on !== false), cfg.dayStart);
   const frozenHabits = allHabits.filter((h) => h.on === false);
 
   const openToday = todayOpenTasks(tasks, today);
@@ -1790,6 +1839,7 @@ export function systemState(goals, tasks, settings, ctx = {}) {
     activeChain,
     extraActiveProjects: extraActiveProjects.map(enrichProject),
     activeGoals,
+    trackedGoals,
     frozenProjects: frozenProjects.map(enrichProject),
     frozenGoals: frozenGoals.map((goal) => ({
       goal,
@@ -1814,7 +1864,7 @@ export function systemState(goals, tasks, settings, ctx = {}) {
 /** سطور مختصرة لمشروعك الشغّال وأهدافك عشان تتبعت لتقرير الذكاء الاصطناعي. */
 export function goalDigestLines(goals, ctx) {
   const list = goals || [];
-  const active = list.filter((g) => !g.done && !isBacklogGoal(g) && itemKind(g) === 'project');
+  const active = list.filter((g) => !g.done && !isBacklogGoal(g) && (itemKind(g) === 'project' || hasGoalTarget(g)));
   const frozen = list.filter(isBacklogGoal);
   const byId = new Map(list.map((g) => [String(g.id), g]));
   const lines = [];
