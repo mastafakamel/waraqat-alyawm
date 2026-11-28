@@ -1079,6 +1079,19 @@ h3.blk-h { display: block; }
 .mini-steps { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
 .chain-acts { display: flex; flex-wrap: wrap; gap: 7px; padding-top: 10px; border-top: 1px solid var(--line); }
 .chain-acts .g-act { flex: 1 1 105px; justify-content: center; }
+/* الخطة: «الخطوة الجاية» أكبر خط في كارت المشروع، وجنبها فعل واحد بس */
+.now-next { display: flex; flex-direction: column; gap: 6px; padding-top: 11px; border-top: 1px solid var(--line); }
+.now-next-k { font-size: 12px; font-weight: 600; color: var(--muted); }
+.now-next-row { display: flex; align-items: center; gap: 10px; }
+.now-next-t { flex: 1; min-width: 0; font: 700 18px/1.4 var(--disp); color: var(--ink); }
+.now-next-t.mut { font-size: 15px; color: var(--muted); }
+.now-next-after { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.chain-more { margin: -2px -16px -13px; width: calc(100% + 32px); min-height: 44px; color: var(--muted); font-size: 13px; }
+.chain-more .ic { width: 15px; height: 15px; }
+.tk-s.mut { color: var(--muted); font-weight: 500; }
+.plan-h-sub { font-size: 12.5px; color: var(--muted); }
+.acard-go { width: 100%; min-height: 44px; border: 0; border-top: 1px solid var(--line); background: none; color: var(--muted); font-size: 12.5px; font-weight: 600; text-align: right; }
+.acard-go .ic { width: 15px; height: 15px; flex: none; }
 .now-empty-card { padding: 12px 14px; }
 .extra-warn { display: flex; flex-direction: column; gap: 8px; background: var(--attn-w); border-color: rgba(216, 178, 110, .34); color: var(--ink); }
 .extra-warn b, .extra-warn .hint { color: var(--ink); }

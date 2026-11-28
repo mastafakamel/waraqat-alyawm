@@ -23,7 +23,7 @@ import { $, $$, esc, openSheet, requestClose, isSheetOpen, sheetEl, syncFields, 
 import { renderHeader, updateStatus, renderToday, renderTabs } from './views/today.js';
 import { renderTime, hourSheet, updateHourSheet } from './views/time.js';
 import {
-  renderPlan, filterSheet, updateFilterSheet, projectSwapSheet, taskLimitSheet, nextProjectSheet,
+  renderPlan, planHeader, filterSheet, updateFilterSheet, projectSwapSheet, taskLimitSheet, nextProjectSheet,
   goalDetailSheet, updateGoalDetail, goalArchiveSheet, lifeAreaFormSheet, goalReviewSheet,
 } from './views/goals.js';
 import {
@@ -166,11 +166,11 @@ function restoreScroll(view, keep) {
 
 function render() {
   const ctx = winCtx();
-  setHtml($('#top'), renderHeader(state, ctx));
+  setHtml($('#top'), state.tab === 'tasks' ? planHeader(state) : renderHeader(state, ctx));
   updateStatus($('#top'), state);
   const view = $('#view');
   if (state.tab === 'tasks') {
-    setHtml(view, renderPlan(state, ui, ctx.sys, ctx.review));
+    setHtml(view, renderPlan(state, ui, ctx.sys, ctx.review, ctx));
     shown = 'plan';
   } else if (TABS[state.tab]) {
     const tab = TABS[state.tab];
@@ -821,6 +821,15 @@ function deleteHabitForm() {
   if (ui.hbfFrom === 'settings') openSettings('habits');
   else requestClose();
   return toast('اتمسحت العادة', 'رجّع', () => patchSettings({ habits: before }));
+}
+// «جمّد» من جوه شاشة تعديل العادة (اتشال من الـ chip نفسها في الخطة)
+function freezeHabitForm() {
+  const k = ui.hbf?.origK;
+  if (!k) return;
+  const from = ui.hbfFrom;
+  setHabitActive(k, false);
+  if (from === 'settings') openSettings('habits');
+  else requestClose();
 }
 
 function openPillarForm() {
@@ -2312,6 +2321,7 @@ document.addEventListener('click', async (e) => {
       return undefined;
     case 'hfsave': return saveHabitForm();
     case 'hfdel': return deleteHabitForm();
+    case 'hffreeze': return freezeHabitForm();
     case 'grfform': return openPillarForm();
     case 'grfico':
       if (ui.grf) {

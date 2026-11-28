@@ -5,9 +5,10 @@
 import {
   TODAY_TASK_LIMIT, activeLifeAreas, activeTimeCats, itemKind, itemStatus,
   isBacklogGoal, backlogAgeText, hasGoalTarget, fmtRemTime,
-  fmtNum, fmtDays, isOverdue, shortDate, periodOf,
+  fmtNum, fmtDays, isOverdue, shortDate, periodOf, periodDay, dateTitle,
 } from '../logic.js';
 import { esc, ic, ico, P, setHtml } from '../ui.js';
+import { periodCardToday } from './settings.js';
 
 export const LIFE_AREA_ICONS = [
   ['brief', 'شغل'],
@@ -31,6 +32,9 @@ export const FILTER_KINDS = [
   ['task',    'مهمة',       'tasks',  'خطوة مرة واحدة. القاعدة: ٣ مهام بالكتير للنهاردة من الشغّال.'],
 ];
 
+/** فلاتر المجمّد (النوع والمجال) بتظهر من العدد ده وطالع بس. */
+const FROZEN_FILTER_MIN = 6;
+
 function countWord(n, one, two, few, many) {
   if (n === 1) return one;
   if (n === 2) return two;
@@ -45,9 +49,25 @@ export function planSwitch(sys, ui) {
       <div class="seg-top seg-top3" role="tablist" aria-label="أقسام الخطة">
         <button type="button" role="tab" class="${tabCur === 'now' ? 'on' : ''}" data-act="planview" data-v="now" aria-selected="${tabCur === 'now'}">دلوقتي</button>
         <button type="button" role="tab" class="${tabCur === 'frozen' ? 'on' : ''}" data-act="planview" data-v="frozen" aria-selected="${tabCur === 'frozen'}">المجمّد<span class="seg-cnt">${fmtNum(sys.frozenTotal)}</span></button>
-        <button type="button" role="tab" class="${tabCur === 'areas' ? 'on' : ''}" data-act="planview" data-v="areas" aria-selected="${tabCur === 'areas'}">المجالات<span class="seg-cnt">${fmtNum(sys.areas.length)}</span></button>
+        <button type="button" role="tab" class="${tabCur === 'areas' ? 'on' : ''}" data-act="planview" data-v="areas" aria-selected="${tabCur === 'areas'}">المجالات</button>
       </div>
       <button type="button" class="g-newbtn" data-act="fltform">${ic(P.plus)}<span>الفلتر</span></button>
+    </div>`;
+}
+
+/** هيدر تبويبة «الخطة»: الخطة بتتحسب من النهارده دايماً، فمفيش شريط أسبوع ولا اختيار يوم. */
+export function planHeader(s) {
+  const curP = periodOf(s.periods, s.today);
+  const pd = periodDay(curP, s.today);
+  const sub = pd
+    ? `<button class="pday-btn" type="button" data-act="pdetail" data-id="${esc(curP.id)}">يوم ${fmtNum(pd.n)} من ${fmtNum(pd.of)}${curP.name ? ` · ${esc(curP.name)}` : ' في الفترة'}</button>`
+    : `<span class="plan-h-sub">${esc(dateTitle(s.today))}</span>`;
+  return `<div class="top-hero plan-h">
+      <div class="top-dt">
+        <h1 class="date">الخطة</h1>
+        ${sub}
+      </div>
+      <span class="saved" data-out="saved"></span>
     </div>`;
 }
 
@@ -149,14 +169,14 @@ export function activeProjectToday(s, sys) {
 /** التوافق مع الاستيراد القديم في today.js إن وُجد. */
 export const focusGoalsToday = activeProjectToday;
 
+/** صف مهمة في الخطة. «جمّد لبعدين» و«امسح» موجودين في شاشة تعديل المهمة (بعدين / امسح)،
+ *  فمش بيتكرروا على كل صف. والتأخير بيتكتب رمادي: معلومة، مش إنذار (درس ١٧). */
 function taskRowHtml(t, today, projMap, inFrozen = false) {
   const late = !t.done && isOverdue(t, today);
   const proj = t.goalId ? projMap.get(String(t.goalId)) : null;
-  const actionBtn = t.done
-    ? ''
-    : inFrozen
-      ? `<button class="g-act sm" type="button" data-act="tactivate" data-id="${esc(t.id)}" aria-label="انقلها للنهاردة">للنهاردة${ic(P.up)}</button>`
-      : `<button class="ib" type="button" data-act="tfreeze" data-id="${esc(t.id)}" aria-label="جمّد المهمة لبعدين">${ic(P.down)}</button>`;
+  const actionBtn = !t.done && inFrozen
+    ? `<button class="g-act sm" type="button" data-act="tactivate" data-id="${esc(t.id)}" aria-label="انقلها للنهاردة">للنهاردة${ic(P.up)}</button>`
+    : '';
   return `<div class="tk${t.done ? ' done' : ''}${t.pri && !t.done ? ' pri' : ''}">
       <button class="tk-c" type="button" data-act="tdone" data-id="${esc(t.id)}" aria-pressed="${!!t.done}" aria-label="${t.done ? 'رجّعها مفتوحة' : 'علّم إنها خلصت'}: ${esc(t.t)}"><i>${t.done ? ic(P.check) : ''}</i></button>
       <button class="tk-m tk-editb" type="button" data-act="tedit" data-id="${esc(t.id)}" aria-label="عدّل المهمة: ${esc(t.t)}">
@@ -164,47 +184,69 @@ function taskRowHtml(t, today, projMap, inFrozen = false) {
         <span class="tk-tags">
           ${proj ? `<span class="g-tag">${ico('target')}<span>${esc(proj.t)}</span></span>` : ''}
           ${t.cat ? `<span class="tcat">${esc(t.cat)}</span>` : ''}
-          ${late ? `<span class="tk-s">${ic(P.clock)}متأخرة من ${shortDate(t.due)}</span>` : ''}
+          ${late ? `<span class="tk-s mut">${ic(P.clock)}متأخرة من ${shortDate(t.due)}</span>` : ''}
         </span>
       </button>
       ${actionBtn}
-      <button class="ib" type="button" data-act="tdel" data-id="${esc(t.id)}" aria-label="امسح المهمة">${ic(P.close)}</button>
     </div>`;
 }
 
-// ---------- شاشة ١: «دلوقتي» (المشروع الواحد + ٣ مهام بالكتير + العادات الصغيرة) ----------
-function renderNowView(s, sys) {
+/** «الخطوة الجاية» في كارت المشروع: أكبر خط في الكارت وجنبها فعل واحد بس.
+ *  «خلّصت المشروع» مابيظهرش هنا غير لما كل الخطوات تخلص؛ غير كده مكانه شاشة التفاصيل مع «جمّده». */
+function nextStepHtml(p, openTasks) {
+  const id = esc(p.id);
+  const steps = Array.isArray(p.steps) ? p.steps : [];
+  const openSteps = steps.filter((x) => !x.done);
+  const openLinked = openTasks || [];
+  const next = openSteps[0] || null;
+  const nextTask = next ? null : openLinked[0] || null;
+  const after = [...openSteps.slice(1), ...(next ? openLinked : openLinked.slice(1))].map((x) => x.t);
+
+  let body;
+  if (next || nextTask) {
+    const btn = next
+      ? `<button type="button" class="g-act attn now-next-btn" data-act="gstog" data-gid="${id}" data-sid="${esc(next.id)}">${ic(P.check)}خلّصتها</button>`
+      : `<button type="button" class="g-act attn now-next-btn" data-act="tdone" data-id="${esc(nextTask.id)}">${ic(P.check)}خلّصتها</button>`;
+    body = `<div class="now-next-row">
+        <span class="now-next-t">${esc((next || nextTask).t)}</span>
+        ${btn}
+      </div>
+      ${after.length ? `<span class="now-next-after">بعدها: ${esc(after.slice(0, 2).join('، '))}${after.length > 2 ? ` و${fmtNum(after.length - 2)} كمان` : ''}</span>` : ''}`;
+  } else if (steps.length) {
+    body = `<div class="now-next-row">
+        <span class="now-next-t">كل الخطوات خلصت</span>
+        <button type="button" class="g-act done now-next-btn" data-act="garchopen" data-id="${id}">${ic(P.check)}خلّصت المشروع</button>
+      </div>`;
+  } else {
+    body = `<div class="now-next-row">
+        <span class="now-next-t mut">لسه مفيش خطوات</span>
+        <button type="button" class="g-act now-next-btn" data-act="gopen" data-id="${id}">${ic(P.plus)}حدّد الجاية</button>
+      </div>`;
+  }
+  return `<div class="now-next"><span class="now-next-k">الخطوة الجاية</span>${body}</div>`;
+}
+
+// ---------- شاشة ١: «دلوقتي» (المشروع الواحد + هدف الفترة + أهداف بقياس + ٣ مهام بالكتير + العادات) ----------
+function renderNowView(s, sys, ctx = {}) {
   const projMap = new Map((s.goals || []).map((g) => [String(g.id), g]));
   const ch = sys.activeChain;
 
   // ١. المشروع الشغّال دلوقتي (١ فقط)
   let projSection = '';
   if (ch) {
-    const { project: p, goal, area, ev } = ch;
+    const { project: p, goal, area, ev, openTasks } = ch;
     const id = esc(p.id);
-    const steps = Array.isArray(p.steps) ? p.steps : [];
-    const openSteps = steps.filter((x) => !x.done);
-    projSection = `<div class="sec"><b>المشروع الشغّال دلوقتي</b><span class="ask">١ من ١</span></div>
+    projSection = `<div class="sec"><b>المشروع الشغّال</b><span class="mut">١ بس للتركيز</span></div>
       <article class="gcard chain-card">
         ${chainCrumbs(area, goal)}
-        <div class="gcard-h">
-          <button type="button" class="g-main" data-act="gopen" data-id="${id}">
-            <span class="chain-title">${esc(p.t)}</span>
-            ${p.outcome ? `<span class="chain-out">النتيجة: ${esc(p.outcome)}</span>` : ''}
-            ${goal?.why ? `<span class="g-src">ليه: ${esc(goal.why)}</span>` : ''}
-          </button>
-          <button type="button" class="ib" data-act="gopen" data-id="${id}" aria-label="تفاصيل المشروع">${ic(P.chev)}</button>
-        </div>
+        <button type="button" class="g-main chain-head" data-act="gopen" data-id="${id}">
+          <span class="chain-title">${esc(p.t)}</span>
+          ${p.outcome ? `<span class="chain-out">النتيجة: ${esc(p.outcome)}</span>` : ''}
+          ${goal?.why ? `<span class="g-src">ليه: ${esc(goal.why)}</span>` : ''}
+        </button>
         ${projectProgressHtml(p, ev)}
-        ${openSteps.length ? `<div class="mini-steps">${openSteps.slice(0, 3).map((st) => `<div class="tk">
-            <button class="tk-c" type="button" data-act="gstog" data-gid="${id}" data-sid="${esc(st.id)}" aria-pressed="false" aria-label="${esc(st.t)}"><i></i></button>
-            <div class="tk-m"><span class="tk-t">${esc(st.t)}</span></div>
-          </div>`).join('')}</div>` : ''}
-        <div class="chain-acts">
-          <button type="button" class="g-act done" data-act="garchopen" data-id="${id}">${ic(P.check)}خلّصت المشروع</button>
-          <button type="button" class="g-act" data-act="gfreeze" data-id="${id}">جمّده مؤقتاً</button>
-          <button type="button" class="g-act" data-act="gopen" data-id="${id}">الخطوات${ic(P.chev)}</button>
-        </div>
+        ${nextStepHtml(p, openTasks)}
+        <button type="button" class="lnk chain-more" data-act="gopen" data-id="${id}">كل الخطوات والتفاصيل${ic(P.chev)}</button>
       </article>`;
   } else {
     projSection = `<div class="sec"><b>المشروع الشغّال دلوقتي</b><span class="mut">٠ من ١</span></div>
@@ -284,7 +326,7 @@ function renderNowView(s, sys) {
   // ٤. العادات الصغيرة الشغّالة (تخدم المجال مباشرة)
   const areasWithHabits = sys.areas.filter((a) => a.activeHabits.length > 0);
   const totalActHabits = areasWithHabits.reduce((sum, a) => sum + a.activeHabits.length, 0);
-  const habitsSection = `<div class="sec"><b>العادات الصغيرة الشغّالة</b><span class="mut">${fmtNum(totalActHabits)} · دوس لتعديل الميعاد</span></div>
+  const habitsSection = `<div class="sec"><b>العادات الصغيرة الشغّالة</b><span class="mut">${fmtNum(totalActHabits)} · دوس للتعديل</span></div>
     ${areasWithHabits.length ? `<section class="panel hab-overview">
       ${areasWithHabits.map(({ area, activeHabits: hs }) => `<div class="hab-ov-grp">
         <div class="hab-ov-h"><span class="apill on">${ico(area.icon)}<span>${esc(area.name)}</span></span></div>
@@ -293,12 +335,17 @@ function renderNowView(s, sys) {
       <button type="button" class="lnk" data-act="fltform" data-kind="habit" data-st="active">${ic(P.plus)} عادة صغيرة جديدة${ic(P.chev)}</button>
     </section>` : `<div class="list"><p class="empty-s">مفيش عادات شغّالة دلوقتي. <button type="button" class="bk-link" data-act="fltform" data-kind="habit" data-st="active">+ ضيف عادة</button></p></div>`}`;
 
-  return `${projSection}${extraWarn}${tasksSection}${trackedSection}${habitsSection}`;
+  // هدف الفترة (اتنقل هنا من غير ما يتشال من شاشة اليوم): تخطيط على مدى أيام
+  const periodCard = periodCardToday(ctx.curPeriod, ctx.periodEv, s);
+
+  // الترتيب: تحذير كسر القاعدة ← المشروع ← هدف الفترة ← أهداف بقياس (العائد من يومك) ← المهام ← العادات
+  return `${extraWarn}${projSection}${periodCard}${trackedSection}${tasksSection}${habitsSection}`;
 }
 
+/** chip عادة: لمسة واحدة بتفتح التعديل، و«جمّد» اتنقل جوه شاشة التعديل (كان زرار على كل عادة). */
 function habitChipHtml(h) {
   const rem = h.rem ? `<small class="hchip-t">${fmtRemTime(h.rem)}</small>` : '';
-  return `<span class="hchip"><button type="button" class="hchip-btn" data-act="hform" data-k="${esc(h.k)}" aria-label="عدّل عادة ${esc(h.n)}"><span>${esc(h.n)}</span>${rem}</button><button type="button" class="hchip-frz" data-act="hfreeze" data-k="${esc(h.k)}" aria-label="جمّد عادة ${esc(h.n)}">جمّد</button></span>`;
+  return `<span class="hchip"><button type="button" class="hchip-btn" data-act="hform" data-k="${esc(h.k)}" aria-label="عدّل أو جمّد عادة ${esc(h.n)}"><span>${esc(h.n)}</span>${rem}</button></span>`;
 }
 
 // ---------- شاشة ٢: «المجمّد» (مش ممسوح — بيتفتح لما حاجة تخلص) ----------
@@ -308,25 +355,33 @@ function renderFrozenView(s, ui, sys, rev) {
   const farea = ui.farea || 'all';
 
   const doneTotal = sys.completedProjects.length + sys.completedGoals.length;
+  // الفلاتر بتظهر بس لما المجمّد يكتر: مع ٣ حاجات كان فيه صفّين فلاتر أكبر من المحتوى نفسه
+  const many = sys.frozenTotal >= FROZEN_FILTER_MIN;
+  // الأنواع الفاضية مابتظهرش كفلتر (كان فيه «أهداف (٠)»)
   const typeTabs = [
-    ['all', `الكل (${fmtNum(sys.frozenTotal)})`],
-    ['project', `مشاريع (${fmtNum(sys.frozenProjects.length)})`],
-    ['goal', `أهداف (${fmtNum(sys.frozenGoals.length)})`],
-    ['task', `مهام (${fmtNum(sys.frozenTasks.length)})`],
-    ['habit', `عادات (${fmtNum(sys.frozenHabits.length)})`],
-    ...(doneTotal ? [['done', `المكتمل (${fmtNum(doneTotal)})`]] : []),
-  ];
-  const curType = typeTabs.some(([k]) => k === ftype) ? ftype : 'all';
+    ['all', 'الكل', sys.frozenTotal],
+    ['project', 'مشاريع', sys.frozenProjects.length],
+    ['goal', 'أهداف', sys.frozenGoals.length],
+    ['task', 'مهام', sys.frozenTasks.length],
+    ['habit', 'عادات', sys.frozenHabits.length],
+  ].filter(([k, , n]) => k === 'all' || n > 0).map(([k, l, n]) => [k, `${l} (${fmtNum(n)})`]);
+  const curType = ftype === 'done' && doneTotal
+    ? 'done'
+    : many && typeTabs.some(([k]) => k === ftype) ? ftype : 'all';
 
-  const topBar = `<div class="bk-bar">
-      ${(sys.frozenProjects.length + sys.frozenGoals.length) > 0
-        ? `<button type="button" class="g-act${rev?.due ? ' attn' : ''}" data-act="grevstart">${ico('inbox')}<span>جلسة مراجعة (${fmtNum(sys.frozenProjects.length + sys.frozenGoals.length)})</span></button>`
-        : ''}
-      <button type="button" class="g-act" data-act="fltform" data-st="frozen">${ic(P.plus)}<span>اركن في المجمّد</span></button>
-    </div>
-    <div class="pfilt" role="group" aria-label="نوع المجمّد">
-      ${typeTabs.map(([k, l]) => `<button type="button" class="pf" data-act="ftype" data-v="${k}" aria-pressed="${curType === k}">${l}</button>`).join('')}
-    </div>`;
+  const revCount = sys.frozenProjects.length + sys.frozenGoals.length;
+  const revBtn = revCount > 0
+    ? `<div class="bk-bar"><button type="button" class="g-act${rev?.due ? ' attn' : ''}" data-act="grevstart">${ico('inbox')}<span>جلسة مراجعة (${fmtNum(revCount)})</span></button></div>`
+    : '';
+  const typeBar = many && typeTabs.length > 2
+    ? `<div class="pfilt" role="group" aria-label="نوع المجمّد">
+        ${typeTabs.map(([k, l]) => `<button type="button" class="pf" data-act="ftype" data-v="${k}" aria-pressed="${curType === k}">${l}</button>`).join('')}
+      </div>` : '';
+  const topBar = `${revBtn}${typeBar}`;
+  // المكتمل مش مجمّد، فبقى لينك في الآخر بدل فلتر جنب الأنواع
+  const doneLink = doneTotal
+    ? `<button type="button" class="gh full" data-act="ftype" data-v="done">${ico('trophy')}<span>اللي خلصته (${fmtNum(doneTotal)})</span>${ic(P.chev)}</button>`
+    : '';
 
   if (curType === 'done') {
     const projCards = sys.completedProjects.map(({ project: p, goal, area }) => `<article class="gcard done">
@@ -355,25 +410,27 @@ function renderFrozenView(s, ui, sys, rev) {
         ${g.note ? `<p class="g-ref"><b>ملحوظة:</b> ${esc(g.note)}</p>` : ''}
       </article>`;
     }).join('');
-    const doneHtml = `<div class="sec"><b>اللي خلصته</b><span>${fmtNum(doneTotal)}</span></div>
+    const doneHtml = `<div class="adet-top"><button type="button" class="adet-back" data-act="ftype" data-v="all">${ic(P.prev)}<span>المجمّد</span></button></div>
+      <div class="sec"><b>اللي خلصته</b><span>${fmtNum(doneTotal)}</span></div>
       <div class="pillars">${projCards}${goalCards}</div>`;
-    return `${topBar}${doneHtml}`;
+    return doneHtml;
   }
 
-  const areaBar = sys.areas.length > 1 && sys.frozenTotal > 0
+  const fa = many ? farea : 'all';
+  const areaBar = many && sys.areas.length > 1
     ? `<div class="pfilt sub-filt" role="group" aria-label="فلترة بالمجال">
-        <button type="button" class="pf" data-act="farea" data-v="all" aria-pressed="${farea === 'all'}">كل المجالات</button>
-        ${sys.areas.map((a) => `<button type="button" class="pf" data-act="farea" data-v="${esc(a.area.id)}" aria-pressed="${farea === a.area.id}">${esc(a.area.name)}</button>`).join('')}
+        <button type="button" class="pf" data-act="farea" data-v="all" aria-pressed="${fa === 'all'}">كل المجالات</button>
+        ${sys.areas.map((a) => `<button type="button" class="pf" data-act="farea" data-v="${esc(a.area.id)}" aria-pressed="${fa === a.area.id}">${esc(a.area.name)}</button>`).join('')}
       </div>` : '';
 
-  const byArea = (areaId) => farea === 'all' || areaId === farea;
+  const byArea = (areaId) => fa === 'all' || areaId === fa;
   const fProjs = (curType === 'all' || curType === 'project') ? sys.frozenProjects.filter((x) => byArea(x.area.id)) : [];
   const fGoals = (curType === 'all' || curType === 'goal') ? sys.frozenGoals.filter((x) => byArea(x.area.id)) : [];
   const fTasks = (curType === 'all' || curType === 'task')
     ? sys.frozenTasks.filter((t) => {
-      if (farea === 'all') return true;
+      if (fa === 'all') return true;
       const pr = t.goalId ? projMap.get(String(t.goalId)) : null;
-      return pr?.p === farea || t.p === farea;
+      return pr?.p === fa || t.p === fa;
     }) : [];
   const fHabits = (curType === 'all' || curType === 'habit') ? sys.frozenHabits.filter((x) => byArea(x.area.id)) : [];
 
@@ -389,7 +446,6 @@ function renderFrozenView(s, ui, sys, rev) {
               <span class="g-title">${p.pri ? '<span class="flag" aria-label="أولوية">⚑</span>' : ''}${esc(p.t)}</span>
               <span class="g-src">${p.outcome ? `النتيجة: ${esc(p.outcome)}` : (age ? `مجمّد ${esc(age)}` : 'مشروع مجمّد')}</span>
             </button>
-            <button type="button" class="ib" data-act="gdel" data-id="${esc(p.id)}" aria-label="امسح المشروع">${ic(P.close)}</button>
           </div>
           ${p.why ? `<p class="bk-why">${esc(p.why)}</p>` : ''}
           <div class="g-foot">
@@ -409,7 +465,6 @@ function renderFrozenView(s, ui, sys, rev) {
             <span class="g-title">${esc(g.t)}</span>
             <span class="g-src">${esc(area.name)} · هدف مجمّد</span>
           </button>
-          <button type="button" class="ib" data-act="gdel" data-id="${esc(g.id)}" aria-label="امسح الهدف">${ic(P.close)}</button>
         </div>
         ${g.why ? `<p class="bk-why">ليه: ${esc(g.why)}</p>` : ''}
         <div class="g-foot">
@@ -440,38 +495,44 @@ function renderFrozenView(s, ui, sys, rev) {
       </div>`;
   }
 
-  return `${topBar}${areaBar}${sections}`;
+  return `${topBar}${areaBar}${sections}${doneLink}`;
 }
 
 // ---------- شاشة ٣: «المجالات» (خريطة الحياة + شجرة كل مجال) ----------
+/** عدد الحاجات في المجال (عشان الترتيب: اللي فيه المشروع الشغّال الأول، والفاضي في الآخر). */
+function areaWeight(entry) {
+  const projects = entry.goals.reduce((a, x) => a + x.projects.length, 0) + entry.standaloneProjects.length;
+  return entry.activeHabits.length + entry.goals.length + projects;
+}
+
 function renderAreasMap(sys) {
-  const cards = sys.areas.map((entry) => {
-    const { area, activeHabits, goals, standaloneProjects, hasActiveProject, activeProject, frozenCount } = entry;
+  const sorted = [...sys.areas].sort((a, b) =>
+    (b.hasActiveProject ? 1 : 0) - (a.hasActiveProject ? 1 : 0) || (areaWeight(b) > 0) - (areaWeight(a) > 0));
+  const cards = sorted.map((entry) => {
+    const { area, activeHabits, goals, standaloneProjects, hasActiveProject, activeProject } = entry;
     const aid = esc(area.id);
     const totalProjects = goals.reduce((a, x) => a + x.projects.length, 0) + standaloneProjects.length;
-    const mid = hasActiveProject && activeProject
-      ? `<div class="area-now-strip"><i class="f-dot" aria-hidden="true"></i><span>شغّال دلوقتي: <b>${esc(activeProject.project.t)}</b></span></div>`
-      : `<p class="area-empty-line">${activeHabits.length
-        ? `${countWord(activeHabits.length, 'عادة واحدة شغّالة', 'عادتين شغّالين', 'عادات شغّالة', 'عادة شغّالة')} بتخدم المجال مباشرة`
-        : 'دوس عشان ترتّب العادات والأهداف والمشاريع في المجال ده'}</p>`;
+    // سطر واحد للأعداد بدل ٣ pills، والصفر مابيتكتبش
+    const counts = [
+      activeHabits.length ? countWord(activeHabits.length, 'عادة واحدة', 'عادتين', 'عادات', 'عادة') : '',
+      goals.length ? countWord(goals.length, 'هدف واحد', 'هدفين', 'أهداف', 'هدف') : '',
+      totalProjects ? countWord(totalProjects, 'مشروع واحد', 'مشروعين', 'مشاريع', 'مشروع') : '',
+    ].filter(Boolean).join(' · ') || 'لسه فاضي';
     return `<article class="gcard acard${hasActiveProject ? ' has-now' : ''}">
         <div class="gcard-h">
           <span class="g-med${hasActiveProject ? ' ok' : ''}">${ico(area.icon)}</span>
           <button type="button" class="g-main" data-act="planview" data-v="area:${aid}" aria-label="افتح مجال ${esc(area.name)}">
             <span class="g-title">${esc(area.name)}</span>
-            <span class="g-src">${area.note ? esc(area.note) : 'المجال ← أهداف ← مشاريع + عادات'}</span>
+            ${area.note ? `<span class="g-src">${esc(area.note)}</span>` : ''}
           </button>
           <button type="button" class="ib" data-act="laform" data-id="${aid}" aria-label="عدّل مجال ${esc(area.name)}">${ic(P.edit)}</button>
         </div>
-        ${mid}
-        <div class="acard-foot">
-          <div class="acard-pills">
-            <span class="apill${activeHabits.length ? ' on' : ''}">عادات ${fmtNum(activeHabits.length)}</span>
-            <span class="apill${goals.length ? ' on' : ''}">أهداف ${fmtNum(goals.length)}</span>
-            <span class="apill${frozenCount ? ' attn' : ''}">مشاريع ${fmtNum(totalProjects)}</span>
-          </div>
-          <button type="button" class="acard-open${hasActiveProject ? ' done' : ''}" data-act="planview" data-v="area:${aid}">افتح${ic(P.chev)}</button>
-        </div>
+        ${hasActiveProject && activeProject
+          ? `<div class="area-now-strip"><i class="f-dot" aria-hidden="true"></i><span>شغّال دلوقتي: <b>${esc(activeProject.project.t)}</b></span></div>`
+          : ''}
+        <button type="button" class="acard-foot acard-go" data-act="planview" data-v="area:${aid}">
+          <span>${counts}</span>${ic(P.chev)}
+        </button>
       </article>`;
   }).join('');
 
@@ -575,43 +636,25 @@ function renderAreaTree(entry, sys) {
         <span class="m"><b>${esc(p.t)}</b>${p.outcome ? `<span>${esc(p.outcome)}</span>` : ''}</span>
       </button>`).join('')}</div>` : '';
 
-  return `${topBar}${hero}${habBlock}${goalsBlock}${standaloneBlock}${doneBlock}`;
+  // الأهداف (ليه) ومشاريعها الأول، وبعدها العادات: قسم العادات الفاضي كان بيزق الأهداف لتحت
+  return `${topBar}${hero}${goalsBlock}${standaloneBlock}${habBlock}${doneBlock}`;
 }
 
-/** التبويبة الموحدة «الخطة»: دلوقتي · المجمّد · المجالات */
-export function renderPlan(s, ui, sys, rev = null) {
+/** التبويبة الموحدة «الخطة»: دلوقتي · المجمّد · المجالات
+ *  (كارت الأرقام الـ ٣ اتشال: كان بيكرر أزرار الأقسام وعناوينها — قرار ٥٩ في phase1). */
+export function renderPlan(s, ui, sys, rev = null, ctx = {}) {
   const head = planSwitch(sys, ui);
   const ban = reviewBannerHtml(rev);
   const view = String(ui.planView || 'now');
-
-  const pulse = `<section class="pulse" aria-label="ملخص النظام">
-      <div class="gp-grid">
-        <button type="button" class="gp-cell gp-btn" data-act="planview" data-v="now" style="border-inline-start:0">
-          <span class="gp-k">مشروع شغّال</span>
-          <span class="gp-v ${sys.activeProject ? 'done' : ''}">${sys.activeProject ? '١' : '٠'}<small>/١</small></span>
-          <span class="gp-s">${sys.activeProject ? 'مركز عليه' : 'فاضي'}</span>
-        </button>
-        <button type="button" class="gp-cell gp-btn" data-act="planview" data-v="now">
-          <span class="gp-k">مهام النهاردة</span>
-          <span class="gp-v ${sys.todayOpen.count > TODAY_TASK_LIMIT ? 'attn' : 'done'}">${fmtNum(sys.todayOpen.count)}<small>/${fmtNum(TODAY_TASK_LIMIT)}</small></span>
-          <span class="gp-s">${sys.todayOpen.count >= TODAY_TASK_LIMIT ? 'الحد الأقصى' : 'من الشغّال'}</span>
-        </button>
-        <button type="button" class="gp-cell gp-btn" data-act="planview" data-v="frozen">
-          <span class="gp-k">المجمّد</span>
-          <span class="gp-v${rev?.due ? ' attn' : ''}">${fmtNum(sys.frozenTotal)}</span>
-          <span class="gp-s">${rev?.due ? 'وقت المراجعة' : 'محفوظ لبعدين'}</span>
-        </button>
-      </div>
-    </section>`;
 
   if (view.startsWith('area:')) {
     const aid = view.slice(5);
     const entry = sys.areas.find((x) => x.area.id === aid);
     if (entry) return `${head}${renderAreaTree(entry, sys)}`;
   }
-  if (view === 'frozen') return `${head}${ban}${pulse}${renderFrozenView(s, ui, sys, rev)}`;
-  if (view === 'areas') return `${head}${ban}${pulse}${renderAreasMap(sys)}`;
-  return `${head}${ban}${pulse}${renderNowView(s, sys)}`;
+  if (view === 'frozen') return `${head}${ban}${renderFrozenView(s, ui, sys, rev)}`;
+  if (view === 'areas') return `${head}${ban}${renderAreasMap(sys)}`;
+  return `${head}${ban}${renderNowView(s, sys, ctx)}`;
 }
 
 // ---------- شاشة الفلتر السريع (٣ أسئلة بس: المجال؟ · النوع؟ · الحالة؟) ----------

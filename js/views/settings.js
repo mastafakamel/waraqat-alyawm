@@ -285,6 +285,8 @@ export function habitFormSheet(hf, s) {
   for (const a of activeLifeAreas(s.settings)) areaMap.set(a.id, a);
   for (const g of s.settings.habitGroups || []) if (!areaMap.has(g.id)) areaMap.set(g.id, g);
   const groups = [...areaMap.values()];
+  const cur = editing ? (s.settings.habits || []).find((x) => x.k === hf.origK) : null;
+  const canFreeze = !!cur && cur.on !== false;
   return {
     label: editing ? 'تعديل العادة' : 'عادة جديدة',
     head: `<h2>${editing ? 'تعديل العادة' : 'عادة جديدة'}</h2>`,
@@ -299,7 +301,8 @@ export function habitFormSheet(hf, s) {
       </label>
       <label class="f"><span class="lbl">وقت العادة والتنبيه اليومي (اختياري)</span>
         <input class="fld" type="time" data-role="hfrem" value="${esc(hf.rem || '')}">
-      </label>`,
+      </label>
+      ${canFreeze ? '<button class="gh full" type="button" data-act="hffreeze">جمّد العادة مؤقتاً (تاريخها محفوظ)</button>' : ''}`,
     foot: editing
       ? `<div class="foot2"><button class="b-sec" type="button" data-act="hfdel">امسح</button>
           <button class="b-pri" type="button" data-act="hfsave">احفظ</button></div>`
