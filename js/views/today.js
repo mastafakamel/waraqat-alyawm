@@ -26,7 +26,8 @@ export const HINTS = {
 
 // ---------- الهيدر ----------
 const WD = ['ح', 'ن', 'ث', 'ر', 'خ', 'ج', 'س'];
-const DAY_WORD = { full: 'اتسجل كله', part: 'جزئي', none: 'فاضي', future: 'يوم جاي' };
+// الحالة من الـ ٥ الأساسيين بس (dayStatus). والنهارده مايتقالش عليه "ناقص" لحد ما يخلص: بيبقى "لسه"
+const DAY_WORD = { full: 'مسجّل', part: 'ناقص', none: 'فاضي', future: 'يوم جاي' };
 
 function dayShort(key) {
   return new Date(`${key}T12:00:00`).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric' });
@@ -52,10 +53,11 @@ export function renderHeader(s, ctx = {}) {
     const pct = future ? 0 : (isCur ? dayProgress(s.day, s.settings) : ctx.pct?.[k] || 0);
     const d = new Date(`${k}T12:00:00`);
     const isToday = k === s.today;
+    const open = isToday && st !== 'full';
     const cls = `wd${isCur ? ' sel' : ''}${isToday && !isCur ? ' is-today' : ''}${st === 'full' ? ' done-pill' : ''}${future ? ' fut' : ''}`;
-    const barCls = st === 'full' ? ' full' : pct > 0 ? ' part' : '';
+    const barCls = st === 'full' ? ' full' : pct > 0 ? (open ? ' now' : ' part') : '';
     return `<button class="${cls}" type="button" data-act="day" data-key="${k}"${isCur ? ' aria-current="date"' : ''}
-      aria-label="${dayShort(k)}${isToday ? '، النهارده' : ''}: ${DAY_WORD[st]}">
+      aria-label="${dayShort(k)}${isToday ? '، النهارده' : ''}: ${open ? 'لسه' : DAY_WORD[st]}${!future && pct ? `، ${fmtNum(pct)}٪ من الأساسي` : ''}">
       <span class="l">${WD[d.getDay()]}</span>
       <span class="n">${fmtNum(d.getDate())}</span>
       <span class="wd-bar${barCls}" aria-hidden="true"><i style="width:${future ? 0 : pct}%"></i></span>

@@ -406,9 +406,14 @@ test('شريط الأيام: ٧ مفاتيح من الأقدم، وحالة كل
   assert.equal(dayStatus(FULL_DAY), 'full');
   assert.equal(dayProgress({}), 0);
   assert.equal(dayProgress({ ai: { t: 'تقرير' } }), 0);
-  assert.equal(dayProgress({ hrs: { 9: { c: 'learn' } } }), 15);
-  assert.equal(dayProgress({ hrs: { 9: { c: 'work' } } }), 13); // شغل من تاب الوقت بيكمّل بند الشغل (١ من ٨)
-  assert.equal(dayProgress({ sleep: '00:15', mood: 4 }), 25);
+  assert.equal(dayProgress({ hrs: { 9: { c: 'learn' } } }), 0); // فيه تسجيل بس مفيش ولا أساسي: الشريط فاضي (مابقاش ١٥٪)
+  assert.equal(dayStatus({ hrs: { 9: { c: 'learn' } } }), 'part'); // وبيفضل متعلّم إن فيه تسجيل
+  assert.equal(dayProgress({ hrs: { 9: { c: 'work' } } }), 20); // شغل من تاب الوقت بيكمّل بند الشغل (١ من ٥ أساسيين)
+  assert.equal(dayProgress({ sleep: '00:15', mood: 4 }), 40); // ٢ من ٥
+  assert.equal(dayProgress({ sleep: '00:15', mood: 4, screen: '3:00', exp: [{ a: 50 }] }), 40); // الزيادة (الشاشة والفلوس) مابتأثرش
+  // بند أساسي مقفول من الإعدادات بيطلع من الحسبة: ٢ من ٤
+  assert.equal(dayProgress({ sleep: '00:15', mood: 4 }, { stars: { top: { on: false } } }), 50);
+  assert.equal(dayStatus({ sleep: '00:15', fajr: 2, w1h: '5', mood: 3 }, { stars: { top: { on: false } } }), 'full');
   assert.equal(dayProgress(FULL_DAY), 100);
 });
 

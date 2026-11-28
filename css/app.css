@@ -125,6 +125,8 @@ svg { display: block; }
 .wd-bar { width: 100%; height: 3px; border-radius: 2px; background: var(--surf2); overflow: hidden; }
 .wd-bar i { display: block; height: 100%; border-radius: 2px; background: var(--attn); transition: width .22s ease; }
 .wd-bar.full i { background: var(--done); }
+/* النهارده لسه ماخلصش: الشريط رمادي مش كهرماني، لأنه مش "ناقص" */
+.wd-bar.now i { background: var(--muted); }
 .wd.done-pill { background: var(--done-w); }
 .wd.is-today .l { color: var(--attn); font-weight: 700; }
 .wd.sel { border: 1.5px solid var(--pri); background: var(--surf2); }

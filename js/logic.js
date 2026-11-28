@@ -584,20 +584,23 @@ export function starSplit(day, cur, today, hour, settings) {
 }
 
 /** حالة اليوم في شريط الأيام: full = البنود المفعّلة كلها اتسجلت، part = فيه تسجيل، none = مفيش. */
+// (من ٢٨ نوفمبر) الحالة والنسبة من الـ ٥ الأساسيين بس (coreItemsFor)، والبنود الزيادة مابتأثرش.
 export function dayStatus(d, settings) {
   if (!d || !logged(d)) return 'none';
-  const total = starItemsFor(settings).length;
+  const total = coreItemsFor(settings).length;
   if (!total) return 'full';
-  return starCount(d, settings) === total ? 'full' : 'part';
+  return coreMissing(d, settings).length ? 'part' : 'full';
 }
 
-/** نسبة إنجاز اليوم للحلقة الصغيرة حوالين كل يوم في شريط الأسبوع (٠ لـ ١٠٠). */
+/**
+ * نسبة الشريط تحت كل يوم (٠ لـ ١٠٠) = الأساسيين اللي اتسجلوا من الأساسيين المفعّلين، يعني ٣ من ٥ = ٦٠.
+ * يوم فيه تسجيل ومفيهوش ولا أساسي شريطه فاضي (٠)، بس حالته بتفضل part (فيه تسجيل).
+ */
 export function dayProgress(d, settings) {
   if (!d || !logged(d)) return 0;
-  const total = starItemsFor(settings).length;
+  const total = coreItemsFor(settings).length;
   if (!total) return 100;
-  const sc = starCount(d, settings);
-  return sc ? Math.round((sc / total) * 100) : 15;
+  return Math.round(((total - coreMissing(d, settings).length) / total) * 100);
 }
 
 /** n مفاتيح لحد endKey، من الأقدم للأحدث (الأقدم بيترسم على اليمين). */
@@ -774,10 +777,16 @@ export function sortTimeCats(cats, usage = {}) {
 /** الـ ٥ الأساسيين اللي بيخلّوا اليوم "مسجّل"، بترتيب اليوم. */
 export const CORE_KEYS = ['sleep', 'habits', 'work', 'mood', 'top'];
 
+/** الأساسيين المفعّلين: الـ ٥، إلا اللي اتقفل من الإعدادات ("البنود الأساسية ★"). */
+export function coreItemsFor(settings) {
+  const cfg = normalizeSettings(settings);
+  return CORE_KEYS.filter((k) => cfg.stars[k]?.on !== false);
+}
+
 /** الأساسيين اللي لسه ماتسجلوش في اليوم ده (زرار "+ سجّل" بيسأل عليهم هما بس). */
 export function coreMissing(day = {}, settings) {
   const cfg = normalizeSettings(settings);
-  return CORE_KEYS.filter((k) => !STAR_ITEMS.find((x) => x.k === k)?.done(day || {}, cfg));
+  return coreItemsFor(cfg).filter((k) => !STAR_ITEMS.find((x) => x.k === k)?.done(day || {}, cfg));
 }
 
 /** مدة بالعامية للفروق: ٢٠ دقيقة، ساعة، ساعة ونص، ساعتين، ٣ ساعات. */

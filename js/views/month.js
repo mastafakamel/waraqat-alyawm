@@ -5,8 +5,9 @@ import { fmtNum, keyOf, dayStatus } from '../logic.js';
 import { ic, P, setHtml } from '../ui.js';
 
 const WD = ['س', 'ح', 'ن', 'ث', 'ر', 'خ', 'ج']; // السبت الأول
+// الحالة من الـ ٥ الأساسيين بس. والنهارده "لسه" لحد ما يخلص، مش "ناقص"
 const MARK = { full: 'done', part: 'part', none: 'nolog' };
-const WORD = { full: 'اتسجل كله', part: 'ناقص', none: 'مش متسجل' };
+const WORD = { full: 'مسجّل', part: 'ناقص', none: 'فاضي' };
 
 /** "2026-11" ← { y, m } */
 const parse = (ym) => ({ y: +ym.slice(0, 4), m: +ym.slice(5, 7) - 1 });
@@ -24,7 +25,7 @@ export function monthSheet() {
     body: `<div class="mnav"><button class="navb" type="button" data-act="mprev" aria-label="الشهر اللي فات">${ic(P.prev)}</button>
         <button class="navb" type="button" data-act="mnext" aria-label="الشهر اللي بعده">${ic(P.next)}</button></div>
       <div class="mgrid-cal" data-out="mgrid"></div>
-      <div class="legend-s"><span><i class="dot sm done"></i>اتسجل كله</span><span><i class="dot sm part"></i>ناقص</span><span><i class="dot sm nolog"></i>مش متسجل</span></div>`,
+      <div class="legend-s"><span><i class="dot sm done"></i>مسجّل (الـ ٥ الأساسيين)</span><span><i class="dot sm part"></i>ناقص</span><span><i class="dot sm nolog"></i>فاضي</span></div>`,
     foot: '<div class="foot2"><button class="b-sec" type="button" data-close>تمام</button><button class="b-pri" type="button" data-act="today">النهارده</button></div>',
   };
 }
@@ -44,10 +45,12 @@ export function updateMonth(root, ym, s, status = {}) {
   for (let i = 1; i <= count; i++) {
     const k = keyOf(new Date(y, m, i));
     const future = k > s.today;
-    const st = k === s.cur ? dayStatus(s.day) : status[k] || 'none'; // اليوم المفتوح من الذاكرة
-    const mark = future ? '' : `<i class="dot sm ${MARK[st]}" aria-hidden="true"></i>`;
+    // اليوم المفتوح من الذاكرة، وبإعداداتك (قبل كده كان بيتحسب بالإعدادات الافتراضية)
+    const st = k === s.cur ? dayStatus(s.day, s.settings) : status[k] || 'none';
+    const open = k === s.today && st !== 'full';
+    const mark = future ? '' : `<i class="dot sm ${open ? 'later' : MARK[st]}" aria-hidden="true"></i>`;
     cells += `<button class="mday${k === s.cur ? ' sel' : ''}${k === s.today ? ' today' : ''}" type="button" data-act="day" data-key="${k}"
-      aria-label="${fmtNum(i)}${k === s.today ? '، النهارده' : ''}${future ? '، يوم جاي' : `: ${WORD[st]}`}">${fmtNum(i)}${mark}</button>`;
+      aria-label="${fmtNum(i)}${k === s.today ? '، النهارده' : ''}${future ? '، يوم جاي' : `: ${open ? 'لسه' : WORD[st]}`}">${fmtNum(i)}${mark}</button>`;
   }
   setHtml(grid, cells);
 }
