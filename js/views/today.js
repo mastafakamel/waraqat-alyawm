@@ -461,8 +461,8 @@ export function renderToday(s, ctx = {}) {
 export function renderTabs(s) {
   const open = todayTasks(s.tasks, s.today, s.settings?.dayStart).filter((t) => !t.done).length;
   const tabs = [
-    ['day', 'اليوم', 'sun', 0],
     ['time', 'الوقت', 'clock', 0],
+    ['day', 'اليوم', 'sun', 0],
     ['tasks', 'الخطة', 'target', open],
     ['ideas', 'أفكار', 'ideas', 0],
     ['money', 'فلوس', 'wallet', 0],

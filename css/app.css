@@ -680,7 +680,36 @@ h3.blk-h { display: block; }
 .tsum-empty .lnk { margin: 0 -16px; width: calc(100% + 32px); }
 
 /* ---------- تاب «الوقت» ساعة بساعة (Swiss Chronometer Blocks) ---------- */
-.tbrush { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+/* كارت «الساعة دي» */
+.tnow { padding: 14px 16px; display: flex; flex-direction: column; gap: 11px; border-color: var(--attn); }
+.tn-h { display: flex; align-items: baseline; gap: 8px; }
+.tn-h b { font: 700 16px var(--disp); color: var(--ink); }
+.tn-h small { font-size: 12.5px; color: var(--muted); }
+.tn-what { min-height: 48px; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; background: var(--surf2); overflow: hidden; }
+.tn-what.filled { border-inline-start: 3px solid var(--tc); background: var(--tc-w); }
+.tn-what b { flex: none; font-size: 14px; font-weight: 700; color: var(--ink); }
+.tn-empty { font-size: 13.5px; color: var(--muted); }
+.tn-acts { display: grid; grid-template-columns: 1.6fr 1fr; gap: 8px; }
+.tn-acts > :only-child { grid-column: 1 / -1; }
+.tn-b { min-height: 48px; padding: 0 12px; border-radius: 6px; border: 0; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 14px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; }
+.tn-b.pri { border: 1.5px solid var(--tc); background: var(--tc-w); }
+.tn-b.sec { background: var(--surf2); font-weight: 600; }
+.tn-b .ic { width: 15px; height: 15px; }
+.tn-en { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tn-en > span { flex: 1; font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.tn-en .ps { background: var(--surf); border-color: var(--line); }
+
+/* ملخص اليوم: الشغل من الهدف، والتشتيت وأول شغل مقارنين بعادتك */
+.tday { padding: 0; overflow: hidden; }
+.tday .pm-sub3 { border-top: 0; }
+.tday .tb-prog { padding: 10px 14px 12px; border-top: 1px solid var(--line); }
+.pm-v.warn { color: var(--attn); }
+
+.tbrush { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+/* المجالات في صف واحد بيتسحب لجنب (جوه شاشة الساعة بتفضل سطور عادي) */
+.tbrush .tb-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; margin-inline: -16px; padding: 2px 16px; }
+.tbrush .tb-chips::-webkit-scrollbar { display: none; }
+.tbrush .bchip { flex: none; }
 .tb-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .tb-l { font-size: 13px; font-weight: 600; color: var(--muted); }
 .tfill { min-height: 44px; padding: 0 13px; border-radius: 6px; border: 1px solid var(--line); background: var(--surf2); color: var(--ink); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
@@ -700,24 +729,32 @@ h3.blk-h { display: block; }
 .pf[aria-pressed="true"] { border: 1.5px solid var(--pri); background: var(--surf2); color: var(--ink); font-weight: 700; }
 
 .tper { padding: 0; overflow: hidden; }
-.tper-h { padding: 14px 16px; background: var(--surf2); display: flex; flex-direction: column; gap: 10px; }
+/* رأس الفترة زرار بيفتح ويقفل */
+.tper-h { width: 100%; min-height: 56px; padding: 14px 16px; border: 0; background: var(--surf2); color: var(--ink); font: inherit; text-align: right; display: flex; flex-direction: column; gap: 9px; }
+.tper:not(.open) .tper-h { background: var(--surf); }
 .tper.now .tper-h { background: var(--attn-w); }
-.tper-r1 { display: flex; align-items: baseline; gap: 8px; }
-.tper-r1 b { font-size: 15px; font-weight: 700; }
-.tper-r1 small { font-size: 12px; color: var(--muted); }
+.tper-r1 { display: flex; align-items: center; gap: 8px; }
+.tper-r1 b { flex: none; font-size: 15px; font-weight: 700; }
+.tper-r1 small { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tper.now .tper-r1 small { color: var(--ink); }
-.tper-r1 .nowc { margin-inline-start: auto; font-size: 12px; font-weight: 700; color: var(--attn); }
-.tper-en { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.tper-en > span { flex: 1; font-size: 12.5px; color: var(--muted); font-weight: 500; }
-.tper.now .tper-en > span { color: var(--ink); }
-.tper-en .pseg { gap: 5px; }
-.tper-en .ps { background: var(--surf); border-color: var(--line); }
+.tper-r1 .nowc { flex: none; font-size: 12px; font-weight: 700; color: var(--attn); }
+.tper-env { flex: none; font-size: 12px; color: var(--muted); }
+.tper-chev { flex: none; color: var(--muted); display: grid; place-items: center; transition: transform .18s ease; }
+.tper-chev .ic { width: 15px; height: 15px; }
+.tper-h[aria-expanded="true"] .tper-chev { transform: rotate(-90deg); }
+.tper-strip { display: flex; gap: 3px; height: 7px; }
+.tper-strip i { flex: 1; border-radius: 2px; background: var(--surf3); }
+.tper-strip i[class] { background: var(--tc); }
+.tper-cta { font-size: 12.5px; font-weight: 700; color: var(--attn); }
+.tper-oldw { padding: 0 16px 12px; background: var(--surf2); }
+.tper.now .tper-oldw { background: var(--attn-w); }
 .tper-old { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surf); font-size: 12.5px; color: var(--ink); text-align: right; }
 .tper-old span { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tper-old .ic { width: 15px; height: 15px; color: var(--muted); flex: none; }
 
 .hr-row { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 5px 10px; border-top: 1px solid var(--line); }
 .hr-row.now { background: var(--attn-w); }
+.hr-row.later { opacity: .5; }
 .hr-t { flex: none; width: 46px; font: 700 12.5px var(--disp); color: var(--muted); text-align: center; white-space: nowrap; }
 .hr-row.now .hr-t { color: var(--ink); }
 .hr-slot { flex: 1; min-height: 44px; padding: 7px 12px; border-radius: 6px; border: 1px dashed var(--line); background: none; color: var(--muted); font-size: 13px; text-align: right; display: flex; align-items: center; gap: 8px; overflow: hidden; transition: background-color .14s ease; }

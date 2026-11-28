@@ -12,6 +12,7 @@ import {
   dayStatus, dayProgress, starSplit, dayNums, avgOf, baselineFor, compareTo, fmtDiff,
   suggestTimes, lastWith, readDuration, recentValues,
   fmtHour, hourSpan, hoursWord, fmtHours, timeByCat, sleepHourList, sleepHoursSplit,
+  firstCatHour, lastCatBefore, timeBaseline, periodFold, timeCatUsage, sortTimeCats,
   goalRange, goalTimeProgress, evalGoal, goalsSummary, goalDigestLines,
   DEFAULT_LIFE_AREAS, TODAY_TASK_LIMIT, activeLifeAreas, lifeAreaMap, isBacklogGoal, backlogAgeText, periodReviewState,
   itemKind, itemStatus, hasGoalTarget, fmtRemTime, todayOpenTasks, canAddTodayTask, systemState, activeHabitGroups, dueReminders,
@@ -1002,4 +1003,64 @@ test('الأهداف بقياس (ساعات إنجليزي، كتاب، كورس
   assert.equal(r2.some((x) => x.key === 'habit:hifz'), false); // اتسجلت فمايتبعتش تاني
   const r3 = dueReminders({ settings, day: {}, tasks: [], today: '2026-11-26', nowHHMM: '06:05' });
   assert.equal(r3.some((x) => x.key === 'habit:hifz'), true);
+});
+
+test('تاب الوقت: أول ساعة شغل، وكمّل اللي قبلها، وعادتك، وقفل الفترات', () => {
+  const d = { hrs: { 6: { c: 'sleep', auto: 1 }, 9: { c: 'move' }, 11: { c: 'work' }, 12: { c: 'work' }, 2: { c: 'work' } } };
+  // أول شغل بترتيب اليوم (من ٤ الفجر)، مش أصغر رقم: ١١ مش ٢ بالليل
+  assert.equal(firstCatHour(d, 'work'), 11);
+  assert.equal(firstCatHour(d, 'learn'), null);
+  assert.equal(firstCatHour({}, 'work'), null);
+  // كمّل: آخر ساعة متسجلة قبل الساعة دي، والنوم مابيتحسبش
+  assert.deepEqual(lastCatBefore(d, 14), { h: 12, c: 'work' });
+  assert.deepEqual(lastCatBefore(d, 10), { h: 9, c: 'move' });
+  assert.equal(lastCatBefore(d, 8), null); // اللي قبلها نوم بس
+  assert.deepEqual(lastCatBefore(d, 3), { h: 2, c: 'work' }); // بعد نص الليل لسه نفس اليوم
+
+  // عادتك من آخر ٧ أيام: اليوم بيدخل لو فيه ٤ ساعات غير النوم
+  const full = (first, distract) => {
+    const hrs = { 5: { c: 'sleep' } };
+    for (let h = first; h < first + 4; h += 1) hrs[h] = { c: 'work' };
+    for (let i = 0; i < distract; i += 1) hrs[20 + i] = { c: 'distract' };
+    return { hrs };
+  };
+  const days = [
+    { key: '2026-11-25', data: full(10, 1) },
+    { key: '2026-11-26', data: full(11, 3) },
+    { key: '2026-11-27', data: full(9, 2) },
+    { key: '2026-11-24', data: { hrs: { 16: { c: 'work' } } } }, // ساعة واحدة: مابتدخلش متوسط المجالات
+  ];
+  const b = timeBaseline(days, '2026-11-28');
+  assert.equal(b.n, 3);
+  assert.equal(b.by.distract, 2);
+  assert.equal(b.by.work, 4);
+  assert.equal(b.firstWork, 10); // وسيط ٩ و١٠ و١١ و١٦
+  // اليوم نفسه مابيدخلش، وأقل من ٣ أيام = لسه بدري نقارن
+  const few = timeBaseline(days.slice(0, 2), '2026-11-28');
+  assert.equal(few.by, null);
+  assert.equal(few.firstWork, null);
+  assert.equal(timeBaseline(days, '2026-11-26').by, null);
+
+  // قفل الفترات
+  assert.deepEqual(periodFold('now', 0, 5), { open: true, kind: 'now' });
+  assert.deepEqual(periodFold('future', 0, 4), { open: false, kind: 'future' });
+  assert.deepEqual(periodFold('past', 8, 8), { open: false, kind: 'full' });
+  assert.deepEqual(periodFold('past', 3, 8), { open: true, kind: 'gaps' });
+  assert.deepEqual(periodFold('past', 0, 8), { open: false, kind: 'empty' });
+});
+
+test('تاب الوقت: المجالات بتترتب بالأكتر استخدام (بإيدك، آخر ٣٠ يوم، من غير النهارده)', () => {
+  const days = [
+    { key: '2026-11-27', data: { hrs: { 9: { c: 'work' }, 10: { c: 'work' }, 20: { c: 'distract' }, 1: { c: 'sleep', auto: 1 }, 2: { c: 'sleep', auto: 1 } } } },
+    { key: '2026-11-26', data: { hrs: { 9: { c: 'work' }, 18: { c: 'learn' }, 19: { c: 'learn' }, 8: { c: 'move' } } } },
+    { key: '2026-11-28', data: { hrs: { 8: { c: 'move' }, 9: { c: 'move' }, 10: { c: 'move' } } } }, // النهارده: مابيتحسبش
+    { key: '2026-10-01', data: { hrs: { 8: { c: 'move' }, 9: { c: 'move' }, 10: { c: 'move' } } } }, // أقدم من ٣٠ يوم
+    { key: '2026-11-25', data: { hrs: { 7: { c: '', t: 'ملاحظة من غير مجال' } } } },
+  ];
+  const use = timeCatUsage(days, '2026-11-28');
+  assert.deepEqual(use, { work: 3, distract: 1, learn: 2, move: 1 }); // النوم auto مابيدخلش
+  const cats = ['sleep', 'work', 'learn', 'move', 'health', 'distract'].map((id) => ({ id }));
+  // الأكتر الأول، واللي بنفس العدد بترتيب الإعدادات (move قبل distract)، واللي ماستخدمتهوش في الآخر
+  assert.deepEqual(sortTimeCats(cats, use).map((c) => c.id), ['work', 'learn', 'move', 'distract', 'sleep', 'health']);
+  assert.deepEqual(sortTimeCats(cats, {}).map((c) => c.id), cats.map((c) => c.id)); // من غير بيانات: زي الإعدادات
 });

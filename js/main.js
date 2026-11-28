@@ -12,8 +12,8 @@ import { askPersist, getDoc } from './db.js';
 import {
   addDays, cycleTri, rateTap, rateSet, readNumber, readDuration, toEn, parseExpense, guessExpCat, fmtNum, missingStars,
   lineTarget, mergeLine, uid, newPeriod, periodOf, periodLabel, AREAS, INC_CATS, STAR_DUE,
-  weekKeys, satWeekKeys, dayStatus, dayProgress, baselineFor, starSplit,
-  hourSpan, sleepHoursSplit, fmtHour, fmtHours, togglePrayer, setPrayerScore, activeHabits, activeHabitGroups, activeTimeCats,
+  weekKeys, satWeekKeys, dayStatus, dayProgress, baselineFor, timeBaseline, timeCatUsage, starSplit,
+  hourSpan, sleepHoursSplit, fmtHour, fmtHours, togglePrayer, setPrayerScore, activeHabits, activeHabitGroups, activeTimeCats, allTimeCatMap,
   activeLifeAreas, isBacklogGoal, periodReviewState,
   TODAY_TASK_LIMIT, itemKind, itemStatus, hasGoalTarget, canAddTodayTask, systemState,
   HABIT_NUMS, goalRange, goalsSummary, evalPeriodGoal,
@@ -62,14 +62,32 @@ const ui = {
   prayPick: null,
   closeOpen: false,
   month: null, monthStatus: {},
-  tbrush: 'work', tperiod: 'all', hf: null,
+  tbrush: 'work', topen: null, hf: null,
 };
 
 // كاش لكل الأيام عشان حساب الأهداف والمشروع الشغّال يشتغل فوراً
 let daysCache = [];
+let daysLoaded = false;
 async function refreshDaysCache() {
   daysCache = await allDays();
+  daysLoaded = true;
   render();
+}
+
+// ترتيب مجالات الوقت بالأكتر استخدام. آخر عدّ بيتحفظ على الجهاز، عشان أول ما التطبيق يفتح
+// (قبل ما الأيام تتحمّل) المجالات ماتتنقلش من مكانها قدامك.
+const TCAT_USE_KEY = 'waraqa.tcatUse';
+let tcatUseSaved = null;
+try { tcatUseSaved = JSON.parse(localStorage.getItem(TCAT_USE_KEY) || 'null'); } catch { tcatUseSaved = null; }
+function tcatUse() {
+  if (!daysLoaded) return tcatUseSaved || {};
+  const use = timeCatUsage(daysCache, state.today);
+  const str = JSON.stringify(use);
+  if (str !== JSON.stringify(tcatUseSaved)) {
+    tcatUseSaved = use;
+    try { localStorage.setItem(TCAT_USE_KEY, str); } catch { /* التخزين مقفول: الترتيب بيتحسب تاني المرة الجاية */ }
+  }
+  return use;
 }
 function allDaysSync() {
   const out = daysCache.filter((d) => d.key !== state.cur);
@@ -83,7 +101,7 @@ function sysNow() {
 }
 
 // ---------- الأيام اللي حوالين اليوم المفتوح ----------
-const win = { cur: null, today: null, days: new Map() };
+const win = { cur: null, today: null, days: new Map(), ready: false };
 async function loadWindow() {
   const want = new Set([...satWeekKeys(state.cur), ...weekKeys(state.today), ...weekKeys(addDays(state.cur, -1))]);
   want.delete(state.cur);
@@ -91,12 +109,14 @@ async function loadWindow() {
   const docs = await Promise.all([...want].map(async (k) => [k, (await getDoc(`day/${k}`))?.data || null]));
   if (`${state.cur}|${state.today}` !== at) return;
   win.days = new Map(docs.filter(([, d]) => d));
+  win.ready = true;
   render();
 }
 function winCtx() {
   if (win.cur !== state.cur || win.today !== state.today) {
     win.cur = state.cur;
     win.today = state.today;
+    win.ready = false;
     loadWindow();
   }
   const days = [...win.days].map(([key, data]) => ({ key, data }));
@@ -108,6 +128,8 @@ function winCtx() {
   }
   const base = {};
   for (const m of ['sleep', 'screen', 'work', 'spend']) base[m] = baselineFor(days, state.cur, m);
+  // عادتك في الوقت: undefined لحد ما الأيام اللي فاتت تتحمّل، عشان مانقولش "لسه بدري نقارن" وهي مش صح
+  const tbase = state.tab === 'time' && win.ready ? timeBaseline(days, state.cur, state.settings) : undefined;
   const curPeriod = periodOf(state.periods, state.cur);
   const periodEv = curPeriod
     ? evalPeriodGoal(curPeriod, { days: allDaysSync(), metrics: state.metrics, today: state.today, settings: state.settings })
@@ -116,7 +138,7 @@ function winCtx() {
   const review = periodReviewState(state.periods, state.goals, state.today);
   const sys = sysNow();
   return {
-    status, pct, base, hour: new Date().getHours(), sys, gsum: sys.gsum, curPeriod, periodEv, prevNextp, review,
+    status, pct, base, tbase, tusage: state.tab === 'time' ? tcatUse() : null, hour: new Date().getHours(), sys, gsum: sys.gsum, curPeriod, periodEv, prevNextp, review,
     prayPick: ui.prayPick, closeOpen: ui.closeOpen,
   };
 }
@@ -132,6 +154,15 @@ const TABS = {
   money: { shell: moneyShell, update: (v) => updateMoney(v, state, ui, allDays) },
 };
 let shown = null;
+
+// الصفوف اللي بتتسحب لجنب بتفضل مكانها بعد إعادة الرسم (من غيرها بترجع لأولها مع كل لمسة)
+const keepScroll = (view) => $$('[data-keep-scroll]', view).map((el) => [el.dataset.keepScroll, el.scrollLeft]);
+function restoreScroll(view, keep) {
+  for (const [k, x] of keep) {
+    const el = view.querySelector(`[data-keep-scroll="${k}"]`);
+    if (el && el.scrollLeft !== x) el.scrollLeft = x;
+  }
+}
 
 function render() {
   const ctx = winCtx();
@@ -150,15 +181,17 @@ function render() {
     }
     tab.update(view);
   } else if (state.tab === 'time') {
+    const entering = shown !== 'time';
+    const keep = keepScroll(view);
     setHtml(view, renderTime(state, ui, ctx));
+    restoreScroll(view, keep);
+    // أول ما تفتح التاب: المجال المختار يبان في الصف حتى لو كان في آخره
+    if (entering) view.querySelector('.tbrush .bchip[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     shown = 'time';
   } else {
-    const keep = $$('[data-keep-scroll]', view).map((el) => [el.dataset.keepScroll, el.scrollLeft]);
+    const keep = keepScroll(view);
     setHtml(view, renderToday(state, ctx));
-    for (const [k, x] of keep) {
-      const el = view.querySelector(`[data-keep-scroll="${k}"]`);
-      if (el && el.scrollLeft !== x) el.scrollLeft = x;
-    }
+    restoreScroll(view, keep);
     const li = view.querySelector('[data-role="linein"]');
     if (li && li !== document.activeElement && ui.drafts.linein) li.value = ui.drafts.linein;
     shown = 'day';
@@ -1160,10 +1193,19 @@ function paintHour(hStr) {
   }
   saveHrs(next);
 }
+/** «كمّل» أو «سجّل» من كارت الساعة دي: الساعة الحالية تاخد المجال ده، ومعاه «رجّع». */
+function paintNow(hStr, c) {
+  const cat = allTimeCatMap(state.settings).get(c);
+  if (!cat) return;
+  const before = structuredClone(state.day.hrs || {});
+  const prev = before[hStr];
+  saveHrs({ ...before, [hStr]: prev?.t ? { c, t: prev.t } : { c } });
+  toast(`الساعة ${fmtHour(+hStr)}: ${cat.name}`, 'رجّع', () => saveHrs(before));
+}
 function openHourEdit(h) {
   const prev = state.day.hrs?.[String(h)];
   ui.hf = { h, c: prev?.c || (ui.tbrush !== 'clear' ? ui.tbrush : 'work'), t: prev?.t || '', span: 1 };
-  openSheet({ ...hourSheet(h, ui.hf, state), onClose: () => { ui.hf = null; } });
+  openSheet({ ...hourSheet(h, ui.hf, state, tcatUse()), onClose: () => { ui.hf = null; } });
   updateHourSheet(sheetEl(), ui.hf, state);
   afterOpen();
 }
@@ -1943,9 +1985,12 @@ document.addEventListener('click', async (e) => {
     case 'tbrush':
       ui.tbrush = b.dataset.c;
       return render();
-    case 'tperiod':
-      ui.tperiod = b.dataset.v;
+    case 'tptog': {
+      // فتح/قفل فترة بإيدك: بيغلب القاعدة لحد ما تغيّر اليوم المفتوح
+      ui.topen = { [state.cur]: { ...(ui.topen?.[state.cur] || {}), [b.dataset.p]: b.getAttribute('aria-expanded') !== 'true' } };
       return render();
+    }
+    case 'hnow': return paintNow(b.dataset.h, b.dataset.c);
     case 'fillsleep': return fillSleepHours();
     case 'hset': return paintHour(b.dataset.h);
     case 'hedit': return openHourEdit(+b.dataset.h);

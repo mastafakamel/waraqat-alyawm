@@ -15,7 +15,7 @@ export const state = {
   periods: [], // الفترات: { id, name?, from, to, goal?, note? }
   goals: [], // الأهداف
   settings: normalizeSettings(), // الإعدادات القابلة للتخصيص (list/settings)
-  tab: 'day',
+  tab: 'time', // التطبيق بيفتح على «الوقت»: أهم حاجة بتتسجل
   status: 'loading', // loading | saving | saved | memory
   sync: 'off', // off | signedout | busy | ok | offline | error | capped (sync.js)
   aiBusy: null, // 'day' أو 'week' وإحنا مستنيين تقرير الذكاء الاصطناعي (مابيتحفظش)

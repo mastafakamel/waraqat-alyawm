@@ -690,6 +690,99 @@ export function timeByCat(day = {}, settings) {
   return { total, by, rows };
 }
 
+/** أول ساعة في اليوم المنطقي متسجلة بمجال معيّن (افتراضياً الشغل)، أو null. */
+export function firstCatHour(day = {}, cat = 'work', dayStart = DAY_START) {
+  const hrs = day?.hrs;
+  if (!hrs || typeof hrs !== 'object') return null;
+  for (const h of dayHoursFor(dayStart)) if (hrs[String(h)]?.c === cat) return h;
+  return null;
+}
+
+/** آخر ساعة متسجلة قبل hour (غير النوم) في نفس اليوم المنطقي: { h, c } أو null. ده اللي "كمّل" بيكمّله. */
+export function lastCatBefore(day = {}, hour, dayStart = DAY_START) {
+  const hrs = day?.hrs;
+  if (!hrs || typeof hrs !== 'object') return null;
+  const order = dayHoursFor(dayStart);
+  const i = order.indexOf(((+hour % 24) + 24) % 24);
+  for (let j = i - 1; j >= 0; j -= 1) {
+    const c = hrs[String(order[j])]?.c;
+    if (c && c !== 'sleep') return { h: order[j], c };
+  }
+  return null;
+}
+
+/**
+ * "عادتك" في الوقت من آخر ٧ أيام قبل key:
+ * - by: متوسط ساعات كل مجال. اليوم بيدخل لو فيه ٤ ساعات متسجلة أو أكتر غير النوم،
+ *   عشان يوم فيه ساعة واحدة مايتحسبش "صفر تشتيت". أقل من min أيام: null.
+ * - firstWork: وسيط أول ساعة شغل في الأيام اللي فيها شغل. أقل من min أيام: null.
+ */
+export function timeBaseline(days, key, settings, min = 3) {
+  const cfg = normalizeSettings(settings);
+  const order = dayHoursFor(cfg.dayStart);
+  const byKey = new Map((days || []).map((x) => [x.key, x.data || {}]));
+  const counted = [];
+  const firsts = [];
+  for (const k of weekKeys(addDays(key, -1))) {
+    const d = byKey.get(k);
+    if (!d) continue;
+    const tb = timeByCat(d, cfg);
+    if (tb.total - (tb.by.sleep || 0) >= 4) counted.push(tb.by);
+    const fw = firstCatHour(d, 'work', cfg.dayStart);
+    if (fw != null) firsts.push(order.indexOf(fw));
+  }
+  let by = null;
+  if (counted.length >= min) {
+    by = {};
+    for (const id of new Set(counted.flatMap((x) => Object.keys(x)))) {
+      by[id] = counted.reduce((a, x) => a + (x[id] || 0), 0) / counted.length;
+    }
+  }
+  let firstWork = null;
+  if (firsts.length >= min) {
+    const s = [...firsts].sort((a, b) => a - b);
+    firstWork = order[s[Math.floor((s.length - 1) / 2)]];
+  }
+  return { by, n: counted.length, firstWork };
+}
+
+/**
+ * كام ساعة سجّلتها بإيدك في كل مجال في آخر n يوم قبل key (من غير اليوم نفسه،
+ * عشان الترتيب مايتغيّرش تحت صباعك وإنت بتسجّل). الساعات اللي اتملت لوحدها (auto، زي النوم) مابتتحسبش.
+ */
+export function timeCatUsage(days, key, n = 30) {
+  const keys = new Set(weekKeys(addDays(key, -1), n));
+  const use = {};
+  for (const x of days || []) {
+    const hrs = x?.data?.hrs;
+    if (!keys.has(x.key) || !hrs || typeof hrs !== 'object') continue;
+    for (const e of Object.values(hrs)) {
+      if (e?.c && !e.auto) use[e.c] = (use[e.c] || 0) + 1;
+    }
+  }
+  return use;
+}
+
+/** المجالات من الأكتر استخدام للأقل. واللي ليهم نفس العدد بيفضلوا بترتيب الإعدادات. */
+export function sortTimeCats(cats, usage = {}) {
+  return (cats || [])
+    .map((c, i) => [c, i])
+    .sort(([a, i], [b, j]) => (usage[b.id] || 0) - (usage[a.id] || 0) || i - j)
+    .map(([c]) => c);
+}
+
+/**
+ * الفترة في تاب الوقت تتقفل ولا تفضل مفتوحة:
+ * الحالية مفتوحة دايماً، واللي عدّت وفيها فجوات مفتوحة، واللي اتملت أو لسه ماجتش أو عدّت فاضية خالص بتتقفل.
+ */
+export function periodFold(phase, filled, total) {
+  if (phase === 'now') return { open: true, kind: 'now' };
+  if (phase === 'future') return { open: false, kind: 'future' };
+  if (filled >= total) return { open: false, kind: 'full' };
+  if (filled === 0) return { open: false, kind: 'empty' };
+  return { open: true, kind: 'gaps' };
+}
+
 /** الساعات الخام اللي اتنام فيها من sleep و wake. */
 export function sleepHourList(sleep, wake) {
   const s = mins(sleep);
