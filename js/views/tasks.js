@@ -99,7 +99,7 @@ export function updateTasks(root, s, ui) {
   const out = root.querySelector('[data-out="tasks"]');
   if (!s.tasks.length) {
     setHtml(out, `<div class="empty"><b>مفيش مهام لسه</b>
-      <p>اكتب أول مهمة فوق. والمهام اللي بتكتبها من شريط التسجيل السريع بتيجي هنا للنهارده.</p></div>`);
+      <p>اكتب أول مهمة فوق، ومهام النهارده هتبان كمان في سطر «خطتك» في تبويبة اليوم.</p></div>`);
     return;
   }
   const goalMap = new Map((s.goals || []).map((g) => [String(g.id), g]));

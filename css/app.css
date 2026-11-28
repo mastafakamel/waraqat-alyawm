@@ -441,6 +441,30 @@ button.v-row:active { background: var(--surf); }
 #view[data-tab="day"] > .panel.pblock,
 #view[data-tab="day"] > .panel.hunified,
 #view[data-tab="day"] > .panel.eod-card { background: none; border: 0; box-shadow: none; padding-inline: 0; }
+
+/* ---------- نفس درجة السواد في كل التبويبات: صندوق واحد لأهم حاجة، والباقي على الخلفية ---------- */
+/* الأزرار والخانات اللي جوه بتفضل بخلفيتها، عشان يبان إنها بتتداس */
+/* الوقت: كارت «الساعة دي» هو الصندوق الوحيد. والفترات بقت أقسام بينها خط */
+#view[data-tab="time"] > .panel.tbrush,
+#view[data-tab="time"] > .panel.tper { background: none; border: 0; box-shadow: none; border-radius: 0; }
+#view[data-tab="time"] > .panel.tbrush { padding-inline: 0; }
+#view[data-tab="time"] > .panel.tper { border-top: 1px solid var(--line); }
+#view[data-tab="time"] .tper-h,
+#view[data-tab="time"] .tper-oldw { background: none; padding-inline: 2px; }
+#view[data-tab="time"] .hr-row { padding-inline: 0; }
+/* الخطة: كارت المشروع الشغّال هو الصندوق الوحيد */
+#view[data-tab="tasks"] > .list,
+#view[data-tab="tasks"] > .panel.hab-overview { background: none; border: 0; box-shadow: none; border-radius: 0; }
+#view[data-tab="tasks"] > .panel.hab-overview { padding-inline: 0; }
+/* الأفكار: الأفكار سطور بينها خط، والمثبتة بس هي اللي ليها صندوق */
+#view[data-tab="ideas"] > .panel.addform { background: none; border: 0; box-shadow: none; padding-inline: 0; }
+#view[data-tab="ideas"] .idea:not(.pin) { background: none; border: 0; border-top: 1px solid var(--line); border-radius: 0; padding-inline: 2px 0; }
+#view[data-tab="ideas"] .sec + .idea:not(.pin) { border-top: 0; }
+/* الفلوس: «صرفت كام» هو الصندوق الوحيد */
+#view[data-tab="money"] > .panel.addform,
+#view[data-tab="money"] > .sum { background: none; border: 0; box-shadow: none; border-radius: 0; padding-inline: 0; }
+#view[data-tab="money"] > .panel.addform + .panel.addform,
+#view[data-tab="money"] > .sum { border-top: 1px solid var(--line); padding-top: 14px; }
 /* وإنت بتكتب: التبويبات بتختفي والشريط بيقعد فوق الكيبورد على طول */
 html.typing .tabs { display: none; }
 html.typing .dock { bottom: var(--kb, 0px); }

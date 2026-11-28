@@ -42,7 +42,7 @@ export function updateIdeas(root, s, ui) {
   if (!s.ideas.length) {
     setHtml(fbox, '');
     setHtml(out, `<div class="empty"><b>مفيش أفكار لسه</b>
-      <p>أي فكرة تيجي في بالك اكتبها فوق، أو من شريط التسجيل السريع في تبويبة اليوم.</p></div>`);
+      <p>أي فكرة تيجي في بالك اكتبها فوق، وهتتحفظ هنا.</p></div>`);
     return;
   }
 
