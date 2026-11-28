@@ -99,31 +99,35 @@ svg { display: block; }
 .app { max-width: 540px; margin: 0 auto; padding: calc(var(--sat) + 14px) 16px calc(var(--sab) + 84px + var(--dock-h, 0px)); }
 
 /* ---------- الهيدر المعماري (سطر الأسبوع ← التاريخ الكبير ← حلقات السبت للجمعة) ---------- */
-.top { padding: 0 0 12px; border-bottom: 1px solid var(--line); }
-.top-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.wk-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: -6px 0; padding: 0 2px; border: 0; background: none; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.top { padding: 0 0 8px; border-bottom: 1px solid var(--line); }
+/* سطر صغير تحت التاريخ: الأسبوع والفترة على اليمين، وحالة الحفظ على الطرف التاني */
+.top-meta { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.top-meta .saved { margin-inline-start: auto; flex: none; }
+.top-meta .pday-btn { flex: 0 1 auto; min-width: 0; align-self: auto; margin: -10px 0; }
+.wk-pill { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: -10px 0; padding: 0 2px; border: 0; background: none; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
 .wk-pill b { color: var(--attn); font-weight: 700; }
-.top-hero { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 2px; }
+.top-hero { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .top-dt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.date { margin: 0; font: 700 clamp(20px, 5.4vw, 23px)/1.25 var(--disp); white-space: nowrap; overflow: hidden; letter-spacing: -.015em; }
+.date { margin: 0; font: 700 clamp(18px, 5vw, 20px)/1.25 var(--disp); white-space: nowrap; overflow: hidden; letter-spacing: -.015em; }
 .dateb { display: flex; align-items: center; max-width: 100%; min-height: 44px; padding: 0; margin: -4px 0 -6px; border: 0; background: none; font: inherit; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pday { font-size: 12.5px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wk-navs { flex: none; display: flex; gap: 6px; }
-.wk-nav { width: 44px; height: 44px; border-radius: 6px; border: 1px solid var(--line); background: var(--surf); box-shadow: var(--sheen); color: var(--muted); display: grid; place-items: center; transition: background-color .14s ease, color .14s ease; }
+.wk-navs { flex: none; display: flex; gap: 0; margin-inline-end: -10px; }
+/* الهيدر أخف: الأسهم والأيام من غير صناديق، واليوم المفتوح بس هو اللي ليه إطار */
+.wk-nav { width: 44px; height: 44px; border-radius: 6px; border: 0; background: none; color: var(--muted); display: grid; place-items: center; transition: background-color .14s ease, color .14s ease; }
 .wk-nav:active { color: var(--ink); background: var(--surf2); }
 .wk-nav .ic { width: 16px; height: 16px; }
 .navb { flex: none; width: 44px; height: 44px; border-radius: 6px; border: 1px solid var(--line); background: var(--surf); box-shadow: var(--sheen); display: grid; place-items: center; }
 /* شريط الأسبوع الثابت: مستطيلات متساوية السبت←الجمعة بشريط إنجاز مستقيم تحت كل يوم (بدون دوائر) */
-.wk { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin: 10px 0 0; }
-.wd { min-height: 54px; border: 1px solid var(--line); border-radius: 6px; background: none; display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 3px; padding: 6px 4px 5px; transition: background-color .14s ease, border-color .14s ease; }
-.wd .l { font-size: 11.5px; color: var(--muted); line-height: 1; }
+.wk { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin: 6px 0 0; }
+.wd { min-height: 44px; border: 1px solid transparent; border-radius: 6px; background: none; display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 2px; padding: 4px 4px 4px; transition: background-color .14s ease, border-color .14s ease; }
+.wd .l { font-size: 12px; color: var(--muted); line-height: 1; }
 .wd .n { font: 700 13.5px/1.1 var(--disp); color: var(--ink); }
 .wd-bar { width: 100%; height: 3px; border-radius: 2px; background: var(--surf2); overflow: hidden; }
 .wd-bar i { display: block; height: 100%; border-radius: 2px; background: var(--attn); transition: width .22s ease; }
 .wd-bar.full i { background: var(--done); }
-.wd.done-pill { background: var(--done-w); border-color: rgba(91, 192, 156, .28); }
-.wd.is-today { background: var(--surf); border-color: var(--line2); }
-.wd.sel { border: 1.5px solid var(--pri); background: var(--surf2); box-shadow: var(--sheen); }
+.wd.done-pill { background: var(--done-w); }
+.wd.is-today .l { color: var(--attn); font-weight: 700; }
+.wd.sel { border: 1.5px solid var(--pri); background: var(--surf2); }
 .wd.sel .l { color: var(--ink); font-weight: 700; }
 .wd.fut { opacity: .45; }
 .away { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; min-height: 48px; padding: 0 4px; padding-inline-start: 12px; border-radius: 6px; background: var(--attn-w); font-size: 13.5px; font-weight: 600; }
@@ -385,6 +389,56 @@ input[type="search"].fld { -webkit-appearance: none; appearance: none; }
 .qhint:empty { display: none; }
 .qhint b { color: var(--money); }
 .qhint.err { color: var(--attn); font-weight: 600; }
+/* زرار "+ سجّل" العايم في «اليوم»: بيسأل على الـ ٥ الأساسيين الناقصين بس، والرقم = كام فاضل */
+.qfab { position: fixed; z-index: 5; bottom: calc(var(--sab) + 73px); inset-inline-end: max(16px, calc((100vw - 540px) / 2 + 16px)); display: inline-flex; align-items: center; gap: 6px; height: 48px; padding-inline: 14px 18px; border: 0; border-radius: 6px; background: var(--pri); color: var(--on-pri); font: 700 15px var(--sans); box-shadow: 0 6px 18px rgba(0, 0, 0, .3); }
+.qfab .ic { width: 18px; height: 18px; stroke-width: 2.2; }
+.qfab-n { min-width: 22px; height: 22px; padding: 0 6px; margin-inline-start: 2px; border-radius: 11px; background: var(--attn); color: var(--on-amber); font: 700 12px/22px var(--disp); text-align: center; }
+.qfab-n:empty { display: none; }
+.qfab[hidden], html.typing .qfab { display: none; }
+html.has-fab .app { padding-bottom: calc(var(--sab) + 148px); }
+
+/* ---------- تبويبة «اليوم»: حكم اليوم هو الصندوق الوحيد، والباقي سطور على الخلفية ---------- */
+/* مقاسات الخط هنا ٤ بس: ١٧ القيمة والجملة، ١٥ الأسماء، ١٣ المرجع، ١٢ الحكم */
+.v-hero { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.v-big { margin: 0; display: flex; flex-direction: column; gap: 4px; font: 600 17px/1.55 var(--sans); color: var(--ink); text-wrap: balance; }
+.v-lbl { font: 600 12px/1.4 var(--sans); color: var(--muted); }
+.v-lbl.warn { color: var(--attn); }
+.v-counts { display: flex; flex-wrap: wrap; gap: 6px 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.v-cnt { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.v-cnt b { font: 700 15px/1 var(--disp); color: var(--ink); }
+.v-cnt i { flex: none; width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; }
+.v-cnt.ok i { background: var(--done); }
+.v-cnt.warn i { background: var(--attn); }
+.v-cnt.wait i { border: 1.5px dashed var(--muted); }
+.v-cnt.none i { border: 1.5px solid var(--muted); }
+
+.v-list { display: flex; flex-direction: column; margin-top: -4px; }
+.v-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px 12px; min-height: 60px; padding: 9px 2px; border: 0; border-top: 1px solid var(--line); background: none; color: var(--ink); font: inherit; text-align: right; transition: background-color .14s ease; }
+.v-list > .v-row:first-child { border-top: 0; }
+button.v-row:active { background: var(--surf); }
+.v-n { font-size: 15px; font-weight: 600; }
+.v-v { justify-self: end; font: 700 17px/1.25 var(--disp); white-space: nowrap; }
+.v-v small { font: 500 12px var(--sans); color: var(--muted); }
+.v-v.txt { max-width: 15em; font: 500 13px/1.4 var(--sans); overflow: hidden; text-overflow: ellipsis; }
+.v-ref { min-width: 0; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v-tag { justify-self: end; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.v-tag.ok { color: var(--done); background: var(--done-w); }
+.v-tag.warn { color: var(--attn); background: var(--attn-w); }
+.v-tag.wait { color: var(--muted); background: var(--surf2); font-weight: 600; }
+.v-tag.none { color: var(--muted); border: 1px dashed var(--line2); font-weight: 600; }
+.v-row.x { min-height: 54px; }
+.v-add { justify-self: end; display: inline-flex; align-items: center; gap: 4px; min-height: 44px; margin: -8px 0; padding: 0 2px; border: 0; background: none; color: var(--ink); font-size: 13px; font-weight: 700; }
+.v-add .ic { width: 15px; height: 15px; }
+.v-foot { display: flex; align-items: center; gap: 10px; padding: 8px 2px 0; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.v-foot .tstack { flex: 1; }
+.v-go { flex: none; display: inline-flex; align-items: center; gap: 3px; min-height: 44px; margin: -6px 0; padding: 0; border: 0; background: none; color: var(--ink); font-size: 13px; font-weight: 700; }
+.v-go .ic { width: 15px; height: 15px; }
+/* فاصل بين "أنا فين؟" و"سجّل": مسافة أكبر وخط، من غير عنوان زيادة */
+.v-hr { width: 100%; margin: 14px 0 4px; border: 0; border-top: 1px solid var(--line2); }
+/* أقسام التسجيل في «اليوم» من غير الصندوق اللي برّه (الأزرار جوه هي اللي ليها خلفية) */
+#view[data-tab="day"] > .panel.pblock,
+#view[data-tab="day"] > .panel.hunified,
+#view[data-tab="day"] > .panel.eod-card { background: none; border: 0; box-shadow: none; padding-inline: 0; }
 /* وإنت بتكتب: التبويبات بتختفي والشريط بيقعد فوق الكيبورد على طول */
 html.typing .tabs { display: none; }
 html.typing .dock { bottom: var(--kb, 0px); }
@@ -698,12 +752,6 @@ h3.blk-h { display: block; }
 .tn-en { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .tn-en > span { flex: 1; font-size: 12.5px; font-weight: 500; color: var(--muted); }
 .tn-en .ps { background: var(--surf); border-color: var(--line); }
-
-/* ملخص اليوم: الشغل من الهدف، والتشتيت وأول شغل مقارنين بعادتك */
-.tday { padding: 0; overflow: hidden; }
-.tday .pm-sub3 { border-top: 0; }
-.tday .tb-prog { padding: 10px 14px 12px; border-top: 1px solid var(--line); }
-.pm-v.warn { color: var(--attn); }
 
 .tbrush { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
 /* المجالات في صف واحد بيتسحب لجنب (جوه شاشة الساعة بتفضل سطور عادي) */

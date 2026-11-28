@@ -12,14 +12,14 @@ import { askPersist, getDoc } from './db.js';
 import {
   addDays, cycleTri, rateTap, rateSet, readNumber, readDuration, toEn, parseExpense, guessExpCat, fmtNum, missingStars,
   lineTarget, mergeLine, uid, newPeriod, periodOf, periodLabel, AREAS, INC_CATS, STAR_DUE,
-  weekKeys, satWeekKeys, dayStatus, dayProgress, baselineFor, timeBaseline, timeCatUsage, starSplit,
+  weekKeys, satWeekKeys, dayStatus, dayProgress, baselineFor, timeBaseline, dayBaselines, timeCatUsage, coreMissing, starSplit,
   hourSpan, sleepHoursSplit, fmtHour, fmtHours, togglePrayer, setPrayerScore, activeHabits, activeHabitGroups, activeTimeCats, allTimeCatMap,
   activeLifeAreas, isBacklogGoal, periodReviewState,
   TODAY_TASK_LIMIT, itemKind, itemStatus, hasGoalTarget, canAddTodayTask, systemState,
   HABIT_NUMS, goalRange, goalsSummary, evalPeriodGoal,
 } from './logic.js';
 import { monthSheet, updateMonth, shiftMonth } from './views/month.js';
-import { $, $$, esc, openSheet, requestClose, isSheetOpen, sheetEl, syncFields, toast, toastErr, setHtml } from './ui.js';
+import { $, $$, esc, ic, P, openSheet, requestClose, isSheetOpen, sheetEl, syncFields, toast, toastErr, setHtml } from './ui.js';
 import { renderHeader, updateStatus, renderToday, renderTabs } from './views/today.js';
 import { renderTime, hourSheet, updateHourSheet } from './views/time.js';
 import {
@@ -47,6 +47,7 @@ import {
 // حالة الواجهة بس (مش بتتحفظ)
 const ui = {
   cat: 'أكل', catManual: false, guide: null, qmode: 'filter', qmenu: false, qcat: 'أكل', qcatManual: false, qarea: 'work',
+
   inccat: INC_CATS[0],
   tpri: false, twhen: 'today', tdate: '', tcat: '', tgoal: '', tfilt: 'all',
   icat: 'تاني', ifilt: 'all', drafts: {},
@@ -128,8 +129,10 @@ function winCtx() {
   }
   const base = {};
   for (const m of ['sleep', 'screen', 'work', 'spend']) base[m] = baselineFor(days, state.cur, m);
-  // عادتك في الوقت: undefined لحد ما الأيام اللي فاتت تتحمّل، عشان مانقولش "لسه بدري نقارن" وهي مش صح
-  const tbase = state.tab === 'time' && win.ready ? timeBaseline(days, state.cur, state.settings) : undefined;
+  // حكم اليوم: "عادتك" بتتحسب بعد ما الأيام اللي فاتت تتحمّل (vReady)، عشان مانقولش "لسه بدري نقارن" وهي مش صح
+  const onDay = state.tab === 'day';
+  const tbase = onDay && win.ready ? timeBaseline(days, state.cur, state.settings) : undefined;
+  const hb = onDay && win.ready ? dayBaselines(days, state.cur, state.settings) : undefined;
   const curPeriod = periodOf(state.periods, state.cur);
   const periodEv = curPeriod
     ? evalPeriodGoal(curPeriod, { days: allDaysSync(), metrics: state.metrics, today: state.today, settings: state.settings })
@@ -137,8 +140,12 @@ function winCtx() {
   const prevNextp = (win.days.get(addDays(state.today, -1))?.nextp || '').trim();
   const review = periodReviewState(state.periods, state.goals, state.today);
   const sys = sysNow();
+  const tasksNow = {
+    open: sys.todayOpen?.list?.length || 0, done: (sys.todayDone || []).length, proj: sys.activeProject?.t || '',
+  };
   return {
-    status, pct, base, tbase, tusage: state.tab === 'time' ? tcatUse() : null, hour: new Date().getHours(), sys, gsum: sys.gsum, curPeriod, periodEv, prevNextp, review,
+    status, pct, base, tbase, hb, tasksNow, vReady: win.ready,
+    tusage: state.tab === 'time' ? tcatUse() : null, hour: new Date().getHours(), sys, gsum: sys.gsum, curPeriod, periodEv, prevNextp, review,
     prayPick: ui.prayPick, closeOpen: ui.closeOpen,
   };
 }
@@ -169,6 +176,7 @@ function render() {
   setHtml($('#top'), state.tab === 'tasks' ? planHeader(state) : renderHeader(state, ctx));
   updateStatus($('#top'), state);
   const view = $('#view');
+  view.dataset.tab = state.tab; // الـ CSS بيشيل صناديق «اليوم» من غير ما يلمس باقي التبويبات
   if (state.tab === 'tasks') {
     setHtml(view, renderPlan(state, ui, ctx.sys, ctx.review, ctx));
     shown = 'plan';
@@ -198,9 +206,19 @@ function render() {
   }
   syncFields(view, state.day);
   setHtml($('#tabs'), renderTabs(state));
+  // الشريط السريع اتشال من «اليوم» (٢٨ نوفمبر): زرار "+ سجّل" بيسأل على الـ ٥ الأساسيين الناقصين بس،
+  // والأفكار والمهام والفلوس بتتسجل من تبويباتهم
   const dock = $('#dock');
-  dock.hidden = state.tab !== 'day';
-  updateDock(dock, ui, state.cur !== state.today, state.settings);
+  dock.hidden = true;
+  const fab = $('#qfab');
+  const fabOn = state.tab === 'day';
+  if (fab) {
+    fab.hidden = !fabOn;
+    const n = fabOn ? coreMissing(state.day, state.settings).length : 0;
+    setHtml(fab.querySelector('[data-n]'), n ? fmtNum(n) : '');
+    fab.setAttribute('aria-label', n ? `سجّل الأساسي: فاضل ${fmtNum(n)} من ٥` : 'الأساسي متسجل كله');
+  }
+  document.documentElement.classList.toggle('has-fab', fabOn);
   const sh = sheetEl();
   if (sh) {
     syncFields(sh, state.day);
@@ -254,9 +272,10 @@ function handleOpenTarget(rawUrl) {
     window.scrollTo(0, 0);
     if (open === 'newtask') setTimeout(() => openFilterSheet({ kind: 'task', st: 'active' }), 60);
   } else if (open === 'quick') {
+    // اختصار "تسجيل سريع" من أيقونة التطبيق: نفس زرار "+ سجّل"
     state.tab = 'day';
     render();
-    setTimeout(() => $('[data-role="quickin"]')?.focus(), 60);
+    setTimeout(startCoreGuide, 60);
   } else if (open === 'day') {
     state.tab = 'day';
     render();
@@ -416,6 +435,13 @@ function startGuide(startKey) {
   ui.guide = { order: [...miss.slice(at), ...miss.slice(0, at)], i: 0 };
   showStep();
 }
+/** زرار "+ سجّل": الأساسيين اللي لسه ماتسجلوش بس (النوم، والعادات، والشغل، والمزاج، وأهم حاجة). */
+function startCoreGuide() {
+  const order = coreMissing(state.day, state.settings);
+  if (!order.length) return toast('الـ ٥ الأساسيين متسجلين ✓');
+  ui.guide = { order, i: 0, core: true };
+  return showStep();
+}
 function showStep() {
   const g = ui.guide;
   withHistory();
@@ -424,7 +450,9 @@ function showStep() {
     onClose: () => {
       ui.guide = null;
       render();
-      if (!missingStars(state.day, state.settings).length) toast('اليوم اتسجل كله');
+      if (g.core) {
+        if (!coreMissing(state.day, state.settings).length) toast('الـ ٥ الأساسيين اتسجلوا ✓');
+      } else if (!missingStars(state.day, state.settings).length) toast('اليوم اتسجل كله');
     },
   });
   afterOpen();
@@ -2035,6 +2063,7 @@ document.addEventListener('click', async (e) => {
       state.tab = b.dataset.tab;
       render();
       return window.scrollTo(0, 0);
+    case 'coreguide': return startCoreGuide();
     case 'cat':
       ui.cat = b.dataset.c;
       ui.catManual = true;
@@ -2708,6 +2737,8 @@ if ('serviceWorker' in navigator && !devHost) {
 
 // ---------- التشغيل ----------
 $('#dock').innerHTML = dockHtml();
+// زرار "+ سجّل" العايم في «اليوم»: بيسأل على الأساسيين الناقصين سؤال بسؤال، والرقم عليه = كام فاضل
+document.body.insertAdjacentHTML('beforeend', `<button class="qfab" id="qfab" type="button" data-act="coreguide" hidden>${ic(P.plus)}<span>سجّل</span><b class="qfab-n" data-n></b></button>`);
 (async () => {
   await askPersist();
   await loadLists();

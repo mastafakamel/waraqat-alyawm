@@ -12,7 +12,8 @@ import {
   dayStatus, dayProgress, starSplit, dayNums, avgOf, baselineFor, compareTo, fmtDiff,
   suggestTimes, lastWith, readDuration, recentValues,
   fmtHour, hourSpan, hoursWord, fmtHours, timeByCat, sleepHourList, sleepHoursSplit,
-  firstCatHour, lastCatBefore, timeBaseline, periodFold, timeCatUsage, sortTimeCats,
+  firstCatHour, lastCatBefore, timeBaseline, periodFold, timeCatUsage, sortTimeCats, durAr, dayBaselines, dayVerdict,
+  CORE_KEYS, coreMissing,
   goalRange, goalTimeProgress, evalGoal, goalsSummary, goalDigestLines,
   DEFAULT_LIFE_AREAS, TODAY_TASK_LIMIT, activeLifeAreas, lifeAreaMap, isBacklogGoal, backlogAgeText, periodReviewState,
   itemKind, itemStatus, hasGoalTarget, fmtRemTime, todayOpenTasks, canAddTodayTask, systemState, activeHabitGroups, dueReminders,
@@ -1063,4 +1064,93 @@ test('تاب الوقت: المجالات بتترتب بالأكتر استخد
   // الأكتر الأول، واللي بنفس العدد بترتيب الإعدادات (move قبل distract)، واللي ماستخدمتهوش في الآخر
   assert.deepEqual(sortTimeCats(cats, use).map((c) => c.id), ['work', 'learn', 'move', 'distract', 'sleep', 'health']);
   assert.deepEqual(sortTimeCats(cats, {}).map((c) => c.id), cats.map((c) => c.id)); // من غير بيانات: زي الإعدادات
+});
+
+test('حكم اليوم: الهدف الأول وبعده عادتك، والنهارده "فاضل" مش "ناقص"', () => {
+  assert.equal(durAr(20), '٢٠ دقيقة');
+  assert.equal(durAr(60), 'ساعة');
+  assert.equal(durAr(90), 'ساعة ونص');
+  assert.equal(durAr(120), 'ساعتين');
+  assert.equal(durAr(180), '٣ ساعات');
+
+  // عادتك في العادات والمزاج: الأيام اللي فيها قيمة بس، و٣ أيام على الأقل
+  const days = [
+    { key: '2026-11-25', data: { wird: 2, azkm: 2, mood: 3 } },
+    { key: '2026-11-26', data: { wird: 2, mood: 4 } },
+    { key: '2026-11-27', data: { wird: 2, azkm: 2, azke: 2, mood: 2 } },
+    { key: '2026-11-24', data: { sleep: '23:00' } }, // مفيش عادات ولا مزاج: مابيدخلش
+  ];
+  const hb = dayBaselines(days, '2026-11-28');
+  assert.equal(hb.habits, 2);
+  assert.equal(hb.mood, 3);
+  assert.deepEqual(dayBaselines(days.slice(0, 2), '2026-11-28'), { habits: null, mood: null });
+
+  const tbase = { by: { work: 5, distract: 0.8 }, firstWork: 8 };
+  const st = (v, id) => [...v.core, ...v.time, ...(v.tasks ? [v.tasks] : [])].find((r) => r.id === id);
+
+  // يوم خلص: كل حاجة ليها حكم نهائي
+  const past = {
+    sleep: '23:30', wake: '05:30', mood: 2,
+    hrs: { 11: { c: 'work' }, 12: { c: 'work' }, 13: { c: 'work' }, 20: { c: 'distract' }, 21: { c: 'distract' }, 22: { c: 'distract' } },
+  };
+  const v1 = dayVerdict(past, { isToday: false, tbase, hb });
+  assert.equal(st(v1, 'sleep').state, 'warn'); // ٦ ساعات وهدفك ٧:٣٠
+  assert.equal(st(v1, 'sleep').tag, 'أقل من هدفك بساعة ونص');
+  assert.equal(st(v1, 'work').state, 'warn'); // ٣ من ٧
+  assert.equal(st(v1, 'mood').state, 'warn'); // ٢ وعادتك ٣
+  assert.equal(st(v1, 'top').state, 'none'); // ماتكتبتش في يوم خلص
+  assert.equal(st(v1, 'first').tag, 'اتأخرت ٣ ساعات'); // ١١ وعادتك ٨
+  assert.equal(st(v1, 'distract').state, 'warn');
+  assert.ok(v1.warnBig);
+  assert.equal(v1.big, 'الشاشة والتشتيت ٣ ساعات، وعادتك أقل من ساعة.'); // أكبر فرق عن عادتك: ٣ ساعات وعادتك أقل من ساعة
+  assert.equal(v1.bigLabel, 'أكبر فرق عن عادتك');
+  // لو مفيش فرق عن العادة، أكبر فرق عن الهدف
+  const v1b = dayVerdict({ sleep: '01:00', wake: '06:00', hrs: { 8: { c: 'work' }, 9: { c: 'work' }, 10: { c: 'work' }, 11: { c: 'work' } } }, { isToday: false, tbase, hb });
+  assert.equal(v1b.bigLabel, 'أكبر فرق عن هدفك');
+
+  // النهارده الساعة ١٠ الصبح: الشغل "فاضل"، والمزاج "بالليل"، ومفيش "ناقص"
+  const today = { sleep: '23:30', wake: '07:00', hrs: { 8: { c: 'work' }, 9: { c: 'work' } }, wird: 2 };
+  const v2 = dayVerdict(today, { isToday: true, hour: 10, tbase, hb, tasks: { open: 2, done: 1, proj: 'ورقة اليوم' } });
+  assert.equal(st(v2, 'sleep').state, 'ok');
+  assert.equal(st(v2, 'work').state, 'wait');
+  assert.equal(st(v2, 'work').tag, 'فاضل ٥ ساعات');
+  assert.equal(st(v2, 'habits').state, 'wait');
+  assert.equal(st(v2, 'mood').tag, 'بالليل');
+  assert.equal(st(v2, 'first').tag, 'زي عادتك');
+  assert.equal(st(v2, 'tasks').tag, 'فاضل ٢');
+  assert.equal(v2.counts.warn, 0);
+  assert.equal(v2.big, 'مفيش حاجة خرجت عن عادتك لحد دلوقتي.');
+
+  // النهارده الساعة ٢ الضهر ومابدأتش شغل وعادتك ٨: ده تنبيه حقيقي
+  const v3 = dayVerdict({ hrs: { 9: { c: 'rest' } } }, { isToday: true, hour: 14, tbase, hb });
+  assert.equal(st(v3, 'first').state, 'warn');
+
+  // يوم فاضي ويوم إجازة
+  assert.equal(dayVerdict({}, { isToday: true }).big, 'لسه مفيش تسجيل النهارده. ابدأ من تاب الوقت.');
+  assert.equal(st(dayVerdict({}, { isToday: false }), 'work').state, 'none');
+  const off = dayVerdict({ workOff: 1, hrs: { 10: { c: 'rest' } } }, { isToday: false, tbase, hb });
+  assert.equal(st(off, 'work').show, 'إجازة');
+  assert.equal(st(off, 'work').unit, '');
+});
+
+test('زرار سجّل: الـ ٥ الأساسيين الناقصين بس، والشاشة من التشتيت بسقفها', () => {
+  assert.deepEqual(CORE_KEYS, ['sleep', 'habits', 'work', 'mood', 'top']);
+  assert.deepEqual(coreMissing({}), ['sleep', 'habits', 'work', 'mood', 'top']);
+  // الشغل بيتحسب متسجل من تاب الوقت أو يوم إجازة، والشاشة مش من الأساسي خالص
+  const d = { sleep: '23:30', wake: '06:30', wird: 2, hrs: { 9: { c: 'work' } }, screen: '3:00' };
+  assert.deepEqual(coreMissing(d), ['mood', 'top']);
+  assert.deepEqual(coreMissing({ workOff: 1, mood: 4, top: 'خلصت التقرير' }), ['sleep', 'habits']);
+
+  // الشاشة = ساعات «تشتيت»: فوق السقف (٣ في الإعدادات) تنبيه حتى من غير عادة
+  const hrs = { 9: { c: 'work' }, 18: { c: 'distract' }, 19: { c: 'distract' }, 20: { c: 'distract' }, 21: { c: 'distract' } };
+  const v = dayVerdict({ hrs }, { isToday: false });
+  const row = v.time.find((r) => r.id === 'distract');
+  assert.equal(row.name, 'الشاشة والتشتيت');
+  assert.equal(row.state, 'warn');
+  assert.equal(row.tag, 'فوق سقف الشاشة');
+  assert.equal(row.ref, 'سقفك ٣');
+  // تحت السقف ومن غير عادة: في السليم
+  const ok = dayVerdict({ hrs: { 9: { c: 'work' }, 20: { c: 'distract' } } }, { isToday: false }).time.find((r) => r.id === 'distract');
+  assert.equal(ok.state, 'ok');
+  assert.equal(ok.tag, 'تحت سقفك');
 });

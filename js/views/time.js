@@ -4,7 +4,7 @@
 import {
   periodsFor, periodHoursFor, activeTimeCats, allTimeCatMap, dayHoursFor,
   fmtHour, fmtNum, fmt12, hourSpan, fmtHours, timeByCat, periodPhase, periodIndex, sleepHourList,
-  firstCatHour, lastCatBefore, periodFold, sortTimeCats,
+  lastCatBefore, periodFold, sortTimeCats,
 } from '../logic.js';
 import { esc, ic, ico, P } from '../ui.js';
 
@@ -39,76 +39,6 @@ function nowCard(s, hour, brush, catMap, ds) {
         <div class="pseg amb" data-rate="${pk}e" role="group" aria-label="طاقة ${plabel}">
           ${[1, 2, 3, 4, 5].map((n) => `<button class="ps" type="button" data-v="${n}" aria-label="${n} من ٥">${fmtNum(n)}</button>`).join('')}
         </div>
-      </div>
-    </section>`;
-}
-
-/** ملخص اليوم: الشغل من هدفك، والتشتيت وأول ساعة شغل مقارنين بعادتك (آخر ٧ أيام). */
-function daySummary(s, tb, tbase, hour, ds) {
-  const cfg = s.settings;
-  const isToday = s.cur === s.today;
-  const order = dayHoursFor(ds);
-  const logged = tb.total - (tb.by.sleep || 0);
-  // tbase مش موجود = الأيام اللي فاتت لسه بتتحمّل: سطر فاضي بنفس الارتفاع بدل جملة مش صح
-  const early = tbase ? '<span class="pm-sub">لسه بدري نقارن</span>' : '<span class="pm-sub">&nbsp;</span>';
-
-  // ١. الشغل من الهدف
-  const workH = tb.by.work || 0;
-  const goal = cfg.workTarget || 7;
-  const met = workH >= goal;
-  const workVal = s.day.workOff && !workH ? 'إجازة'
-    : logged ? `${fmtNum(workH)} <small>من ${fmtNum(goal)}</small>` : `— <small>من ${fmtNum(goal)}</small>`;
-  const workSub = met ? '<span class="pm-sub">وصلت ✓</span>'
-    : s.day.workOff ? '<span class="pm-sub">يوم إجازة</span>'
-      : isToday ? `<span class="pm-sub">فاضل ${fmtHours(goal - workH)}</span>` : '';
-  const workPct = Math.min(100, Math.round((workH / goal) * 100));
-
-  // ٢. التشتيت وعادتك
-  const dist = tb.by.distract || 0;
-  const distBase = tbase?.by ? (tbase.by.distract || 0) : null;
-  const distVal = logged ? `${fmtNum(dist)} <small>س</small>` : '—';
-  const distSub = distBase == null ? early
-    : `<span class="pm-sub">عادتك ${fmtNum(Math.round(distBase * 10) / 10)}</span>`;
-  const distWorse = logged && distBase != null && dist > distBase + 0.5;
-
-  // ٣. أول ساعة شغل وعادتك
-  const fw = firstCatHour(s.day, 'work', ds);
-  const usual = tbase?.firstWork ?? null;
-  const pos = (h) => order.indexOf(h);
-  let fwVal = '—';
-  let fwSub = usual != null ? `<span class="pm-sub">عادتك ${fmtHour(usual)}</span>` : early;
-  let late = false;
-  if (fw != null) {
-    fwVal = fmtHour(fw);
-    if (usual != null && fw === usual) fwSub = '<span class="pm-sub">زي عادتك</span>';
-    late = usual != null && pos(fw) > pos(usual) + 1;
-  } else if (isToday && usual != null && pos(hour) > pos(usual) && !s.day.workOff) {
-    fwVal = 'لسه';
-    late = true;
-  }
-
-  return `<section class="panel tday" aria-label="وقتك النهارده">
-      <div class="pm-sub3">
-        <button class="pm-cell${met || s.day.workOff ? ' done' : ''}" type="button" data-act="tbrush" data-c="work" aria-label="الشغل: ${fmtNum(workH)} من ${fmtNum(goal)} ساعات">
-          <span class="pm-k"><span>الشغل</span><span class="pm-ic">${ico('brief')}</span></span>
-          <span class="pm-v sm">${workVal}</span>
-          ${workSub}
-          <span class="pm-line${met ? ' done' : ''}"><i style="width:${s.day.workOff ? 100 : workPct}%"></i></span>
-        </button>
-        <button class="pm-cell${distWorse ? ' waste' : ''}" type="button" data-act="tbrush" data-c="distract" aria-label="التشتيت">
-          <span class="pm-k"><span>تشتيت</span><span class="pm-ic">${ico('distract')}</span></span>
-          <span class="pm-v sm${distWorse ? ' warn' : ''}">${distVal}</span>
-          ${distSub}
-        </button>
-        <div class="pm-cell" role="group" aria-label="أول ساعة شغل">
-          <span class="pm-k"><span>أول شغل</span><span class="pm-ic">${ico('clock')}</span></span>
-          <span class="pm-v sm${late ? ' warn' : ''}">${fwVal}</span>
-          ${fwSub}
-        </div>
-      </div>
-      <div class="tb-prog">
-        ${timeStackBar(tb)}
-        <span class="tb-cnt">${fmtNum(tb.total)} من ٢٤ ساعة</span>
       </div>
     </section>`;
 }
@@ -158,6 +88,10 @@ export function renderTime(s, ui, ctx = {}) {
         ${cats.map((c) => `<button class="bchip tc-${c.color || c.id}" type="button" data-act="tbrush" data-c="${esc(c.id)}" aria-pressed="${brush === c.id}">
           <span class="bic">${ico(c.icon)}</span><span>${esc(c.name)}</span></button>`).join('')}
         <button class="bchip clear" type="button" data-act="tbrush" data-c="clear" aria-pressed="${brush === 'clear'}">${ic(P.eraser)}<span>مسح</span></button>
+      </div>
+      <div class="tb-prog">
+        ${timeStackBar(tb)}
+        <span class="tb-cnt">${fmtNum(tb.total)} من ٢٤ ساعة</span>
       </div>
     </section>`;
 
@@ -225,7 +159,6 @@ export function renderTime(s, ui, ctx = {}) {
   }).join('');
 
   return `${isToday ? nowCard(s, hour, brush, catMap, ds) : ''}
-    ${daySummary(s, tb, ctx.tbase, hour, ds)}
     ${brushBar}${periodsHtml}
     <button class="lnk2" type="button" data-act="sheet" data-sheet="energy" style="align-self:center">طاقة كل الفترات، والتوتر، واللي رفع ووطّى طاقتك</button>`;
 }

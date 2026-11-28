@@ -34,7 +34,7 @@
     {
       "name": "تسجيل سريع",
       "short_name": "تسجيل",
-      "description": "سجّل فكرة أو مصروف أو سطر",
+      "description": "سجّل الأساسي: النوم والعادات والشغل والمزاج وأهم حاجة",
       "url": "./?open=quick",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }

@@ -771,6 +771,227 @@ export function sortTimeCats(cats, usage = {}) {
     .map(([c]) => c);
 }
 
+/** الـ ٥ الأساسيين اللي بيخلّوا اليوم "مسجّل"، بترتيب اليوم. */
+export const CORE_KEYS = ['sleep', 'habits', 'work', 'mood', 'top'];
+
+/** الأساسيين اللي لسه ماتسجلوش في اليوم ده (زرار "+ سجّل" بيسأل عليهم هما بس). */
+export function coreMissing(day = {}, settings) {
+  const cfg = normalizeSettings(settings);
+  return CORE_KEYS.filter((k) => !STAR_ITEMS.find((x) => x.k === k)?.done(day || {}, cfg));
+}
+
+/** مدة بالعامية للفروق: ٢٠ دقيقة، ساعة، ساعة ونص، ساعتين، ٣ ساعات. */
+export function durAr(min) {
+  const m = Math.round(Math.abs(+min || 0));
+  if (m < 55) return `${fmtNum(Math.max(5, Math.round(m / 5) * 5))} دقيقة`;
+  const halves = Math.round(m / 30);
+  const h = Math.floor(halves / 2);
+  const whole = h === 1 ? 'ساعة' : h === 2 ? 'ساعتين' : `${fmtNum(h)} ${h <= 10 ? 'ساعات' : 'ساعة'}`;
+  return halves % 2 ? `${whole} ونص` : whole;
+}
+
+/** "عادتك" في العادات اللي اتعملت والمزاج: متوسط آخر ٧ أيام قبل key، من الأيام اللي فيها قيمة بس. */
+export function dayBaselines(days, key, settings, min = 3) {
+  const cfg = normalizeSettings(settings);
+  const hs = cfg.habits.filter((h) => h.on !== false);
+  const byKey = new Map((days || []).map((x) => [x.key, x.data || {}]));
+  const habits = [];
+  const mood = [];
+  for (const k of weekKeys(addDays(key, -1))) {
+    const d = byKey.get(k);
+    if (!d) continue;
+    if (hs.some((h) => has(d[h.k]))) habits.push(habitsDone(d, cfg));
+    if (+d.mood > 0) mood.push(+d.mood);
+  }
+  const avg = (xs) => (xs.length >= min ? xs.reduce((a, x) => a + x, 0) / xs.length : null);
+  return { habits: avg(habits), mood: avg(mood) };
+}
+
+/**
+ * حكم اليوم في تبويبة «اليوم»: كل بند ليه قيمة، ومرجع (هدفك أو عادتك)، وحالة:
+ * ok في السليم، warn محتاج انتباه، wait لسه بيتحسب أو لسه بدري نقارن، none مش متسجل.
+ * القاعدة: لو فيه هدف في الإعدادات بنقارن بيه، وإلا بعادتك آخر ٧ أيام.
+ * والنهارده: اللي بيتجمع على اليوم (الشغل، والعادات، والمهام) بيقول "فاضل" مش "ناقص" لحد ما اليوم يخلص.
+ * opt: { settings, isToday, hour, base (baselineFor)، tbase (timeBaseline)، hb (dayBaselines)، tasks: { open, done, proj } }
+ */
+export function dayVerdict(day = {}, opt = {}) {
+  const cfg = normalizeSettings(opt.settings);
+  const isToday = !!opt.isToday;
+  const hour = opt.hour ?? 12;
+  const base = opt.base || {};
+  const tbase = opt.tbase || {};
+  const hb = opt.hb || {};
+  const d = day || {};
+  const tb = timeByCat(d, cfg);
+  const nums = dayNums(d);
+  const order = dayHoursFor(cfg.dayStart);
+  const pos = (h) => order.indexOf(h);
+  const awake = tb.total - (tb.by.sleep || 0);
+  const empty = (show = '—') => (isToday ? { show, state: 'wait', tag: 'لسه' } : { show, state: 'none', tag: 'مش متسجل' });
+
+  // ١. النوم: الهدف من الإعدادات
+  const sleepMin = nums.sleep ?? (tb.by.sleep ? tb.by.sleep * 60 : null);
+  const sGoal = Math.round(cfg.sleepTarget * 60);
+  let sleep;
+  if (sleepMin == null) sleep = isToday ? { show: '—', state: 'none', tag: 'سجّل' } : empty();
+  else if (sleepMin >= sGoal - 15) sleep = { state: 'ok', tag: 'وصلت هدفك' };
+  else {
+    sleep = {
+      state: 'warn', tag: `أقل من هدفك ب${durAr(sGoal - sleepMin)}`,
+      dev: (sGoal - sleepMin) / sGoal, big: `نمت ${fmtHM(Math.round(sleepMin))}، وهدفك ${fmtHM(sGoal)}.`,
+    };
+  }
+  sleep = {
+    id: 'sleep', name: 'النوم', show: sleepMin != null ? fmtHM(Math.round(sleepMin)) : '—',
+    ref: [`هدفك ${fmtHM(sGoal)}`, base.sleep != null ? `عادتك ${fmtHM(Math.round(base.sleep))}` : ''].filter(Boolean).join('، '),
+    ...sleep,
+  };
+
+  // ٢. الشغل: من تاب الوقت، والهدف من الإعدادات
+  const wGoal = cfg.workTarget;
+  const wFromTime = tb.by.work > 0 ? tb.by.work : null;
+  const w = wFromTime ?? nums.work ?? 0;
+  const wLogged = awake > 0 || nums.work != null;
+  const wUsual = tbase.by ? (tbase.by.work || 0) : (base.work ?? null);
+  let work;
+  if (d.workOff) work = { show: 'إجازة', unit: '', state: 'ok', tag: 'يوم إجازة' };
+  else if (!wLogged) work = empty();
+  else if (w >= wGoal) work = { state: 'ok', tag: 'وصلت هدفك' };
+  else if (isToday) work = { state: 'wait', tag: `فاضل ${durAr((wGoal - w) * 60)}` };
+  else {
+    work = {
+      state: 'warn', tag: `أقل من هدفك ب${durAr((wGoal - w) * 60)}`, dev: (wGoal - w) / wGoal,
+      big: w ? `اشتغلت ${durAr(w * 60)}، وهدفك ${durAr(wGoal * 60)}.` : `مااشتغلتش، وهدفك ${durAr(wGoal * 60)}.`,
+    };
+  }
+  work = {
+    // "صفر" بالكلام: الصفر العربي "٠" شكله نقطة، فـ "٠ س" بتتقري "• س"
+    id: 'work', name: 'الشغل', show: w ? fmtNum(w) : 'صفر', unit: w ? 'س' : '',
+    ref: [`هدفك ${fmtNum(wGoal)}`, wUsual != null ? `عادتك ${fmtNum(r1(wUsual))}` : ''].filter(Boolean).join('، '),
+    ...work,
+  };
+
+  // ٣. العادات: من غير هدف، فالمقارنة بعادتك
+  const hs = activeHabits(cfg);
+  const hDone = habitsDone(d, cfg);
+  const hLogged = hs.some((h) => has(d[h.k])) || prayerSummary(d).count > 0;
+  let habits;
+  if (!hLogged) habits = isToday ? { show: '—', state: 'wait', tag: `فاضل ${fmtNum(hs.length)}` } : empty();
+  else if (hDone >= hs.length) habits = { state: 'ok', tag: 'كلها اتعملت' };
+  else if (isToday) habits = { state: 'wait', tag: `فاضل ${fmtNum(hs.length - hDone)}` };
+  else if (hb.habits == null) habits = { state: 'wait', tag: 'لسه بدري نقارن' };
+  else if (hDone >= hb.habits - 0.5) habits = { state: 'ok', tag: hDone > hb.habits + 0.5 ? 'أحسن من عادتك' : 'زي عادتك' };
+  else {
+    habits = {
+      state: 'warn', tag: 'أقل من عادتك', dev: (hb.habits - hDone) / Math.max(hb.habits, 1),
+      big: `عملت ${fmtNum(hDone)} من العادات، وعادتك ${fmtNum(r1(hb.habits))}.`,
+    };
+  }
+  habits = {
+    id: 'habits', name: 'العادات', show: hDone ? fmtNum(hDone) : 'صفر', unit: `من ${fmtNum(hs.length)}`,
+    ref: hb.habits != null ? `عادتك ${fmtNum(r1(hb.habits))}` : '', ...habits,
+  };
+
+  // ٤. المزاج: بعادتك
+  const mood = +d.mood || 0;
+  let moodR;
+  if (!mood) moodR = isToday ? { show: '—', state: 'wait', tag: 'بالليل' } : empty();
+  else if (hb.mood == null) moodR = { state: 'wait', tag: 'لسه بدري نقارن' };
+  else if (mood >= hb.mood + 0.5) moodR = { state: 'ok', tag: 'أحسن من عادتك' };
+  else if (mood <= hb.mood - 0.5) {
+    moodR = {
+      state: 'warn', tag: 'أقل من عادتك', dev: (hb.mood - mood) / hb.mood,
+      big: `مزاجك ${fmtNum(mood)} من ٥، وعادتك ${fmtNum(r1(hb.mood))}.`,
+    };
+  } else moodR = { state: 'ok', tag: 'زي عادتك' };
+  moodR = {
+    id: 'mood', name: 'المزاج', show: fmtNum(mood), unit: 'من ٥',
+    ref: hb.mood != null ? `عادتك ${fmtNum(r1(hb.mood))}` : '', ...moodR,
+  };
+
+  // ٥. أهم حاجة حصلت
+  const topTxt = String(d.top || '').trim();
+  const top = topTxt
+    ? { id: 'top', name: 'أهم حاجة', show: topTxt, text: true, ref: '', state: 'ok', tag: 'اتكتبت' }
+    : { id: 'top', name: 'أهم حاجة', ref: '', ...(isToday ? { show: '—', state: 'wait', tag: 'بالليل' } : empty()) };
+
+  // ٦. أول ساعة شغل: بعادتك
+  const fw = firstCatHour(d, 'work', cfg.dayStart);
+  const usual = tbase.firstWork ?? null;
+  let first;
+  if (d.workOff) first = { state: 'ok', tag: 'يوم إجازة' };
+  else if (fw == null) {
+    if (!isToday) first = { state: 'none', tag: wLogged ? 'مفيش شغل' : 'مش متسجل' };
+    else if (usual != null && pos(hour) > pos(usual) + 1) {
+      first = {
+        state: 'warn', tag: 'لسه مابدأتش', dev: (pos(hour) - pos(usual)) / 4,
+        big: `لسه مابدأتش شغل، وعادتك تبدأ ${fmtHour(usual)}.`,
+      };
+    } else first = { state: 'wait', tag: 'لسه' };
+  } else if (usual == null) first = { state: 'wait', tag: 'لسه بدري نقارن' };
+  else if (pos(fw) > pos(usual) + 1) {
+    first = {
+      state: 'warn', tag: `اتأخرت ${durAr((pos(fw) - pos(usual)) * 60)}`, dev: (pos(fw) - pos(usual)) / 4,
+      big: `بدأت الشغل ${fmtHour(fw)}، وعادتك ${fmtHour(usual)}.`,
+    };
+  } else first = { state: 'ok', tag: pos(fw) < pos(usual) ? 'بدري عن عادتك' : 'زي عادتك' };
+  first = { id: 'first', name: 'أول شغل', show: fw != null ? fmtHour(fw) : '—', ref: usual != null ? `عادتك ${fmtHour(usual)}` : '', ...first };
+
+  // ٧. الشاشة والتشتيت: ساعات «تشتيت» في تاب الوقت هي الشاشة (مش بتتكتب بإيدك).
+  //    الأول بنقارن بسقف الشاشة اللي في الإعدادات، وبعدين بعادتك.
+  const dist = tb.by.distract || 0;
+  const cap = cfg.screenLimit;
+  const dUsual = tbase.by ? (tbase.by.distract || 0) : null;
+  let distract;
+  if (!awake) distract = isToday ? { show: '—', state: 'wait', tag: 'سجّل من الوقت' } : empty();
+  else if (dist > cap) {
+    distract = {
+      state: 'warn', tag: 'فوق سقف الشاشة', dev: (dist - cap) / cap,
+      big: `الشاشة والتشتيت ${durAr(dist * 60)}، وسقفك ${durAr(cap * 60)}.`,
+    };
+  } else if (dUsual != null && dist > dUsual + 0.5) {
+    distract = {
+      state: 'warn', tag: 'أكتر من عادتك', dev: (dist - dUsual) / Math.max(dUsual, 1),
+      big: `الشاشة والتشتيت ${durAr(dist * 60)}، وعادتك ${dUsual < 1 ? 'أقل من ساعة' : durAr(dUsual * 60)}.`,
+    };
+  } else distract = { state: 'ok', tag: !dist ? 'صفر تشتيت' : dUsual != null ? 'في حدود عادتك' : 'تحت سقفك' };
+  distract = {
+    id: 'distract', name: 'الشاشة والتشتيت', show: dist ? fmtNum(dist) : 'صفر', unit: dist ? 'س' : '',
+    ref: [`سقفك ${fmtNum(cap)}`, dUsual != null ? `عادتك ${fmtNum(r1(dUsual))}` : ''].filter(Boolean).join('، '),
+    ...distract,
+  };
+
+  // ٨. مهام النهارده (النهارده بس)
+  let tasks = null;
+  if (isToday && opt.tasks) {
+    const { open = 0, done = 0, proj = '' } = opt.tasks;
+    const total = open + done;
+    tasks = {
+      id: 'tasks', name: 'مهام النهارده', show: total ? fmtNum(done) : '—', unit: total ? `من ${fmtNum(total)}` : '',
+      ref: proj ? `المشروع: ${proj}` : '',
+      ...(!total ? { state: 'none', tag: 'مفيش مهام' } : !open ? { state: 'ok', tag: 'خلصوا' } : { state: 'wait', tag: `فاضل ${fmtNum(open)}` }),
+    };
+  }
+
+  const core = [sleep, work, habits, moodR, top];
+  const time = [first, distract];
+  const all = [...core, ...time, ...(tasks ? [tasks] : [])];
+  const counts = { ok: 0, warn: 0, wait: 0, none: 0 };
+  for (const r of all) counts[r.state] += 1;
+  // أكبر فرق: البنود اللي بتتقارن بعادتك الأول (هي اللي بتقول "خرجت عن نمطك")، ولو مفيش، أكبر فرق عن هدف
+  const warns = all.filter((r) => r.state === 'warn' && r.big);
+  const byDev = (a, b) => b.dev - a.dev;
+  const vsUsual = warns.filter((r) => !['sleep', 'work'].includes(r.id)).sort(byDev)[0];
+  const worst = vsUsual || warns.sort(byDev)[0];
+  const anyLogged = all.some((r) => r.state === 'ok' || r.state === 'warn');
+  let big;
+  if (worst) big = worst.big;
+  else if (anyLogged) big = isToday ? 'مفيش حاجة خرجت عن عادتك لحد دلوقتي.' : 'مفيش حاجة خرجت عن عادتك اليوم ده.';
+  else big = isToday ? 'لسه مفيش تسجيل النهارده. ابدأ من تاب الوقت.' : 'اليوم ده مااتسجلش.';
+  const bigLabel = worst && !vsUsual ? 'أكبر فرق عن هدفك' : 'أكبر فرق عن عادتك';
+  return { core, time, tasks, counts, big, bigLabel, warnBig: !!worst, hours: tb.total };
+}
+
 /**
  * الفترة في تاب الوقت تتقفل ولا تفضل مفتوحة:
  * الحالية مفتوحة دايماً، واللي عدّت وفيها فجوات مفتوحة، واللي اتملت أو لسه ماجتش أو عدّت فاضية خالص بتتقفل.
